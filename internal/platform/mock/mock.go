@@ -1,0 +1,133 @@
+// Package mock is a scriptable fake implementing platform.Platform, the test
+// double every other package's tests run against until Task 15 wires up the
+// real ejudge client. Every call must be scripted in advance; an unscripted
+// call panics so a test fails loudly instead of silently getting a zero value.
+package mock
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/profoundmentalretardation/problem-helper/internal/platform"
+)
+
+type pairKey struct {
+	userID, problemID string
+}
+
+type testKey struct {
+	runID  string
+	testID int
+}
+
+// Platform is the scriptable fake. Zero value is not usable; construct with
+// New.
+type Platform struct {
+	statements  map[string]platform.Statement
+	statuses    map[pairKey]platform.Status
+	submissions map[pairKey][]platform.Submission
+	submitQueue map[string][]platform.RunResult
+	runResults  map[string]platform.RunResult
+	testCases   map[testKey]platform.TestCase
+}
+
+// New returns an empty scriptable mock.
+func New() *Platform {
+	return &Platform{
+		statements:  map[string]platform.Statement{},
+		statuses:    map[pairKey]platform.Status{},
+		submissions: map[pairKey][]platform.Submission{},
+		submitQueue: map[string][]platform.RunResult{},
+		runResults:  map[string]platform.RunResult{},
+		testCases:   map[testKey]platform.TestCase{},
+	}
+}
+
+// ScriptStatement scripts the result of ProblemStatement(problemID).
+func (p *Platform) ScriptStatement(problemID string, s platform.Statement) {
+	p.statements[problemID] = s
+}
+
+// ScriptStatus scripts the result of ProblemStatus(userID, problemID).
+func (p *Platform) ScriptStatus(userID, problemID string, s platform.Status) {
+	p.statuses[pairKey{userID, problemID}] = s
+}
+
+// ScriptSubmissions scripts the result of Submissions(userID, problemID, _);
+// the limit argument truncates this slice at call time.
+func (p *Platform) ScriptSubmissions(userID, problemID string, subs []platform.Submission) {
+	p.submissions[pairKey{userID, problemID}] = subs
+}
+
+// ScriptSubmitResult appends a RunResult to the queue consumed, in order, by
+// successive SubmitAsSystem(problemID, ...) calls. The result is also made
+// pollable via RunResult(result.ID) immediately.
+func (p *Platform) ScriptSubmitResult(problemID string, r platform.RunResult) {
+	p.submitQueue[problemID] = append(p.submitQueue[problemID], r)
+}
+
+// ScriptRunResult scripts the result of RunResult(runID) directly, without
+// going through SubmitAsSystem — for tests that resume polling an
+// already-submitted run.
+func (p *Platform) ScriptRunResult(runID string, r platform.RunResult) {
+	p.runResults[runID] = r
+}
+
+// ScriptTestCase scripts the result of TestResult(runID, testID).
+func (p *Platform) ScriptTestCase(runID string, testID int, tc platform.TestCase) {
+	p.testCases[testKey{runID, testID}] = tc
+}
+
+func (p *Platform) ProblemStatement(_ context.Context, problemID string) (platform.Statement, error) {
+	s, ok := p.statements[problemID]
+	if !ok {
+		panic(fmt.Sprintf("mock: unscripted ProblemStatement(%q)", problemID))
+	}
+	return s, nil
+}
+
+func (p *Platform) ProblemStatus(_ context.Context, userID, problemID string) (platform.Status, error) {
+	s, ok := p.statuses[pairKey{userID, problemID}]
+	if !ok {
+		panic(fmt.Sprintf("mock: unscripted ProblemStatus(%q, %q)", userID, problemID))
+	}
+	return s, nil
+}
+
+func (p *Platform) Submissions(_ context.Context, userID, problemID string, limit int) ([]platform.Submission, error) {
+	subs, ok := p.submissions[pairKey{userID, problemID}]
+	if !ok {
+		panic(fmt.Sprintf("mock: unscripted Submissions(%q, %q)", userID, problemID))
+	}
+	if limit > 0 && limit < len(subs) {
+		subs = subs[:limit]
+	}
+	return subs, nil
+}
+
+func (p *Platform) SubmitAsSystem(_ context.Context, problemID, _, _ string) (platform.RunResult, error) {
+	q := p.submitQueue[problemID]
+	if len(q) == 0 {
+		panic(fmt.Sprintf("mock: unscripted SubmitAsSystem(%q)", problemID))
+	}
+	r := q[0]
+	p.submitQueue[problemID] = q[1:]
+	p.runResults[r.ID] = r
+	return r, nil
+}
+
+func (p *Platform) RunResult(_ context.Context, runID string) (platform.RunResult, error) {
+	r, ok := p.runResults[runID]
+	if !ok {
+		panic(fmt.Sprintf("mock: unscripted RunResult(%q)", runID))
+	}
+	return r, nil
+}
+
+func (p *Platform) TestResult(_ context.Context, runID string, testID int) (platform.TestCase, error) {
+	tc, ok := p.testCases[testKey{runID, testID}]
+	if !ok {
+		panic(fmt.Sprintf("mock: unscripted TestResult(%q, %d)", runID, testID))
+	}
+	return tc, nil
+}

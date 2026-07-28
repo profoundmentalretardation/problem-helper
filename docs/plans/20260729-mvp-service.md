@@ -338,15 +338,15 @@ against `platform/mock`).
 **Files:**
 - Create: `internal/platform/platform.go`, `internal/platform/mock/mock.go`, `internal/pick/pick.go`, `internal/pick/pick_test.go`, `internal/platform/mock/mock_test.go`
 
-- [ ] write failing tests for picker: max tests passed wins; tie → latest submission;
+- [x] write failing tests for picker: max tests passed wins; tie → latest submission;
       empty list → typed `ErrNoSubmissions`; all submissions `tests_total == 0` (compile
       errors only) → also `ErrNoSubmissions`
-- [ ] define `Platform` interface + domain types exactly as in Technical Details
+- [x] define `Platform` interface + domain types exactly as in Technical Details
       (Submission **with Language**, RunResult **with ID**, TestCase, Status)
-- [ ] implement mock platform (scriptable: canned submissions, canned run results, canned
+- [x] implement mock platform (scriptable: canned submissions, canned run results, canned
       per-run test cases; raises on unscripted calls) — the test double for every later task
-- [ ] implement picker until green
-- [ ] run tests + lint - must pass before task 5
+- [x] implement picker until green
+- [x] run tests + lint - must pass before task 5
 
 ### Task 5: Shield (sanitize + diff record)
 
