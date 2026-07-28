@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -330,6 +331,51 @@ func TestSnapshotSubmissions_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
 	err := s.SnapshotSubmissions(ctx, uuid.New(), []store.Submission{
 		{PlatformSubmissionID: "1", Code: "x", Language: "python3", SubmittedAt: time.Now()},
+	})
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+func TestInsertShieldRecord(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	rec := store.ShieldRecord{
+		RequestID:  id,
+		CodeBefore: "int x = 1; // comment\n",
+		CodeAfter:  "int x = 1; \n",
+		Diff:       "- int x = 1; // comment\n+ int x = 1; \n",
+		Removed:    []byte(`{"comments":["// comment"],"unicode":[],"comment_count":1,"unicode_count":0}`),
+	}
+	if err := s.InsertShieldRecord(ctx, rec); err != nil {
+		t.Fatalf("insert shield record: %v", err)
+	}
+
+	explicitID := uuid.New()
+	rec.ID = explicitID
+	if err := s.InsertShieldRecord(ctx, rec); err != nil {
+		t.Fatalf("insert shield record with explicit id: %v", err)
+	}
+
+	got, err := s.GetShieldRecord(ctx, explicitID)
+	if err != nil {
+		t.Fatalf("get shield record: %v", err)
+	}
+	if got.CodeBefore != rec.CodeBefore || got.CodeAfter != rec.CodeAfter || got.Diff != rec.Diff {
+		t.Errorf("unexpected row: %+v", got)
+	}
+	if !strings.Contains(string(got.Removed), `"comment_count"`) || !strings.Contains(string(got.Removed), "// comment") {
+		t.Errorf("Removed = %s, want it to round-trip the jsonb payload", got.Removed)
+	}
+}
+
+func TestInsertShieldRecord_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.InsertShieldRecord(ctx, store.ShieldRecord{
+		RequestID:  uuid.New(),
+		CodeBefore: "x",
+		CodeAfter:  "x",
 	})
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)

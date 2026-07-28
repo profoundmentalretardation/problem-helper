@@ -435,6 +435,58 @@ func (s *Store) ListSubmissions(ctx context.Context, requestID uuid.UUID) ([]Sub
 	return out, nil
 }
 
+// ShieldRecord is one shield_records row: the audit trail for what the
+// shield stripped from a submission before any model saw it. CodeBefore,
+// CodeAfter and Diff are all stored deliberately, for audit.
+type ShieldRecord struct {
+	ID         uuid.UUID
+	RequestID  uuid.UUID
+	CodeBefore string
+	CodeAfter  string
+	Diff       string
+	Removed    []byte // jsonb: comments, unicode, counts
+}
+
+// InsertShieldRecord inserts one shield_records row.
+func (s *Store) InsertShieldRecord(ctx context.Context, r ShieldRecord) error {
+	id := r.ID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	removed := r.Removed
+	if len(removed) == 0 {
+		removed = []byte("{}")
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO shield_records (id, request_id, code_before, code_after, diff, removed)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		id, r.RequestID, r.CodeBefore, r.CodeAfter, r.Diff, removed,
+	)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("%w: id %s", ErrUnknownRequest, r.RequestID)
+		}
+		return fmt.Errorf("store: inserting shield record: %w", err)
+	}
+	return nil
+}
+
+// GetShieldRecord fetches one shield_records row by id.
+func (s *Store) GetShieldRecord(ctx context.Context, id uuid.UUID) (*ShieldRecord, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, request_id, code_before, code_after, diff, removed
+		FROM shield_records WHERE id = $1`, id)
+
+	var r ShieldRecord
+	if err := row.Scan(&r.ID, &r.RequestID, &r.CodeBefore, &r.CodeAfter, &r.Diff, &r.Removed); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: getting shield record: no row with id %s", id)
+		}
+		return nil, fmt.Errorf("store: getting shield record: %w", err)
+	}
+	return &r, nil
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

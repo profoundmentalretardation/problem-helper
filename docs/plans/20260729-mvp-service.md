@@ -353,17 +353,17 @@ against `platform/mock`).
 **Files:**
 - Create: `internal/shield/shield.go`, `internal/shield/shield_test.go`
 
-- [ ] write failing tests: strips `//`, `/* */`, `#` (Python) and docstring comments,
+- [x] write failing tests: strips `//`, `/* */`, `#` (Python) and docstring comments,
       **dispatched by the submission's language** — `#define`/preprocessor directives preserved
       in C/C++; removes invalid & confusable Unicode (NFC normalize, strip zero-width/bidi
       controls); returns diff + structured removed-items report
-- [ ] write must-pass tests: clean code passes byte-identical; string literals containing
+- [x] write must-pass tests: clean code passes byte-identical; string literals containing
       comment-like text are NOT stripped
-- [ ] port the injection corpus from `research/03_prompt_shield.ipynb` as table-driven
+- [x] port the injection corpus from `research/03_prompt_shield.ipynb` as table-driven
       must-catch cases (payload in comments must not survive)
-- [ ] implement shield until green; wire output to `shield_records` (real store, per Task 3
+- [x] implement shield until green; wire output to `shield_records` (real store, per Task 3
       isolation)
-- [ ] run tests + lint - must pass before task 6
+- [x] run tests + lint - must pass before task 6
 
 ### Task 6: LLM client with usage and cost accounting
 
