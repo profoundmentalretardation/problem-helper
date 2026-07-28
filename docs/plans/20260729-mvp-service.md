@@ -287,19 +287,19 @@ against `platform/mock`).
 - Move: `0*.ipynb`, `idea.ipynb`, `monitor.py`, `ask_tutor.py`, `memory/`, `rules/`,
   `scratch/`, `state/`, `traces/`, `slides/`, `requirements.txt` → `research/`
 
-- [ ] fix `.gitignore` FIRST: remove `docs/`, `state/`, `slides/` lines (they hide this plan);
+- [x] fix `.gitignore` FIRST: remove `docs/`, `state/`, `slides/` lines (they hide this plan);
       add `research/state/*.db`; keep `.venv/`, `.env`, `__pycache__/`, `.ipynb_checkpoints/`
-- [ ] move prototypes into `research/`: `git mv` for tracked paths (notebooks, `memory/`,
+- [x] move prototypes into `research/`: `git mv` for tracked paths (notebooks, `memory/`,
       `rules/`, `scratch/`, `traces/`, `monitor.py`, `ask_tutor.py`, `requirements.txt`);
       plain `mv` + `git add` for previously-ignored `state/`, `slides/`; drop `__pycache__`
-- [ ] write `AGENTS.md`: project description (Overview + pipeline diagram), Go layout,
+- [x] write `AGENTS.md`: project description (Overview + pipeline diagram), Go layout,
       conventions (TDD, scripted-model tests, `go test ./...` + lint before done, guardrail on
       a different model family), pointer to `research/` as reference-only
-- [ ] `ln -s AGENTS.md CLAUDE.md`, commit the symlink
-- [ ] write `research/README.md`: what each notebook prototyped and which internal package
+- [x] `ln -s AGENTS.md CLAUDE.md`, commit the symlink
+- [x] write `research/README.md`: what each notebook prototyped and which internal package
       supersedes it; note explicitly that `05_monitor` (hash-chained log + monitor) has no MVP
       successor and is listed in Post-MVP ideas
-- [ ] verify: `git status` clean after commit, `docs/plans/` tracked,
+- [x] verify: `git status` clean after commit, `docs/plans/` tracked,
       `git log --follow research/monitor.py` shows pre-move history
 
 ### Task 2: Go module skeleton and config loading
