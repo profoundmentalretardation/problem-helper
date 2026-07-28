@@ -321,17 +321,17 @@ against `platform/mock`).
 **Files:**
 - Create: `migrations/0001_init.sql`, `internal/store/store.go`, `internal/store/store_test.go`, `docker-compose.yml` (postgres for dev/test)
 
-- [ ] decide and document test isolation (per-test transaction rollback vs per-test schema)
+- [x] decide and document test isolation (per-test transaction rollback vs per-test schema)
       in a comment at the top of `store_test.go`
-- [ ] write failing tests (real dockerized Postgres): create help_request, legal status
+- [x] write failing tests (real dockerized Postgres): create help_request, legal status
       transitions succeed, **illegal transition → error** (graph from Technical Details),
       append event, insert llm_call with `numeric` cost, snapshot submissions with language —
       assert rows on disk
-- [ ] write migrations for all tables + indexes from Technical Details; migration runner wired
+- [x] write migrations for all tables + indexes from Technical Details; migration runner wired
       into service start
-- [ ] implement `internal/store` (pgx) until green
-- [ ] write error-case tests: duplicate request insert, event for unknown request
-- [ ] run tests + lint - must pass before task 4
+- [x] implement `internal/store` (pgx) until green
+- [x] write error-case tests: duplicate request insert, event for unknown request
+- [x] run tests + lint - must pass before task 4
 
 ### Task 4: Platform interface, mock platform, best-submission picker
 
