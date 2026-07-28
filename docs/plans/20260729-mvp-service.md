@@ -307,14 +307,14 @@ against `platform/mock`).
 **Files:**
 - Create: `go.mod`, `cmd/helper/main.go`, `internal/config/config.go`, `internal/config/config_test.go`, `agents.yaml`, `Makefile`, `.golangci.yml`
 
-- [ ] write failing tests: env parsing (each required var missing → named error), `agents.yaml`
+- [x] write failing tests: env parsing (each required var missing → named error), `agents.yaml`
       parsing (all four agent keys required, model required per agent, unknown agent key →
       error, 0 = unlimited caps, negative caps → error, defaults block, formatter block)
-- [ ] write failing test: startup fails if any configured agent model lacks a `pricing` entry
-- [ ] write failing test: the checked-in `agents.yaml` itself parses and validates
-- [ ] `go mod init`, minimal `main.go` (config load + log + exit), Makefile targets:
+- [x] write failing test: startup fails if any configured agent model lacks a `pricing` entry
+- [x] write failing test: the checked-in `agents.yaml` itself parses and validates
+- [x] `go mod init`, minimal `main.go` (config load + log + exit), Makefile targets:
       `build`, `test`, `lint`, `run`; implement `internal/config` until green
-- [ ] run tests + lint - must pass before task 3
+- [x] run tests + lint - must pass before task 3
 
 ### Task 3: Postgres store, migrations, event log
 

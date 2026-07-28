@@ -1,0 +1,45 @@
+defaults:
+  n_submissions: 25
+  daily_requests_per_user: 20
+
+repair:
+  model: "gpt-4.1-mini"
+  temperature: 0.2
+  reasoning_effort: ""
+  max_retries: 3
+  max_cost_per_retry: 0
+  max_cost_per_loop: 0
+  top_n_mistakes: 5
+  n_tests_shown: 10
+
+hint:
+  model: "gpt-4.1-mini"
+  temperature: 0.7
+  reasoning_effort: ""
+  max_retries: 3
+  max_cost_per_retry: 0
+  max_cost_per_loop: 0
+
+guardrail:
+  model: "claude-sonnet-5"
+  temperature: 0
+  reasoning_effort: ""
+  max_retries: 1
+  max_cost_per_retry: 0
+  max_cost_per_loop: 0
+
+curator:
+  model: "gpt-4.1-mini"
+  temperature: 0.2
+  reasoning_effort: ""
+  max_retries: 2
+  max_cost_per_retry: 0
+  max_cost_per_loop: 0
+
+pricing:
+  "gpt-4.1-mini": {input: 0.40, cached_input: 0.10, output: 1.60}
+  "claude-sonnet-5": {input: 3.00, cached_input: 0.30, output: 15.00}
+
+formatter:
+  enabled: false
+  command: ""
