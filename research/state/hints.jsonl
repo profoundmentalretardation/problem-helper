@@ -1,0 +1,2 @@
+{"at": "2026-07-28T14:25:13Z", "user_id": "u42", "problem_id": "1729A", "hint": "Your loop covers every window but one. Which window never gets scored, and when would that change the answer?", "concept": "loop_bounds"}
+{"at": "2026-07-28T14:25:13Z", "user_id": "u42", "problem_id": "1729A", "hint": "Your loop covers every window but one. Which window never gets scored, and when would that change the answer?", "concept": "loop_bounds"}

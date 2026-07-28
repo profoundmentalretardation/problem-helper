@@ -1,0 +1,6 @@
+{
+  "code": "import sys\ndata = sys.stdin.read().split()\nn, k = int(data[0]), int(data[1])\na = [int(x) for x in data[2:2 + n]]\nwindow = sum(a[:k])\nbest = window\nfor i in range(1, n - k + 1):\n    window += a[i + k - 1] - a[i - 1]\n    best = max(best, window)\nprint(best)\n",
+  "diagnosis": "The sliding window loop stops one iteration too early because range(1, n-k) excludes the last valid starting index n-k, so the final window is never checked.",
+  "tag": "off_by_one",
+  "original": "import sys\ndata = sys.stdin.read().split()\nn, k = int(data[0]), int(data[1])\na = [int(x) for x in data[2:2 + n]]\nwindow = sum(a[:k])\nbest = window\nfor i in range(1, n - k):\n    window += a[i + k - 1] - a[i - 1]\n    best = max(best, window)\nprint(best)\n"
+}

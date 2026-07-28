@@ -2,6 +2,4 @@
 .env
 .ipynb_checkpoints/
 __pycache__/
-state/
-slides/
-docs/
+research/state/*.db

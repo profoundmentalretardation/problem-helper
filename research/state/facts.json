@@ -1,0 +1,111 @@
+[
+  {
+    "id": "f1",
+    "scope": "user:u42",
+    "kind": "preference",
+    "text": "Asked for conceptual hints only — no syntax, no line-by-line.",
+    "cue": [
+      "hint style",
+      "syntax",
+      "how to phrase"
+    ],
+    "source": "curator:earlier-session",
+    "created_at": "2026-07-28T14:03:15Z",
+    "used": 4,
+    "last_used": "2026-07-28T14:59:37Z"
+  },
+  {
+    "id": "f2",
+    "scope": "user:u77",
+    "kind": "fact",
+    "text": "Only ever writes Java; do not suggest Python idioms.",
+    "cue": [
+      "language",
+      "java"
+    ],
+    "source": "curator:earlier-session",
+    "created_at": "2026-07-28T14:03:15Z",
+    "used": 0,
+    "last_used": null
+  },
+  {
+    "id": "f3",
+    "scope": "user:u42",
+    "kind": "fact",
+    "text": "Student has now made off_by_one loop-bound mistakes on 3 separate problems (sliding window / loop bounds), most recently missing the last window in a sliding-window loop on CF 1801B. Recurring weakness in loop_bounds concept.",
+    "cue": [
+      "off_by_one",
+      "loop_bounds",
+      "sliding window",
+      "repeat mistake"
+    ],
+    "source": "curator:u42-1801B-20260728T130000Z",
+    "created_at": "2026-07-28T14:09:28Z",
+    "used": 6,
+    "last_used": "2026-07-28T14:59:23Z"
+  },
+  {
+    "id": "f4",
+    "scope": "user:u42",
+    "kind": "fact",
+    "text": "Student writes C++ solution first then rewrites it in Python for 'easy' problems, and often introduces input-parsing bugs during that rewrite.",
+    "cue": [
+      "python rewrite",
+      "input parsing",
+      "c++ to python",
+      "translation bug"
+    ],
+    "source": "curator:u42-1729A-20260728T120000Z",
+    "created_at": "2026-07-28T14:09:39Z",
+    "used": 6,
+    "last_used": "2026-07-28T14:59:37Z"
+  },
+  {
+    "id": "f5",
+    "scope": "user:u42",
+    "kind": "fact",
+    "text": "Student has now made off_by_one loop-bound mistakes on 4 separate problems (including CF 1729A, missing the final sliding-window position). This is a strong recurring weakness in the loop_bounds concept, not an isolated slip.",
+    "cue": [
+      "off_by_one",
+      "loop_bounds",
+      "sliding window",
+      "recurring mistake"
+    ],
+    "source": "curator:u42-1729A-20260728T120000Z",
+    "created_at": "2026-07-28T14:09:49Z",
+    "used": 7,
+    "last_used": "2026-07-28T14:59:37Z"
+  },
+  {
+    "id": "f6",
+    "scope": "user:u42",
+    "kind": "fact",
+    "text": "Student has now made off_by_one loop-bound mistakes on 5 separate problems (including CF 1801B, missing the last sliding-window iteration). This is a strong, persistent recurring weakness in the loop_bounds concept.",
+    "cue": [
+      "off_by_one",
+      "loop_bounds",
+      "sliding window",
+      "recurring mistake"
+    ],
+    "source": "curator:u42-1801B-20260728T130000Z",
+    "created_at": "2026-07-28T14:17:11Z",
+    "used": 6,
+    "last_used": "2026-07-28T14:59:37Z"
+  },
+  {
+    "id": "f7",
+    "scope": "user:u42",
+    "kind": "fact",
+    "text": "Student has now made off_by_one loop-bound mistakes on 6 separate problems (including CF 1801B, missing the last sliding-window iteration again). This is a deeply persistent recurring weakness in loop_bounds/sliding-window logic, not an isolated slip.",
+    "cue": [
+      "off_by_one",
+      "loop_bounds",
+      "sliding_window",
+      "recurring mistake"
+    ],
+    "source": "curator:u42-1801B-20260728T130000Z",
+    "created_at": "2026-07-28T14:25:49Z",
+    "used": 3,
+    "last_used": "2026-07-28T14:59:37Z"
+  }
+]
