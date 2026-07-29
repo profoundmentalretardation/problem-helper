@@ -386,12 +386,12 @@ against `platform/mock`).
 **Files:**
 - Create: `internal/prompt/prompt.go`, `internal/prompt/prompt_test.go`, `prompts/repair.md`, `prompts/hint.md`, `prompts/guardrail.md`, `prompts/curator.md`
 
-- [ ] write failing tests: `{{placeholder}}` rendering; missing placeholder value at render
+- [x] write failing tests: `{{placeholder}}` rendering; missing placeholder value at render
       time → error (never a silent blank); empty previous-code / empty mistakes render as
       explicit "none" text; startup load validates every file in `prompts/`
-- [ ] implement `internal/prompt` until green
-- [ ] write first real drafts of the four prompts (essence of each agent, placeholders wired)
-- [ ] run tests + lint - must pass before task 8
+- [x] implement `internal/prompt` until green
+- [x] write first real drafts of the four prompts (essence of each agent, placeholders wired)
+- [x] run tests + lint - must pass before task 8
 
 ### Task 8: Repair loop (loop 1)
 
