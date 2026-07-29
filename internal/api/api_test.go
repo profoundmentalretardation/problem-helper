@@ -29,6 +29,13 @@ type fakeStore struct {
 	counts   map[string]int
 
 	created []store.HelpRequestInput
+
+	uselessCalls []uuid.UUID
+	uselessErr   error
+
+	listFilter store.RequestFilter
+	listResult []store.HelpRequest
+	listErr    error
 }
 
 func newFakeStore() *fakeStore {
@@ -70,6 +77,24 @@ func (f *fakeStore) GetHint(_ context.Context, id uuid.UUID) (*store.Hint, error
 
 func (f *fakeStore) CountRequestsSince(_ context.Context, userID string, _ time.Time) (int, error) {
 	return f.counts[userID], nil
+}
+
+func (f *fakeStore) SetUseless(_ context.Context, id uuid.UUID, useless bool) error {
+	if f.uselessErr != nil {
+		return f.uselessErr
+	}
+	f.uselessCalls = append(f.uselessCalls, id)
+	hr, ok := f.requests[id]
+	if !ok {
+		return fmt.Errorf("%w: id %s", store.ErrUnknownRequest, id)
+	}
+	hr.Useless = useless
+	return nil
+}
+
+func (f *fakeStore) ListRequests(_ context.Context, filter store.RequestFilter) ([]store.HelpRequest, error) {
+	f.listFilter = filter
+	return f.listResult, f.listErr
 }
 
 func testConfig() *config.Config {
@@ -470,6 +495,135 @@ func TestHandleMetaloopRun_Error(t *testing.T) {
 	w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "admin-secret", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleSetUseless_Success(t *testing.T) {
+	fs := newFakeStore()
+	id := uuid.New()
+	fs.requests[id] = &store.HelpRequest{ID: id, Status: store.StatusDone}
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodPost, "/admin/requests/"+id.String()+"/useless", "admin-secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if len(fs.uselessCalls) != 1 || fs.uselessCalls[0] != id {
+		t.Fatalf("uselessCalls = %v, want [%s]", fs.uselessCalls, id)
+	}
+	if !fs.requests[id].Useless {
+		t.Fatal("expected request to be marked useless")
+	}
+}
+
+func TestHandleSetUseless_UnknownID(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodPost, "/admin/requests/"+uuid.New().String()+"/useless", "admin-secret", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleSetUseless_InvalidID(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodPost, "/admin/requests/not-a-uuid/useless", "admin-secret", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestHandleSetUseless_Auth(t *testing.T) {
+	fs := newFakeStore()
+	id := uuid.New()
+	fs.requests[id] = &store.HelpRequest{ID: id, Status: store.StatusDone}
+	h := newTestServer(t, fs)
+
+	if w := doRequest(h, http.MethodPost, "/admin/requests/"+id.String()+"/useless", "", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token: status = %d, want 401", w.Code)
+	}
+	if w := doRequest(h, http.MethodPost, "/admin/requests/"+id.String()+"/useless", "api-secret", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("api token: status = %d, want 401", w.Code)
+	}
+	if len(fs.uselessCalls) != 0 {
+		t.Fatal("expected no SetUseless call on auth failure")
+	}
+}
+
+func TestHandleListRequests_NoFilters(t *testing.T) {
+	fs := newFakeStore()
+	id := uuid.New()
+	fs.listResult = []store.HelpRequest{{ID: id, UserID: "alice", ProblemID: "p1", Status: store.StatusDone}}
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodGet, "/admin/requests", "admin-secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if fs.listFilter.Useless != nil || fs.listFilter.Status != nil || fs.listFilter.Model != nil {
+		t.Fatalf("expected empty filter, got %+v", fs.listFilter)
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp) != 1 || resp[0]["request_id"] != id.String() {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestHandleListRequests_Filters(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodGet, "/admin/requests?useless=true&status=no_fix&model=gpt-a", "admin-secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if fs.listFilter.Useless == nil || !*fs.listFilter.Useless {
+		t.Fatalf("expected useless=true filter, got %+v", fs.listFilter.Useless)
+	}
+	if fs.listFilter.Status == nil || *fs.listFilter.Status != store.StatusNoFix {
+		t.Fatalf("expected status=no_fix filter, got %+v", fs.listFilter.Status)
+	}
+	if fs.listFilter.Model == nil || *fs.listFilter.Model != "gpt-a" {
+		t.Fatalf("expected model=gpt-a filter, got %+v", fs.listFilter.Model)
+	}
+}
+
+func TestHandleListRequests_InvalidUseless(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodGet, "/admin/requests?useless=notabool", "admin-secret", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestHandleListRequests_Auth(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServer(t, fs)
+
+	if w := doRequest(h, http.MethodGet, "/admin/requests", "", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token: status = %d, want 401", w.Code)
+	}
+	if w := doRequest(h, http.MethodGet, "/admin/requests", "api-secret", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("api token: status = %d, want 401", w.Code)
+	}
+}
+
+func TestHandleListRequests_StoreError(t *testing.T) {
+	fs := newFakeStore()
+	fs.listErr = errors.New("boom")
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodGet, "/admin/requests", "admin-secret", nil)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
 	}
 }
 

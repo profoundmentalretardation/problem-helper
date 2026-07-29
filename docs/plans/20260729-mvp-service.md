@@ -604,14 +604,14 @@ package doc for full detail):
 - Create: `internal/store/analytics.go`, `internal/store/analytics_test.go`
 - Modify: `internal/api/api.go`
 
-- [ ] write failing tests: cost per request / per model / per agent from llm_calls; request
+- [x] write failing tests: cost per request / per model / per agent from llm_calls; request
       counts by status (no_fix vs no_hint vs failed separable); hint-effectiveness inputs
       (submission snapshot counts + timestamps, so "how many submissions until solved after
       the hint" is computable downstream)
-- [ ] write failing admin tests: `POST /admin/requests/{id}/useless` sets the flag; request
+- [x] write failing admin tests: `POST /admin/requests/{id}/useless` sets the flag; request
       listing filterable by useless / status / model
-- [ ] implement queries and endpoints until green
-- [ ] run tests + lint - must pass before task 18
+- [x] implement queries and endpoints until green
+- [x] run tests + lint - must pass before task 18
 
 ### Task 18: Verify acceptance criteria
 

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,8 @@ type Store interface {
 	GetHelpRequest(ctx context.Context, id uuid.UUID) (*store.HelpRequest, error)
 	GetHint(ctx context.Context, id uuid.UUID) (*store.Hint, error)
 	CountRequestsSince(ctx context.Context, userID string, since time.Time) (int, error)
+	SetUseless(ctx context.Context, id uuid.UUID, useless bool) error
+	ListRequests(ctx context.Context, filter store.RequestFilter) ([]store.HelpRequest, error)
 }
 
 // Server holds everything the handlers need: the store, the two bearer
@@ -66,8 +69,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /help", s.withAuth(s.apiToken, s.handleHelp))
 	mux.HandleFunc("GET /requests/{id}", s.withAuth(s.apiToken, s.handleGetRequest))
 	mux.HandleFunc("POST /admin/metaloop/run", s.withAuth(s.adminToken, s.handleMetaloopRun))
-	// Task 17 adds more admin endpoints under this prefix; this still lets
-	// the ADMIN_TOKEN gate be exercised and enforced for anything else.
+	mux.HandleFunc("POST /admin/requests/{id}/useless", s.withAuth(s.adminToken, s.handleSetUseless))
+	mux.HandleFunc("GET /admin/requests", s.withAuth(s.adminToken, s.handleListRequests))
+	// catch-all still lets the ADMIN_TOKEN gate be exercised and enforced
+	// for any admin path with no route above.
 	mux.Handle("/admin/", s.withAuth(s.adminToken, func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -220,6 +225,70 @@ func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
 		"created":         summary.Created,
 		"gave_up":         summary.GaveUp,
 	})
+}
+
+// handleSetUseless marks a request's delivered hint as unhelpful — an
+// admin judgment call kept separate from the pipeline's own status, so
+// analytics can tell "our infra broke" / "we declined" / "we helped, but
+// badly" apart.
+func (s *Server) handleSetUseless(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request id"})
+		return
+	}
+
+	if err := s.store.SetUseless(r.Context(), id, true); err != nil {
+		if errors.Is(err, store.ErrUnknownRequest) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"request_id": id.String(), "useless": "true"})
+}
+
+// handleListRequests lists help_requests, optionally filtered by
+// useless/status/model (model matches a request with at least one
+// llm_calls row using it) — the admin request listing.
+func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
+	filter := store.RequestFilter{}
+
+	if v := r.URL.Query().Get("useless"); v != "" {
+		useless, err := strconv.ParseBool(v)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid useless filter"})
+			return
+		}
+		filter.Useless = &useless
+	}
+	if v := r.URL.Query().Get("status"); v != "" {
+		status := store.Status(v)
+		filter.Status = &status
+	}
+	if v := r.URL.Query().Get("model"); v != "" {
+		filter.Model = &v
+	}
+
+	requests, err := s.store.ListRequests(r.Context(), filter)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	resp := make([]map[string]any, len(requests))
+	for i, hr := range requests {
+		resp[i] = map[string]any{
+			"request_id": hr.ID.String(),
+			"user_id":    hr.UserID,
+			"problem_id": hr.ProblemID,
+			"status":     string(hr.Status),
+			"useless":    hr.Useless,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func startOfDay(t time.Time) time.Time {
