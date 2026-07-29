@@ -432,11 +432,11 @@ Rationale: the course has formatting rules; agent code should be formatted befor
 submitted and before it is diffed for loop 2 (readable diffs), so the step sits between
 repair-agent output and everything downstream.
 
-- [ ] write failing tests: disabled → code untouched; enabled → external command run on code,
+- [x] write failing tests: disabled → code untouched; enabled → external command run on code,
       output used; command fails or times out → original code used + warning event (the
       formatter must never kill the loop)
-- [ ] implement runner (exec with timeout), wire into repair loop after agent output
-- [ ] run tests + lint - must pass before task 10
+- [x] implement runner (exec with timeout), wire into repair loop after agent output
+- [x] run tests + lint - must pass before task 10
 
 ### Task 10: Hint loop + guardrail (loop 2)
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/profoundmentalretardation/problem-helper/internal/agent/repair"
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
+	"github.com/profoundmentalretardation/problem-helper/internal/format"
 	"github.com/profoundmentalretardation/problem-helper/internal/llm"
 	"github.com/profoundmentalretardation/problem-helper/internal/platform"
 	"github.com/profoundmentalretardation/problem-helper/internal/platform/mock"
@@ -379,6 +380,78 @@ func TestRun_MaxCostPerLoop_StopsBeforeNextAttempt(t *testing.T) {
 	}
 	if scripted.Remaining() != 0 {
 		t.Errorf("scripted responses remaining = %d, want 0", scripted.Remaining())
+	}
+}
+
+func TestRun_Formatter_Enabled_FormatsCodeBeforeSubmitAndResult(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed code","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent(),
+		Formatter: format.Runner{Enabled: true, Command: "tr a-z A-Z"},
+	}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if got.Code != "FIXED CODE" {
+		t.Errorf("code = %q, want formatter output %q", got.Code, "FIXED CODE")
+	}
+}
+
+func TestRun_Formatter_Failure_DoesNotKillLoop_RecordsWarning(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"still good code","mistakes":[]}`},
+	)
+
+	events := &fakeEvents{}
+	runner := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent(),
+		Events:    events,
+		Formatter: format.Runner{Enabled: true, Command: "false"},
+	}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q (a failing formatter must not kill the loop)", got.Status, repair.StatusFixed)
+	}
+	if got.Code != "still good code" {
+		t.Errorf("code = %q, want original code preserved when the formatter fails", got.Code)
+	}
+
+	var sawWarning bool
+	for _, c := range events.calls {
+		if c.Kind == "formatter_failed" {
+			sawWarning = true
+		}
+	}
+	if !sawWarning {
+		t.Errorf("events = %+v, want a formatter_failed event", events.calls)
 	}
 }
 

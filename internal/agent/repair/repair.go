@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
+	"github.com/profoundmentalretardation/problem-helper/internal/format"
 	"github.com/profoundmentalretardation/problem-helper/internal/llm"
 	"github.com/profoundmentalretardation/problem-helper/internal/platform"
 	"github.com/profoundmentalretardation/problem-helper/internal/prompt"
@@ -116,14 +117,16 @@ type MistakeRecorder interface {
 }
 
 // Runner runs the repair loop. Events and Mistakes are optional (nil skips
-// recording) so tests can exercise the loop without either.
+// recording) so tests can exercise the loop without either. Formatter's zero
+// value is disabled, so it's optional too.
 type Runner struct {
-	Chat     llm.ChatClient
-	Platform platform.Platform
-	Template prompt.Template
-	Agent    config.AgentConfig
-	Events   EventRecorder
-	Mistakes MistakeRecorder
+	Chat      llm.ChatClient
+	Platform  platform.Platform
+	Template  prompt.Template
+	Agent     config.AgentConfig
+	Events    EventRecorder
+	Mistakes  MistakeRecorder
+	Formatter format.Runner
 }
 
 // modelAction is the single schema every repair Chat call uses: a
@@ -203,7 +206,15 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			return Result{}, err
 		}
 
-		run, err := r.Platform.SubmitAsSystem(ctx, p.ProblemID, proposed.Code, p.Language)
+		formatted := r.Formatter.Format(ctx, proposed.Code)
+		if formatted.Warning != "" {
+			if err := r.recordFormatterWarning(ctx, p.RequestID, attempts, formatted.Warning); err != nil {
+				return Result{}, err
+			}
+		}
+		code := formatted.Code
+
+		run, err := r.Platform.SubmitAsSystem(ctx, p.ProblemID, code, p.Language)
 		if err != nil {
 			return Result{}, fmt.Errorf("repair: submitting for verification: %w", err)
 		}
@@ -223,14 +234,14 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 
 		if success(baseline, current) {
 			return Result{
-				Status: StatusFixed, Code: proposed.Code, Mistakes: mistakes,
+				Status: StatusFixed, Code: code, Mistakes: mistakes,
 				RunID: run.ID, Attempts: attempts,
 			}, nil
 		}
 
 		currentRunID = run.ID
 		currentTestsTotal = result.TestsTotal
-		previousCode = proposed.Code
+		previousCode = code
 	}
 }
 
@@ -431,6 +442,23 @@ func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, runID str
 	}
 	if err := r.Events.AppendEvent(ctx, requestID, "repair_run_submitted", payload); err != nil {
 		return fmt.Errorf("repair: recording run id: %w", err)
+	}
+	return nil
+}
+
+func (r *Runner) recordFormatterWarning(ctx context.Context, requestID uuid.UUID, attempt int, warning string) error {
+	if r.Events == nil {
+		return nil
+	}
+	payload, err := json.Marshal(struct {
+		Attempt int    `json:"attempt"`
+		Warning string `json:"warning"`
+	}{attempt, warning})
+	if err != nil {
+		return fmt.Errorf("repair: encoding formatter-warning event: %w", err)
+	}
+	if err := r.Events.AppendEvent(ctx, requestID, "formatter_failed", payload); err != nil {
+		return fmt.Errorf("repair: recording formatter warning: %w", err)
 	}
 	return nil
 }
