@@ -1016,3 +1016,59 @@ func TestRun_VerificationRunWithNoTestsIsNotAdoptedAsTheCurrentRun(t *testing.T)
 		t.Fatalf("total = %d, want 2: a run judged on zero tests must not replace the baseline, or the model repairs blind", listReply.Total)
 	}
 }
+
+// The same rule from the resume side: the crash happened around a verification
+// run that failed to compile, so the run the resumed loop finds was judged on
+// zero tests. Adopting it left every remaining attempt of a *reclaimed*
+// request repairing blind — the worst place for it, since the reclaim loop can
+// re-enter loop 1 up to store.maxClaimAttempts times.
+func TestRun_PendingRunWithNoTestsIsNotAdoptedAsTheCurrentRun(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-best", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+
+	// The pending run was judged — it just failed to compile, so no tests ran.
+	plat.ScriptRunResult("run-ce", platform.RunResult{ID: "run-ce", Done: true, TestsPassed: 0, TestsTotal: 0})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, Passed: true, TestsPassed: 2, TestsTotal: 2})
+	plat.ScriptTestCase("run-2", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("run-2", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		// The first post-resume attempt asks what the tests are. If the
+		// compile-error run had been adopted this answers total 0.
+		llm.ScriptedResponse{JSON: `{"action":"list_test_results"}`},
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 2
+	p.PendingRunID = "run-ce"
+	p.PendingCode = "does not compile"
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+
+	calls := scripted.Calls()
+	listReplyMsg := calls[1].Messages[len(calls[1].Messages)-1]
+	var listReply struct {
+		OK    bool `json:"ok"`
+		Total int  `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(listReplyMsg.Content), &listReply); err != nil {
+		t.Fatalf("unmarshal list_test_results reply: %v", err)
+	}
+	if listReply.Total != 2 {
+		t.Fatalf("total = %d, want 2: a resumed run judged on zero tests must not replace the baseline", listReply.Total)
+	}
+	// previousCode still advances, so the model is told which code failed.
+	if !strings.Contains(calls[0].Messages[0].Content, "does not compile") {
+		t.Error("system prompt must carry the pending code as the previous attempt")
+	}
+}

@@ -6,9 +6,18 @@ file, or something new? Near-duplicates must merge into the existing record inst
 up as lookalikes in slightly different wording — that is what turns "this student's third
 off-by-one this month" into a fact instead of three unrelated notes.
 
-Call merge_into for a near-duplicate, create_mistake for something genuinely new, and finish
-once every raw mistake below has been handled. Do not call finish early — an unhandled mistake
-is simply retried tomorrow night, which is safe but wasteful.
+Every reply is a single JSON object whose "action" field names one of three tools. "action" is
+always required; the other fields depend on which tool you call. You get the tool's result back
+as the next message, then reply again — one tool per reply, one raw mistake at a time.
+
+- {"action": "merge_into", "mistake_id": "<uuid>"} — fold a near-duplicate into the existing
+  mistake with that id. mistake_id must be one of the uuids listed below, copied exactly.
+- {"action": "create_mistake", "title": "...", "description": "..."} — record something
+  genuinely new. Both fields are required and neither may be empty.
+- {"action": "finish"} — every raw mistake below has been handled.
+
+Do not call finish early — an unhandled mistake is simply retried tomorrow night, which is safe
+but wasteful.
 
 THIS STUDENT'S UNPROCESSED MISTAKES
 {{raw_mistakes}}

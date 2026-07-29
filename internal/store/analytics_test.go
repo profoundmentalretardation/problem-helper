@@ -356,6 +356,12 @@ func TestListRequests_FilterByModel(t *testing.T) {
 }
 
 func TestListRequests_NoFilter(t *testing.T) {
+	// Unfiltered ListRequests ranges over the whole help_requests table, so
+	// it sees the pending row internal/worker's claim-race test has to
+	// commit — the same cross-package collision the queue tests take this
+	// lock for. Every other ListRequests test filters to rows this
+	// transaction created, so only this one needs it.
+	lockQueueTable(t)
 	// help_requests.created_at defaults to now(), which is frozen to
 	// transaction start (see CreateMistake's doc comment in store.go for
 	// the same caveat) — both requests created in this test transaction

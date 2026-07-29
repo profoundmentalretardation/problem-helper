@@ -286,9 +286,20 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			}, nil
 		case found:
 			// It was judged and it wasn't a fix — carry it as the run the
-			// tools read from, exactly like any other failed attempt.
-			currentRunID = p.PendingRunID
-			currentTestsTotal = testsTotal
+			// tools read from, exactly like any other failed attempt, and
+			// under the same condition: only a run judged on at least one
+			// test is a run the tools can read from. A pending run that
+			// failed to compile has no test results, so adopting it made
+			// list_test_results answer {"total":0,"tests":[]} and get_test
+			// always answer out-of-range for the rest of the loop — the
+			// resumed request then repaired blind while spending the whole
+			// budget again. Keeping the baseline leaves the model the
+			// failing test data it had; previousCode still advances, so it
+			// is told which code already failed.
+			if testsTotal > 0 {
+				currentRunID = p.PendingRunID
+				currentTestsTotal = testsTotal
+			}
 			previousCode = p.PendingCode
 		}
 		// Not found: the judge does not know this run id, so there is
