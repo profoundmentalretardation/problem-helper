@@ -422,6 +422,70 @@ func TestInsertRawMistake(t *testing.T) {
 	}
 }
 
+func TestInsertHintAndFindApprovedHint(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.InsertHint(ctx, store.Hint{
+		RequestID: id,
+		ProblemID: "problem-1",
+		CodeHash:  "hash-a",
+		Text:      "look at your loop bound",
+		Approved:  true,
+	}); err != nil {
+		t.Fatalf("insert hint: %v", err)
+	}
+
+	got, err := s.FindApprovedHint(ctx, "problem-1", "hash-a")
+	if err != nil {
+		t.Fatalf("find approved hint: %v", err)
+	}
+	if got == nil {
+		t.Fatal("got nil, want a hint")
+	}
+	if got.Text != "look at your loop bound" || !got.Approved {
+		t.Errorf("unexpected hint: %+v", got)
+	}
+}
+
+func TestFindApprovedHint_Miss(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.InsertHint(ctx, store.Hint{
+		RequestID: id,
+		ProblemID: "problem-1",
+		CodeHash:  "hash-a",
+		Text:      "unapproved hint",
+		Approved:  false,
+	}); err != nil {
+		t.Fatalf("insert unapproved hint: %v", err)
+	}
+
+	if got, err := s.FindApprovedHint(ctx, "problem-1", "hash-a"); err != nil || got != nil {
+		t.Errorf("unapproved hint: got (%+v, %v), want (nil, nil)", got, err)
+	}
+	if got, err := s.FindApprovedHint(ctx, "problem-1", "hash-b"); err != nil || got != nil {
+		t.Errorf("different hash: got (%+v, %v), want (nil, nil)", got, err)
+	}
+	if got, err := s.FindApprovedHint(ctx, "problem-2", "hash-a"); err != nil || got != nil {
+		t.Errorf("different problem: got (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+func TestInsertHint_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.InsertHint(ctx, store.Hint{
+		RequestID: uuid.New(),
+		ProblemID: "problem-1",
+		CodeHash:  "hash-a",
+		Text:      "x",
+	})
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
 func TestInsertRawMistake_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
 	err := s.InsertRawMistake(ctx, store.RawMistake{

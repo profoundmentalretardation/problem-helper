@@ -543,6 +543,59 @@ func (s *Store) ListRawMistakes(ctx context.Context, requestID uuid.UUID) ([]Raw
 	return out, nil
 }
 
+// Hint is one hints row. The cache is deliberately cross-user: (ProblemID,
+// CodeHash) identifies a defect, not a student, so an approved hint can be
+// re-delivered to any request that hashes to the same post-shield code.
+type Hint struct {
+	ID        uuid.UUID
+	RequestID uuid.UUID
+	ProblemID string
+	CodeHash  string
+	Text      string
+	Approved  bool
+	CreatedAt time.Time
+}
+
+// InsertHint inserts one hints row.
+func (s *Store) InsertHint(ctx context.Context, h Hint) error {
+	id := h.ID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO hints (id, request_id, problem_id, code_hash, text, approved)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		id, h.RequestID, h.ProblemID, h.CodeHash, h.Text, h.Approved,
+	)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("%w: id %s", ErrUnknownRequest, h.RequestID)
+		}
+		return fmt.Errorf("store: inserting hint: %w", err)
+	}
+	return nil
+}
+
+// FindApprovedHint returns the approved hint cached for this problem +
+// post-shield code hash, or nil if none exists — a miss is not an error.
+func (s *Store) FindApprovedHint(ctx context.Context, problemID, codeHash string) (*Hint, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, request_id, problem_id, code_hash, text, approved, created_at
+		FROM hints
+		WHERE problem_id = $1 AND code_hash = $2 AND approved
+		ORDER BY created_at DESC
+		LIMIT 1`, problemID, codeHash)
+
+	var h Hint
+	if err := row.Scan(&h.ID, &h.RequestID, &h.ProblemID, &h.CodeHash, &h.Text, &h.Approved, &h.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: finding approved hint: %w", err)
+	}
+	return &h, nil
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

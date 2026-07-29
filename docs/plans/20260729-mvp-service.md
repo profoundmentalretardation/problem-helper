@@ -465,11 +465,11 @@ repair-agent output and everything downstream.
 Scope: pure lookup — `Lookup(problemID, codeHash) (*Hint, bool)` over the `hints` table.
 The "cache hit skips the LLM entirely" end-to-end assertion lives in Task 13.
 
-- [ ] write failing tests (real store): hit on (problem_id, post-shield hash, approved=true);
+- [x] write failing tests (real store): hit on (problem_id, post-shield hash, approved=true);
       miss on different hash / unapproved hint / different problem; hash is of normalized
       post-shield code
-- [ ] implement lookup + hash until green
-- [ ] run tests + lint - must pass before task 12
+- [x] implement lookup + hash until green
+- [x] run tests + lint - must pass before task 12
 
 ### Task 12: HTTP API handlers, auth, rate limit
 
