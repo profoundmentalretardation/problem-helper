@@ -17,6 +17,7 @@ import (
 
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
 	"github.com/profoundmentalretardation/problem-helper/internal/store"
+	"github.com/profoundmentalretardation/problem-helper/internal/worker"
 )
 
 // Store is the persistence dependency handlers need; *store.Store satisfies
@@ -29,10 +30,11 @@ type Store interface {
 }
 
 // Server holds everything the handlers need: the store, the two bearer
-// tokens, and the agents.yaml defaults for n_submissions and the daily
-// per-user request cap.
+// tokens, the agents.yaml defaults for n_submissions and the daily
+// per-user request cap, and the admin-triggered metaloop sweep.
 type Server struct {
-	store Store
+	store    Store
+	metaloop worker.MetaloopRunner
 
 	apiToken             string
 	adminToken           string
@@ -43,10 +45,12 @@ type Server struct {
 	now func() time.Time
 }
 
-// NewServer builds a Server from the loaded config.
-func NewServer(st Store, cfg *config.Config) *Server {
+// NewServer builds a Server from the loaded config. metaloop drives
+// POST /admin/metaloop/run — *worker.Metaloop in production.
+func NewServer(st Store, cfg *config.Config, metaloop worker.MetaloopRunner) *Server {
 	return &Server{
 		store:                st,
+		metaloop:             metaloop,
 		apiToken:             cfg.Env.APIToken,
 		adminToken:           cfg.Env.AdminToken,
 		platform:             cfg.Env.Platform,
@@ -61,8 +65,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /help", s.withAuth(s.apiToken, s.handleHelp))
 	mux.HandleFunc("GET /requests/{id}", s.withAuth(s.apiToken, s.handleGetRequest))
-	// No admin endpoints exist yet (Task 16/17 add them under this prefix);
-	// this still lets the ADMIN_TOKEN gate be exercised and enforced now.
+	mux.HandleFunc("POST /admin/metaloop/run", s.withAuth(s.adminToken, s.handleMetaloopRun))
+	// Task 17 adds more admin endpoints under this prefix; this still lets
+	// the ADMIN_TOKEN gate be exercised and enforced for anything else.
 	mux.Handle("/admin/", s.withAuth(s.adminToken, func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -198,6 +203,23 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleMetaloopRun triggers an out-of-band curator sweep across every user
+// with unprocessed raw mistakes — the same sweep the nightly cron runs
+// (internal/worker), exposed for manual/testing use.
+func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
+	summary, err := s.metaloop.Run(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{
+		"users_processed": summary.UsersProcessed,
+		"merged":          summary.Merged,
+		"created":         summary.Created,
+		"gave_up":         summary.GaveUp,
+	})
 }
 
 func startOfDay(t time.Time) time.Time {

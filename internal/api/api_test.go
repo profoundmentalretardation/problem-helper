@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/profoundmentalretardation/problem-helper/internal/api"
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
 	"github.com/profoundmentalretardation/problem-helper/internal/store"
+	"github.com/profoundmentalretardation/problem-helper/internal/worker"
 )
 
 type fakeStore struct {
@@ -86,9 +88,27 @@ func testConfig() *config.Config {
 	}
 }
 
+// fakeMetaloopRunner is a scriptable api.MetaloopRunner (worker.MetaloopRunner):
+// returns a canned summary/error and counts calls.
+type fakeMetaloopRunner struct {
+	summary worker.MetaloopSummary
+	err     error
+	calls   int
+}
+
+func (f *fakeMetaloopRunner) Run(_ context.Context) (worker.MetaloopSummary, error) {
+	f.calls++
+	return f.summary, f.err
+}
+
 func newTestServer(t *testing.T, fs *fakeStore) http.Handler {
 	t.Helper()
-	return api.NewServer(fs, testConfig()).Handler()
+	return newTestServerWithMetaloop(t, fs, &fakeMetaloopRunner{})
+}
+
+func newTestServerWithMetaloop(t *testing.T, fs *fakeStore, ml worker.MetaloopRunner) http.Handler {
+	t.Helper()
+	return api.NewServer(fs, testConfig(), ml).Handler()
 }
 
 func doRequest(h http.Handler, method, target, token string, body any) *httptest.ResponseRecorder {
@@ -401,9 +421,55 @@ func TestHandleAdmin_Auth(t *testing.T) {
 	if w := doRequest(h, http.MethodGet, "/admin/anything", "api-secret", nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("api token on admin route: status = %d, want 401", w.Code)
 	}
-	// Correct admin token passes auth; no route is implemented yet (Task 17).
+	// Correct admin token passes auth; this path has no route implemented
+	// (Task 17 adds more admin endpoints under this prefix).
 	if w := doRequest(h, http.MethodGet, "/admin/anything", "admin-secret", nil); w.Code == http.StatusUnauthorized {
 		t.Fatalf("admin token: status = %d, should not be 401", w.Code)
+	}
+}
+
+func TestHandleMetaloopRun_Auth(t *testing.T) {
+	fs := newFakeStore()
+	h := newTestServerWithMetaloop(t, fs, &fakeMetaloopRunner{})
+
+	if w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token: status = %d, want 401", w.Code)
+	}
+	if w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "api-secret", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("api token: status = %d, want 401", w.Code)
+	}
+}
+
+func TestHandleMetaloopRun_Success(t *testing.T) {
+	fs := newFakeStore()
+	ml := &fakeMetaloopRunner{summary: worker.MetaloopSummary{UsersProcessed: 2, Merged: 1, Created: 3, GaveUp: 1}}
+	h := newTestServerWithMetaloop(t, fs, ml)
+
+	w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "admin-secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if ml.calls != 1 {
+		t.Fatalf("metaloop calls = %d, want 1", ml.calls)
+	}
+
+	var resp map[string]int
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["users_processed"] != 2 || resp["merged"] != 1 || resp["created"] != 3 || resp["gave_up"] != 1 {
+		t.Errorf("unexpected response: %+v", resp)
+	}
+}
+
+func TestHandleMetaloopRun_Error(t *testing.T) {
+	fs := newFakeStore()
+	ml := &fakeMetaloopRunner{err: errors.New("boom")}
+	h := newTestServerWithMetaloop(t, fs, ml)
+
+	w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "admin-secret", nil)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body = %s", w.Code, w.Body.String())
 	}
 }
 

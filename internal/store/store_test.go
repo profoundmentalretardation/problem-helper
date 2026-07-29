@@ -714,6 +714,172 @@ func TestInsertRawMistake_UnknownRequest(t *testing.T) {
 	}
 }
 
+func TestListUnprocessedRawMistakes_ScopedToUserAndUnprocessed(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.InsertRawMistake(ctx, store.RawMistake{RequestID: id, UserID: "user-1", Text: "a"}); err != nil {
+		t.Fatalf("insert raw mistake a: %v", err)
+	}
+	if err := s.InsertRawMistake(ctx, store.RawMistake{RequestID: id, UserID: "user-1", Text: "b"}); err != nil {
+		t.Fatalf("insert raw mistake b: %v", err)
+	}
+	if err := s.InsertRawMistake(ctx, store.RawMistake{RequestID: id, UserID: "user-2", Text: "other user"}); err != nil {
+		t.Fatalf("insert raw mistake for other user: %v", err)
+	}
+
+	got, err := s.ListUnprocessedRawMistakes(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("list unprocessed raw mistakes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d unprocessed raw mistakes, want 2", len(got))
+	}
+
+	if err := s.MarkRawMistakesProcessed(ctx, []uuid.UUID{got[0].ID}); err != nil {
+		t.Fatalf("mark processed: %v", err)
+	}
+
+	after, err := s.ListUnprocessedRawMistakes(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("list unprocessed raw mistakes after marking: %v", err)
+	}
+	if len(after) != 1 || after[0].ID != got[1].ID {
+		t.Fatalf("after marking one processed, got %+v, want only %s left", after, got[1].ID)
+	}
+}
+
+func TestListUsersWithUnprocessedMistakes(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.InsertRawMistake(ctx, store.RawMistake{RequestID: id, UserID: "user-a", Text: "x"}); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+	if err := s.InsertRawMistake(ctx, store.RawMistake{RequestID: id, UserID: "user-b", Text: "y"}); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+	processed := store.RawMistake{RequestID: id, UserID: "user-c", Text: "already done"}
+	if err := s.InsertRawMistake(ctx, processed); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+	all, err := s.ListUnprocessedRawMistakes(ctx, "user-c")
+	if err != nil || len(all) != 1 {
+		t.Fatalf("list unprocessed for user-c: %+v, %v", all, err)
+	}
+	if err := s.MarkRawMistakesProcessed(ctx, []uuid.UUID{all[0].ID}); err != nil {
+		t.Fatalf("mark processed: %v", err)
+	}
+
+	users, err := s.ListUsersWithUnprocessedMistakes(ctx)
+	if err != nil {
+		t.Fatalf("list users with unprocessed mistakes: %v", err)
+	}
+	got := map[string]bool{}
+	for _, u := range users {
+		got[u] = true
+	}
+	if !got["user-a"] || !got["user-b"] {
+		t.Errorf("users = %v, want user-a and user-b", users)
+	}
+	if got["user-c"] {
+		t.Errorf("users = %v, user-c should be absent (its only raw mistake is processed)", users)
+	}
+}
+
+func TestCreateMistakeAndMergeMistake(t *testing.T) {
+	s, ctx := withStore(t)
+
+	id := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID: id, UserID: "user-1", Title: "off-by-one", Description: "loop bound is one short",
+	}); err != nil {
+		t.Fatalf("create mistake: %v", err)
+	}
+
+	got, err := s.ListMistakes(ctx, "user-1")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("list mistakes: %+v, %v", got, err)
+	}
+	if got[0].Count != 1 {
+		t.Errorf("count = %d, want 1", got[0].Count)
+	}
+	firstSeen, lastSeen := got[0].FirstSeen, got[0].LastSeen
+
+	time.Sleep(5 * time.Millisecond)
+	if err := s.MergeMistake(ctx, id); err != nil {
+		t.Fatalf("merge mistake: %v", err)
+	}
+
+	after, err := s.ListMistakes(ctx, "user-1")
+	if err != nil || len(after) != 1 {
+		t.Fatalf("list mistakes after merge: %+v, %v", after, err)
+	}
+	if after[0].Count != 2 {
+		t.Errorf("count after merge = %d, want 2", after[0].Count)
+	}
+	if !after[0].LastSeen.After(lastSeen) {
+		t.Errorf("last_seen after merge = %v, want after %v", after[0].LastSeen, lastSeen)
+	}
+	if !after[0].FirstSeen.Equal(firstSeen) {
+		t.Errorf("first_seen changed on merge: %v -> %v", firstSeen, after[0].FirstSeen)
+	}
+}
+
+func TestMergeMistake_UnknownID(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.MergeMistake(ctx, uuid.New())
+	if !errors.Is(err, store.ErrUnknownMistake) {
+		t.Errorf("err = %v, want wrapping ErrUnknownMistake", err)
+	}
+}
+
+func TestTopMistakes_OrderedByCountDescThenLastSeenDesc(t *testing.T) {
+	s, ctx := withStore(t)
+
+	older := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{ID: older, UserID: "user-1", Title: "older", Description: "d"}); err != nil {
+		t.Fatalf("create older: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	newer := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{ID: newer, UserID: "user-1", Title: "newer", Description: "d"}); err != nil {
+		t.Fatalf("create newer: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	topCount := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{ID: topCount, UserID: "user-1", Title: "top-count", Description: "d"}); err != nil {
+		t.Fatalf("create top-count: %v", err)
+	}
+	if err := s.MergeMistake(ctx, topCount); err != nil {
+		t.Fatalf("merge top-count: %v", err)
+	}
+
+	got, err := s.TopMistakes(ctx, "user-1", 3)
+	if err != nil {
+		t.Fatalf("top mistakes: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d mistakes, want 3", len(got))
+	}
+	want := []uuid.UUID{topCount, newer, older}
+	for i, w := range want {
+		if got[i].ID != w {
+			t.Errorf("position %d: id = %s, want %s (%+v)", i, got[i].ID, w, got)
+		}
+	}
+
+	limited, err := s.TopMistakes(ctx, "user-1", 1)
+	if err != nil {
+		t.Fatalf("top mistakes limited: %v", err)
+	}
+	if len(limited) != 1 || limited[0].ID != topCount {
+		t.Fatalf("limited top mistakes = %+v, want just %s", limited, topCount)
+	}
+}
+
 func TestClaimNext_ClaimsPendingRow(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)

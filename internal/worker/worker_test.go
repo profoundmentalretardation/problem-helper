@@ -281,3 +281,99 @@ func TestWorker_GracefulShutdown_WaitsForInFlightRequest(t *testing.T) {
 		t.Error("heartbeats kept arriving after Run returned — the ticker must stop with the pipeline")
 	}
 }
+
+// fakeMetaloopRunner is a scriptable worker.MetaloopRunner: it just counts
+// calls, for tests that assert the cron loop fires and stops with Run.
+type fakeMetaloopRunner struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (f *fakeMetaloopRunner) Run(_ context.Context) (worker.MetaloopSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	return worker.MetaloopSummary{}, nil
+}
+
+func (f *fakeMetaloopRunner) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+func TestWorker_MetaloopRunsOnInterval_AndStopsWithContext(t *testing.T) {
+	fq := &fakeQueueStore{}
+	fp := &fakePipelineRunner{}
+	fm := &fakeMetaloopRunner{}
+
+	w := &worker.Worker{
+		ID:                "w1",
+		Store:             fq,
+		Pipeline:          fp,
+		Metaloop:          fm,
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		ReclaimInterval:   -1,
+		MetaloopInterval:  10 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for fm.callCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if fm.callCount() == 0 {
+		t.Fatal("metaloop never ran on its interval")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+
+	seen := fm.callCount()
+	time.Sleep(30 * time.Millisecond)
+	if fm.callCount() != seen {
+		t.Error("metaloop kept firing after Run returned — the ticker must stop with the worker")
+	}
+}
+
+func TestWorker_MetaloopNil_NoCronGoroutine(t *testing.T) {
+	fq := &fakeQueueStore{}
+	fp := &fakePipelineRunner{}
+
+	w := &worker.Worker{
+		ID:               "w1",
+		Store:            fq,
+		Pipeline:         fp,
+		Concurrency:      1,
+		PollInterval:     5 * time.Millisecond,
+		ReclaimInterval:  -1,
+		MetaloopInterval: 5 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after cancel (nil Metaloop should not start a cron goroutine)")
+	}
+}

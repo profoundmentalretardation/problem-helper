@@ -25,6 +25,7 @@ const (
 	defaultHeartbeatInterval = 10 * time.Second
 	defaultStaleAfter        = time.Minute
 	defaultReclaimInterval   = 30 * time.Second
+	defaultMetaloopInterval  = 24 * time.Hour
 )
 
 // QueueStore is the persistence dependency Worker needs to run the queue:
@@ -43,6 +44,13 @@ type PipelineRunner interface {
 	RunPipeline(ctx context.Context, requestID uuid.UUID) error
 }
 
+// MetaloopRunner runs the nightly curator sweep; *Metaloop satisfies it. A
+// separate interface (rather than depending on *Metaloop directly) keeps
+// Worker's cron tests independent of the curator/store stack.
+type MetaloopRunner interface {
+	Run(ctx context.Context) (MetaloopSummary, error)
+}
+
 // Worker claims and runs help_requests rows until its context is canceled.
 // The zero value is not usable; ID, Store and Pipeline are required, every
 // other field falls back to a package default when zero.
@@ -50,6 +58,10 @@ type Worker struct {
 	ID       string
 	Store    QueueStore
 	Pipeline PipelineRunner
+
+	// Metaloop runs the nightly curator sweep; nil skips it entirely (no
+	// cron goroutine is started).
+	Metaloop MetaloopRunner
 
 	// Concurrency is how many claim loops run at once; defaults to 1.
 	Concurrency int
@@ -65,6 +77,9 @@ type Worker struct {
 	// a negative value disables the periodic sweep entirely (the startup
 	// sweep in Run still happens once either way).
 	ReclaimInterval time.Duration
+	// MetaloopInterval paces the periodic curator sweep; 0 uses the
+	// default (24h), a negative value disables it.
+	MetaloopInterval time.Duration
 
 	// Logger receives non-fatal operational messages (claim/heartbeat/
 	// reclaim errors); defaults to log.Default().
@@ -106,6 +121,14 @@ func (w *Worker) Run(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			w.reclaimLoop(ctx, interval)
+		}()
+	}
+
+	if interval := w.metaloopInterval(); w.Metaloop != nil && interval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w.metaloopLoop(ctx, interval)
 		}()
 	}
 
@@ -216,6 +239,26 @@ func (w *Worker) reclaimLoop(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// metaloopLoop runs the curator sweep on a fixed interval until ctx is
+// canceled.
+func (w *Worker) metaloopLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if summary, err := w.Metaloop.Run(ctx); err != nil {
+				w.logf("metaloop sweep: %v", err)
+			} else {
+				w.logf("metaloop sweep: processed %d user(s), merged %d, created %d, gave up on %d",
+					summary.UsersProcessed, summary.Merged, summary.Created, summary.GaveUp)
+			}
+		}
+	}
+}
+
 // reclaimSweep moves running rows whose heartbeat is older than StaleAfter
 // back to pending.
 func (w *Worker) reclaimSweep(ctx context.Context) ([]uuid.UUID, error) {
@@ -256,6 +299,17 @@ func (w *Worker) reclaimInterval() time.Duration {
 		return defaultReclaimInterval
 	default:
 		return w.ReclaimInterval
+	}
+}
+
+func (w *Worker) metaloopInterval() time.Duration {
+	switch {
+	case w.MetaloopInterval < 0:
+		return 0
+	case w.MetaloopInterval == 0:
+		return defaultMetaloopInterval
+	default:
+		return w.MetaloopInterval
 	}
 }
 

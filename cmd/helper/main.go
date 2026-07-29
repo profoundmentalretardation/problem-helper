@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/profoundmentalretardation/problem-helper/internal/agent/curator"
 	"github.com/profoundmentalretardation/problem-helper/internal/agent/hint"
 	"github.com/profoundmentalretardation/problem-helper/internal/agent/repair"
 	"github.com/profoundmentalretardation/problem-helper/internal/api"
@@ -31,7 +32,7 @@ import (
 
 // requiredPromptNames are the templates the wired agents need; startup
 // fails if any is missing from the loaded prompts directory.
-var requiredPromptNames = []string{"repair", "hint", "guardrail"}
+var requiredPromptNames = []string{"repair", "hint", "guardrail", "curator"}
 
 func main() {
 	agentsPath := flag.String("agents", "agents.yaml", "path to agents.yaml")
@@ -111,14 +112,26 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		},
 	}
 
+	metaloop := &worker.Metaloop{
+		Store: st,
+		Curator: &curator.Runner{
+			Chat:        chat,
+			RawMistakes: st,
+			Mistakes:    st,
+			Template:    templates["curator"],
+			Agent:       cfg.Agents.Curator,
+		},
+	}
+
 	workerID := fmt.Sprintf("%s-%d", hostname(), os.Getpid())
 	w := &worker.Worker{
 		ID:       workerID,
 		Store:    st,
 		Pipeline: pipeline,
+		Metaloop: metaloop,
 	}
 
-	srv := api.NewServer(st, cfg)
+	srv := api.NewServer(st, cfg, metaloop)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 
 	var wg sync.WaitGroup

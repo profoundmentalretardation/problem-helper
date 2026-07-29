@@ -735,6 +735,179 @@ func (s *Store) ListRawMistakes(ctx context.Context, requestID uuid.UUID) ([]Raw
 	return out, nil
 }
 
+// ErrUnknownMistake is returned when an operation references a mistakes id
+// that has no row.
+var ErrUnknownMistake = errors.New("store: unknown mistake")
+
+// ListUnprocessedRawMistakes returns every raw_mistakes row for a user that
+// the curator (Task 16) has not yet folded into mistakes, oldest first —
+// the batch one curator Run call processes together.
+func (s *Store) ListUnprocessedRawMistakes(ctx context.Context, userID string) ([]RawMistake, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, request_id, user_id, text, processed, created_at
+		FROM raw_mistakes WHERE user_id = $1 AND NOT processed ORDER BY created_at, id`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing unprocessed raw mistakes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []RawMistake
+	for rows.Next() {
+		var m RawMistake
+		if err := rows.Scan(&m.ID, &m.RequestID, &m.UserID, &m.Text, &m.Processed, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("store: scanning unprocessed raw mistake: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating unprocessed raw mistakes: %w", err)
+	}
+	return out, nil
+}
+
+// MarkRawMistakesProcessed marks every raw_mistakes row in ids as
+// processed=true — called once the curator's finish tool ends a user's
+// batch, so those rows are never resent on a later sweep.
+func (s *Store) MarkRawMistakesProcessed(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE raw_mistakes SET processed = TRUE WHERE id = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("store: marking raw mistakes processed: %w", err)
+	}
+	return nil
+}
+
+// ListUsersWithUnprocessedMistakes returns every distinct user_id with at
+// least one unprocessed raw_mistakes row — the nightly metaloop's worklist.
+func (s *Store) ListUsersWithUnprocessedMistakes(ctx context.Context) ([]string, error) {
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT user_id FROM raw_mistakes WHERE NOT processed ORDER BY user_id`)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing users with unprocessed mistakes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("store: scanning user id: %w", err)
+		}
+		out = append(out, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating users with unprocessed mistakes: %w", err)
+	}
+	return out, nil
+}
+
+// Mistake is one mistakes row: a curated, per-user, per-habit tally the
+// curator (Task 16) folds raw_mistakes into. Top-N by Count desc, LastSeen
+// desc feeds the repair agent's prompt (Task 8).
+type Mistake struct {
+	ID          uuid.UUID
+	UserID      string
+	Title       string
+	Description string
+	Count       int
+	FirstSeen   time.Time
+	LastSeen    time.Time
+}
+
+// CreateMistake inserts a new mistakes row with count=1 — the curator's
+// create_mistake tool, called for a genuinely new habit.
+//
+// first_seen/last_seen are set explicitly from clock_timestamp() rather
+// than left to the column default (now()): now() is frozen to transaction
+// start, so within one multi-statement test transaction every default
+// would read identically and the top-N "count desc, last_seen desc"
+// ordering (and MergeMistake's bump, below) could never be observed to
+// move forward. clock_timestamp() advances on every call, transaction or
+// not, matching what "last_seen" needs to mean.
+func (s *Store) CreateMistake(ctx context.Context, m Mistake) error {
+	id := m.ID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO mistakes (id, user_id, title, description, first_seen, last_seen)
+		VALUES ($1, $2, $3, $4, clock_timestamp(), clock_timestamp())`,
+		id, m.UserID, m.Title, m.Description,
+	)
+	if err != nil {
+		return fmt.Errorf("store: creating mistake: %w", err)
+	}
+	return nil
+}
+
+// MergeMistake increments an existing mistakes row's count and bumps
+// last_seen to the current time — the curator's merge_into tool, called
+// when a raw mistake is judged the same underlying habit as one already on
+// file. See CreateMistake for why this uses clock_timestamp(), not now().
+func (s *Store) MergeMistake(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.db.Exec(ctx, `UPDATE mistakes SET count = count + 1, last_seen = clock_timestamp() WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("store: merging mistake: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownMistake, id)
+	}
+	return nil
+}
+
+// ListMistakes returns every mistakes row for a user, most recently seen
+// first — the curator's "already remembered" context.
+func (s *Store) ListMistakes(ctx context.Context, userID string) ([]Mistake, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, user_id, title, description, count, first_seen, last_seen
+		FROM mistakes WHERE user_id = $1 ORDER BY last_seen DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing mistakes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Mistake
+	for rows.Next() {
+		var m Mistake
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Title, &m.Description, &m.Count, &m.FirstSeen, &m.LastSeen); err != nil {
+			return nil, fmt.Errorf("store: scanning mistake: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating mistakes: %w", err)
+	}
+	return out, nil
+}
+
+// TopMistakes returns a user's mistakes ordered by count desc, then
+// last_seen desc, limited to limit rows — what the repair prompt (Task 8)
+// consumes as "this student's top-N recurring mistakes".
+func (s *Store) TopMistakes(ctx context.Context, userID string, limit int) ([]Mistake, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, user_id, title, description, count, first_seen, last_seen
+		FROM mistakes WHERE user_id = $1
+		ORDER BY count DESC, last_seen DESC
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing top mistakes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Mistake
+	for rows.Next() {
+		var m Mistake
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Title, &m.Description, &m.Count, &m.FirstSeen, &m.LastSeen); err != nil {
+			return nil, fmt.Errorf("store: scanning top mistake: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating top mistakes: %w", err)
+	}
+	return out, nil
+}
+
 // Hint is one hints row. The cache is deliberately cross-user: (ProblemID,
 // CodeHash) identifies a defect, not a student, so an approved hint can be
 // re-delivered to any request that hashes to the same post-shield code.

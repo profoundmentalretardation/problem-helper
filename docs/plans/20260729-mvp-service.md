@@ -587,16 +587,16 @@ package doc for full detail):
 - Create: `internal/agent/curator/curator.go`, `internal/agent/curator/curator_test.go`
 - Modify: `internal/worker/worker.go` (cron), `internal/api/api.go` (admin trigger)
 
-- [ ] write failing tests (scripted LLM): unprocessed raw_mistakes + the user's existing
+- [x] write failing tests (scripted LLM): unprocessed raw_mistakes + the user's existing
       mistakes go to the agent; `merge_into(mistake_id)` increments count and updates
       last_seen; `create_mistake` inserts; `finish` marks raw rows processed
-- [ ] write both-directions tests: near-duplicate must merge, genuinely new must create;
+- [x] write both-directions tests: near-duplicate must merge, genuinely new must create;
       agent returning garbage → nothing written, rows stay unprocessed (retried next night)
-- [ ] write top-N query test: ordered by count desc then last_seen desc, limit
+- [x] write top-N query test: ordered by count desc then last_seen desc, limit
       `top_n_mistakes` — this is what Task 8's prompt consumes
-- [ ] implement curator with the three tools, nightly in-service cron,
+- [x] implement curator with the three tools, nightly in-service cron,
       `POST /admin/metaloop/run` manual trigger (ADMIN_TOKEN)
-- [ ] run tests + lint - must pass before task 17
+- [x] run tests + lint - must pass before task 17
 
 ### Task 17: Analytics queries + admin endpoints
 
