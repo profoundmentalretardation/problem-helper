@@ -284,6 +284,9 @@ func TestCanonical_PlatformReportedNames(t *testing.T) {
 		{"clang++", shield.LangCPP},
 		{"java", shield.LangJava},
 		{"java8", shield.LangJava},
+		// ejudge's Java short_name is the compiler, "javac" — the same
+		// compiler-not-language naming that makes g++ mean C++.
+		{"javac", shield.LangJava},
 		{"go", shield.LangGo},
 		{"golang", shield.LangGo},
 		{"python", shield.LangPython},

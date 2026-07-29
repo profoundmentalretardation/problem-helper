@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -308,6 +309,67 @@ func TestRun_RegressionIsNotSuccess_ThenFixedOnRetry(t *testing.T) {
 	sysMsg := calls[1].Messages[0]
 	if sysMsg.Role != "system" || !strings.Contains(sysMsg.Content, "attempt A") {
 		t.Errorf("second attempt's system prompt = %q, want it to reference attempt A's code", sysMsg.Content)
+	}
+}
+
+// A judge refusing byte-identical code is the model repeating itself, not
+// our infrastructure breaking. It must burn the retry and let the loop end
+// as no_fix, never bubble out as a Go error — which the pipeline would turn
+// into status=failed, reporting an internal error to a caller whose request
+// was processed exactly as designed.
+func TestRun_DuplicateSubmissionBurnsRetryInsteadOfFailingTheRun(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+
+	// attempt 1: the judge rejects the code as a duplicate.
+	plat.ScriptSubmitError("problem-1", fmt.Errorf("judge: %w", platform.ErrDuplicateSubmission))
+	// attempt 2: genuinely fixed.
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-2", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"same as before","mistakes":[]}`},
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"actually different","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v (a duplicate submission must not fail the whole run)", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if got.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2 (the duplicate must consume a retry)", got.Attempts)
+	}
+	if got.Code != "actually different" {
+		t.Errorf("code = %q, want %q", got.Code, "actually different")
+	}
+}
+
+// The counterpart: a real platform outage must still fail the run rather
+// than being swallowed as just another failed attempt.
+func TestRun_NonDuplicateSubmitErrorStillFailsTheRun(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitError("problem-1", errors.New("judge: connection refused"))
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"whatever","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	if _, err := runner.Run(context.Background(), p); err == nil {
+		t.Fatal("expected a platform outage to fail the run")
 	}
 }
 

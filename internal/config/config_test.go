@@ -153,6 +153,50 @@ formatter: {enabled: false, command: ""}
 	}
 }
 
+// Both defaults fail open when zero — an omitted n_submissions removes the
+// cap on how many submissions a request scrapes, and an omitted
+// daily_requests_per_user makes the rate limiter 429 every request — so a
+// missing or mistyped key has to fail at startup, not at first traffic.
+func TestParseAgents_DefaultsMustBePositive(t *testing.T) {
+	for _, tt := range []struct{ name, defaults string }{
+		{"n_submissions missing", "{daily_requests_per_user: 20}"},
+		{"n_submissions zero", "{n_submissions: 0, daily_requests_per_user: 20}"},
+		{"n_submissions negative", "{n_submissions: -1, daily_requests_per_user: 20}"},
+		{"daily_requests_per_user missing", "{n_submissions: 25}"},
+		{"daily_requests_per_user zero", "{n_submissions: 25, daily_requests_per_user: 0}"},
+		{"daily_requests_per_user negative", "{n_submissions: 25, daily_requests_per_user: -5}"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := replaceYAMLDefaults(t, validAgentsYAML, tt.defaults)
+			if _, err := ParseAgents([]byte(doc)); err == nil {
+				t.Fatalf("expected error for defaults %s", tt.defaults)
+			}
+		})
+	}
+}
+
+// The valid document must still parse — a both-directions check, so the
+// validation above can't pass by rejecting everything.
+func TestParseAgents_ValidDefaultsAccepted(t *testing.T) {
+	doc := replaceYAMLDefaults(t, validAgentsYAML, "{n_submissions: 25, daily_requests_per_user: 20}")
+	cfg, err := ParseAgents([]byte(doc))
+	if err != nil {
+		t.Fatalf("ParseAgents: %v", err)
+	}
+	if cfg.Defaults.NSubmissions != 25 || cfg.Defaults.DailyRequestsPerUser != 20 {
+		t.Errorf("Defaults = %+v, want {25 20}", cfg.Defaults)
+	}
+}
+
+// replaceYAMLDefaults swaps the document's whole defaults block for an
+// inline mapping, so a test can express "this key is absent" as well as
+// "this key holds a bad value".
+func replaceYAMLDefaults(t *testing.T, doc, inline string) string {
+	t.Helper()
+	stripped := removeYAMLTopLevelKey(t, doc, "defaults")
+	return "defaults: " + inline + "\n" + stripped
+}
+
 func TestParseAgents_UnknownAgentKeyRejected(t *testing.T) {
 	doc := validAgentsYAML + "\nunknown_agent:\n  model: \"x\"\n"
 	_, err := ParseAgents([]byte(doc))

@@ -282,7 +282,8 @@ func transitionSources(to Status) []string {
 func (s *Store) ClaimNext(ctx context.Context, workerID string) (*HelpRequest, error) {
 	row := s.db.QueryRow(ctx, `
 		UPDATE help_requests
-		SET status = $1, claimed_by = $2, heartbeat_at = now(), updated_at = now()
+		SET status = $1, claimed_by = $2, heartbeat_at = now(), updated_at = now(),
+		    claim_attempts = claim_attempts + 1
 		WHERE id = (
 			SELECT id FROM help_requests
 			WHERE status = $3
@@ -311,31 +312,62 @@ func (s *Store) ClaimNext(ctx context.Context, workerID string) (*HelpRequest, e
 	return &hr, nil
 }
 
-// Heartbeat refreshes heartbeat_at for a request its claimant is still
-// actively working. A no-op (not an error) if the row is no longer running
-// — e.g. it finished between the last tick and this one.
-func (s *Store) Heartbeat(ctx context.Context, id uuid.UUID) error {
-	if _, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET heartbeat_at = now() WHERE id = $1 AND status = $2`,
-		id, StatusRunning,
-	); err != nil {
-		return fmt.Errorf("store: updating heartbeat: %w", err)
+// Heartbeat refreshes heartbeat_at for a request workerID is still actively
+// working, reporting whether the row was actually refreshed. False (not an
+// error) means this worker no longer owns the row: it either finished
+// between the last tick and this one, or went stale and was reclaimed by
+// another worker.
+//
+// The claimed_by predicate is what makes that distinguishable. Without it a
+// worker whose heartbeats lapsed long enough to be reclaimed would keep
+// refreshing a row another worker now owns — both would run the same
+// pipeline to completion, double-submitting to the judge under the system
+// account and double-spending the model budget, with only the final status
+// transition detecting the race.
+func (s *Store) Heartbeat(ctx context.Context, id uuid.UUID, workerID string) (bool, error) {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET heartbeat_at = now()
+		 WHERE id = $1 AND status = $2 AND claimed_by = $3`,
+		id, StatusRunning, workerID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("store: updating heartbeat: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
+
+// maxClaimAttempts bounds how many times one request may be claimed before
+// the queue gives up on it. Without a bound, a request that crashes the
+// pipeline deterministically (a panic, a store error, a corrupt checkpoint)
+// never reaches a terminal status, so every sweep hands it back out — and
+// since the repair and hint loops are not resume-guarded, each cycle
+// re-spends both model budgets and re-submits to the judge, forever.
+const maxClaimAttempts = 5
 
 // ReclaimStale moves running rows whose heartbeat is older than before back
 // to pending, clearing claimed_by/heartbeat_at so another worker can claim
 // them. resume_step is deliberately left untouched, so the row resumes at
-// its last completed pipeline step instead of restarting. Returns the
-// reclaimed request ids.
+// its last completed pipeline step instead of restarting. Rows already
+// claimed maxClaimAttempts times are moved to failed instead of pending.
+// Returns the reclaimed (not the abandoned) request ids.
 func (s *Store) ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID, error) {
+	if _, err := s.db.Exec(ctx, `
+		UPDATE help_requests
+		SET status = $1, claimed_by = NULL, heartbeat_at = NULL, updated_at = now(),
+		    error = COALESCE(error || '; ', '') ||
+		            'worker: abandoned after ' || claim_attempts || ' claim attempts without a terminal status'
+		WHERE status = $2 AND heartbeat_at < $3 AND claim_attempts >= $4`,
+		StatusFailed, StatusRunning, before, maxClaimAttempts,
+	); err != nil {
+		return nil, fmt.Errorf("store: abandoning exhausted requests: %w", err)
+	}
+
 	rows, err := s.db.Query(ctx, `
 		UPDATE help_requests
 		SET status = $1, claimed_by = NULL, heartbeat_at = NULL, updated_at = now()
-		WHERE status = $2 AND heartbeat_at < $3
+		WHERE status = $2 AND heartbeat_at < $3 AND claim_attempts < $4
 		RETURNING id`,
-		StatusPending, StatusRunning, before,
+		StatusPending, StatusRunning, before, maxClaimAttempts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: reclaiming stale requests: %w", err)

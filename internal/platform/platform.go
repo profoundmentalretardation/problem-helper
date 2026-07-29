@@ -7,8 +7,17 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrDuplicateSubmission is the backend-independent signal that a judge
+// refused a submission because identical code was already submitted. It is
+// a normal outcome of the repair loop proposing code it (or the student)
+// already tried, not an infrastructure failure — callers must treat it as a
+// failed verification attempt rather than failing the whole request.
+// Backends wrap their own sentinel around this one.
+var ErrDuplicateSubmission = errors.New("platform: duplicate submission")
 
 // Statement is a problem's statement, as pulled from the platform.
 type Statement struct {

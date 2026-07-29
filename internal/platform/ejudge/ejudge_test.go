@@ -263,6 +263,98 @@ func TestSubmissions_IncludesCodeLanguageAndTestCounts(t *testing.T) {
 	}
 }
 
+// ejudge names languages after the compiler, so the short names on a real
+// C++ course are "g++"/"clang++" — characters a \w-based row regex cannot
+// match. A row that fails to match is not an error, it is silently absent,
+// which turned every C++ student into "no submissions" and made every
+// solved C++ problem look unsolved.
+func TestSubmissions_ParsesCompilerStyleLanguageNames(t *testing.T) {
+	srv := newCPPFixtureServer(t)
+	c := newClient(t, srv)
+
+	got, err := c.Submissions(context.Background(), "ejudge", "1", 2)
+	if err != nil {
+		t.Fatalf("Submissions: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(Submissions) = %d, want 2 — a g++ row must not be dropped", len(got))
+	}
+	for _, s := range got {
+		if s.Language != "g++" {
+			t.Errorf("Language = %q, want %q", s.Language, "g++")
+		}
+	}
+}
+
+func TestProblemStatus_SolvedWithCompilerStyleLanguageNames(t *testing.T) {
+	srv := newCPPFixtureServer(t)
+	c := newClient(t, srv)
+
+	got, err := c.ProblemStatus(context.Background(), "ejudge", "1")
+	if err != nil {
+		t.Fatalf("ProblemStatus: %v", err)
+	}
+	if !got.Solved {
+		t.Error("Solved = false, want true — the OK run is a g++ submission")
+	}
+}
+
+// newCPPFixtureServer is the standard fixture server with the submissions
+// list swapped for one whose language column holds "g++".
+func newCPPFixtureServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	base := newFixtureServer(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Get("action") == "2" &&
+			strings.Contains(r.URL.Query().Get("filter_expr"), `prob=="A"`) {
+			serveFixture(w, fixture(t, "submissions_master_filtered_cpp.html"))
+			return
+		}
+		proxyTo(t, base, w, r)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { proxyTo(t, base, w, r) })
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// proxyTo forwards r to the base fixture server and copies the response
+// back, so an override server only has to special-case the one route it
+// cares about.
+func proxyTo(t *testing.T, base *httptest.Server, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	var body io.Reader
+	if r.Body != nil {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "reading body", http.StatusInternalServerError)
+			return
+		}
+		body = strings.NewReader(string(raw))
+	}
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, base.URL+r.URL.RequestURI(), body)
+	if err != nil {
+		http.Error(w, "building proxy request", http.StatusInternalServerError)
+		return
+	}
+	req.Header = r.Header.Clone()
+	resp, err := base.Client().Do(req)
+	if err != nil {
+		http.Error(w, "proxying", http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
 // --- SubmitAsSystem -------------------------------------------------------
 
 func TestSubmitAsSystem_ReturnsNewRunID(t *testing.T) {
@@ -517,6 +609,59 @@ func TestRunResult_MalformedResponse(t *testing.T) {
 	_, err := c.RunResult(context.Background(), "5")
 	if !errors.Is(err, ejudge.ErrMalformedResponse) {
 		t.Errorf("err = %v, want ErrMalformedResponse", err)
+	}
+}
+
+// ejudge renders its error pages in exactly the <h2><font color="red">
+// shape a real verdict uses. Reading one back as a judged failing run makes
+// a transient platform outage look like "the student's fix didn't work" —
+// the repair loop burns a retry and the request lands in no_fix instead of
+// failed, which is precisely the distinction the pipeline exists to keep.
+func TestRunResult_ErrorPageIsNotAVerdict(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "run_report_server_error.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := ejudge.New(srv.URL, "ejudge", "ejudge")
+	got, err := c.RunResult(context.Background(), "5")
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Fatalf("err = %v, want ErrMalformedResponse (got result %+v)", err, got)
+	}
+}
+
+// The declared "size N" counts raw bytes, but the page carries the content
+// HTML-escaped, where '<' takes 4 bytes and '&' takes 5. Slicing the
+// escaped text by the raw size truncates — usually mid-entity — and hands
+// the repair model corrupted test data for exactly the test it is
+// diagnosing.
+func TestTestResult_TestDataContainingHTMLSpecialCharacters(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "run_report_wa_escaped.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := ejudge.New(srv.URL, "ejudge", "ejudge")
+	got, err := c.TestResult(context.Background(), "6", 1)
+	if err != nil {
+		t.Fatalf("TestResult: %v", err)
+	}
+	if want := "a<b&c\n"; got.Input != want {
+		t.Errorf("Input = %q, want %q", got.Input, want)
 	}
 }
 

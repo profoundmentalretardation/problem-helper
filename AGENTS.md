@@ -109,7 +109,11 @@ research/              frozen Python prototypes (reference only, see research/RE
   `internal/config/config.go`, compared on the id's *last* path segment up to its first `-`, so a
   routing prefix can't disguise one model as two): the different-family rule under Conventions is
   enforced at startup, not merely documented. `internal/config/config_test.go` also parses the
-  real checked-in `agents.yaml`, so a bad edit to that file fails `go test ./...` directly.
+  real checked-in `agents.yaml`, so a bad edit to that file fails `go test ./...` directly. The
+  `defaults` block is validated for the same reason its agents are: both its fields fail *open*
+  when zero — `n_submissions: 0` removes the cap on how many submissions a request scrapes, and
+  `daily_requests_per_user: 0` makes the rate limiter 429 every request — so a missing or
+  mistyped key has to fail at startup, not at first traffic.
 - **Cost caps are checked at two different points on purpose** (`max_cost_per_loop` before each
   attempt starts, `max_cost_per_retry` against *one attempt's* spend, not the loop's running
   total) because a call's cost is only known after it returns — both caps can overshoot by at
@@ -123,13 +127,55 @@ research/              frozen Python prototypes (reference only, see research/RE
   one call per raw mistake in the batch *plus* `max_retries`, because each raw mistake may need
   its own `merge_into`/`create_mistake` before `finish`. Sizing it from `max_retries` alone made
   any batch larger than the cap permanently unprocessable — `finish` is never reached, so the
-  batch is never marked processed and every later sweep re-sends an ever-growing batch.
+  batch is never marked processed and every later sweep re-sends an ever-growing batch. Because
+  that budget scales with the batch, and the whole batch is inlined into every call's system
+  prompt, `curator.maxBatchSize` bounds the batch itself; the overflow is oldest-first and
+  `finish` only marks the ids in the slice, so it is simply picked up next sweep. The curator
+  enforces `max_cost_per_loop` at the same point `repair` does — before each call.
+- **Queue ownership is enforced in SQL, not assumed**: `Heartbeat` takes the worker id and
+  matches on `claimed_by`, returning whether a row was actually refreshed. Without that
+  predicate a worker whose heartbeats lapsed long enough to be reclaimed keeps the new
+  claimant's row looking alive while still running the same pipeline — two workers submitting
+  to the judge as the system user and spending the model budget twice, with only the final
+  `TransitionStatus` detecting it, long after the side effects. A `false` return makes
+  `heartbeatUntil` confirm via `GetHelpRequest` (a terminal row is the normal case) and cancel
+  the run only on a genuine loss.
+- **The reclaim loop is bounded by `help_requests.claim_attempts`** (`store.maxClaimAttempts`,
+  incremented by `ClaimNext`): a request whose pipeline errors or panics deterministically
+  never reaches a terminal status, so every sweep would hand it out again — and since steps 7-8
+  are not resume-guarded, each cycle re-spends both model budgets and re-submits to the judge.
+  Past the cap `ReclaimStale` moves the row to `failed` with the reason in `error` instead of
+  back to `pending`.
 - **Platforms name languages after the compiler, not the language**: ejudge reports its language
   `short_name` (`g++`, `gcc`, `python3`, `java8`), so `Submission.Language` almost never equals a
   `shield.Lang*` constant. `shield.Canonical` (`languageAliases` in `internal/shield/shield.go`)
   is the single mapping point — adding a platform or judge language means extending that table,
   not touching the strippers. The platform's original string is preserved for callers that need
-  it back (`SubmitAsSystem` wants the `short_name`).
+  it back (`SubmitAsSystem` wants the `short_name`). The same naming bites the *HTML parsers*:
+  a short name is not a `\w+` token (`g++`, `clang++`, `fbc-32`), and a row regex that assumes
+  it is doesn't error — the row simply fails to match and vanishes from the list, which turned
+  every C++ student into `no_submissions`. Column captures in
+  `internal/platform/ejudge/ejudge.go` use `[^<]+` and trim, and
+  `submissions_master_filtered_cpp.html` is the fixture that keeps it honest.
+- **ejudge renders its error pages in the same shape as a run verdict**
+  (`<h2><font color="red">…`), so parsing a verdict out of one reports a transient master
+  outage as a legitimately judged failing run — the repair loop burns a retry and the request
+  lands in `no_fix` instead of `failed`, collapsing exactly the distinction the pipeline exists
+  to keep. `isErrorPage` gates `parseReportVerdict` and `fetchTestCounts`; add new report
+  parsers behind it too.
+- **Per-test data is sliced by the declared size *after* unescaping, not before**
+  (`readSizedField`): ejudge's `--- Input: size N ---` counts raw bytes while the page carries
+  the content HTML-escaped, so `<` occupies 4 bytes and `&` 5 — slicing the escaped text by the
+  raw size truncates mid-entity and hands the repair model corrupted test data for the very
+  test it is diagnosing.
+- **"The judge said no" is not "our infrastructure broke"**: `platform.ErrDuplicateSubmission`
+  is the backend-independent sentinel (ejudge's own error wraps it) for a judge refusing
+  byte-identical code under `ignore_duplicated_runs`. That is the repair model repeating
+  itself — a normal outcome — so the loop burns the retry and terminates as `no_fix`; letting
+  it bubble out would put the request in `status=failed`, report an internal error to a caller
+  whose request was processed exactly as designed, and pollute the failed/no_fix analytics
+  split. Any new platform error that a model can *provoke* belongs on the same side of that
+  line.
 - **Repair verification requires the judge's own accept verdict, not just the baseline tests**
   (`success` in `internal/agent/repair/repair.go` checks `RunResult.Passed` *and* the per-test
   comparison). This course's ejudge runs `acm` scoring, which halts at the first failure, so a

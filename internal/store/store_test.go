@@ -986,8 +986,12 @@ func TestHeartbeat_UpdatesRunningRow(t *testing.T) {
 		t.Fatalf("claim next: %v", err)
 	}
 
-	if err := s.Heartbeat(ctx, id); err != nil {
+	ok, err := s.Heartbeat(ctx, id, "worker-1")
+	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
+	}
+	if !ok {
+		t.Error("heartbeat reported the row as not ours, want refreshed")
 	}
 
 	got, err := s.GetHelpRequest(ctx, id)
@@ -1007,8 +1011,12 @@ func TestHeartbeat_NoopWhenNotRunning(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx) // still pending, never claimed
 
-	if err := s.Heartbeat(ctx, id); err != nil {
+	ok, err := s.Heartbeat(ctx, id, "worker-1")
+	if err != nil {
 		t.Fatalf("heartbeat on a non-running row should be a silent no-op, got: %v", err)
+	}
+	if ok {
+		t.Error("heartbeat reported a refresh on a row that was never claimed")
 	}
 
 	got, err := s.GetHelpRequest(ctx, id)
@@ -1018,6 +1026,74 @@ func TestHeartbeat_NoopWhenNotRunning(t *testing.T) {
 	if got.HeartbeatAt != nil {
 		t.Errorf("heartbeat_at = %v, want nil (heartbeat must not touch a non-running row)", got.HeartbeatAt)
 	}
+}
+
+// A worker whose heartbeats lapsed long enough to be reclaimed must not be
+// able to keep refreshing the row the new claimant now owns — otherwise
+// both run the same pipeline to completion, double-submitting to the judge
+// under the system account and double-spending the model budget.
+func TestHeartbeat_RejectedAfterAnotherWorkerReclaims(t *testing.T) {
+	lockQueueTable(t)
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+	if _, err := s.ReclaimStale(ctx, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("reclaim stale: %v", err)
+	}
+	if _, err := s.ClaimNext(ctx, "worker-2"); err != nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+
+	ok, err := s.Heartbeat(ctx, id, "worker-1")
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if ok {
+		t.Error("the old claimant's heartbeat was accepted; it must not keep worker-2's row alive")
+	}
+
+	// The new claimant's heartbeat still works — a both-directions check.
+	ok, err = s.Heartbeat(ctx, id, "worker-2")
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if !ok {
+		t.Error("the current claimant's heartbeat was rejected")
+	}
+}
+
+// A request that never reaches a terminal status (a panic, a store error, a
+// corrupt checkpoint) would otherwise be reclaimed forever, re-spending the
+// repair and hint budgets and re-submitting to the judge on every cycle.
+func TestReclaimStale_AbandonsRequestAfterTooManyClaims(t *testing.T) {
+	lockQueueTable(t)
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	stale := time.Now().Add(time.Hour)
+	// Each cycle claims the row and then finds it stale again, exactly as a
+	// request that keeps crashing the pipeline would.
+	for i := 0; i < 20; i++ {
+		if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+			t.Fatalf("claim next (cycle %d): %v", i, err)
+		}
+		if _, err := s.ReclaimStale(ctx, stale); err != nil {
+			t.Fatalf("reclaim stale (cycle %d): %v", i, err)
+		}
+		got, err := s.GetHelpRequest(ctx, id)
+		if err != nil {
+			t.Fatalf("get help request: %v", err)
+		}
+		if got.Status == store.StatusFailed {
+			if got.Error == nil || *got.Error == "" {
+				t.Error("abandoned request has no error recorded for the operator")
+			}
+			return
+		}
+	}
+	t.Fatal("request was reclaimed 20 times without ever being abandoned")
 }
 
 func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testing.T) {

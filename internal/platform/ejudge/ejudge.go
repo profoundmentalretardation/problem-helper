@@ -74,8 +74,10 @@ var (
 
 	// ErrDuplicateSubmission is returned when ejudge refuses a submission
 	// because its content is byte-identical to an existing run
-	// (ignore_duplicated_runs in this course's serve.cfg).
-	ErrDuplicateSubmission = errors.New("ejudge: duplicate submission")
+	// (ignore_duplicated_runs in this course's serve.cfg). It wraps
+	// platform.ErrDuplicateSubmission so backend-agnostic callers (the
+	// repair loop) can recognise it without importing this package.
+	ErrDuplicateSubmission = fmt.Errorf("ejudge: %w", platform.ErrDuplicateSubmission)
 
 	// ErrUnknownLanguage is returned when SubmitAsSystem is asked to
 	// submit in a language short name the contest's problem page doesn't
@@ -672,8 +674,12 @@ type masterSubmissionRow struct {
 var masterRowRe = regexp.MustCompile(`(?s)<tr><td class="b1">(\d+)</td>` +
 	`<td class="b1">[^<]*</td>` + // Time (elapsed, not absolute — not used)
 	`<td class="b1">[^<]*</td>` + // User name
-	`<td class="b1">(\w+)</td>` + // Problem short name
-	`<td class="b1">(\w+)</td>` + // Language short name
+	`<td class="b1">([^<]+)</td>` + // Problem short name
+	// Language short name. Must not be `\w+`: ejudge names languages after
+	// the compiler, so the real values include `g++`, `clang++`, `fbc-32`
+	// and `make-vg` — a `\w+` here fails the whole row alternation and
+	// silently drops every C++ submission from the list.
+	`<td class="b1">([^<]+)</td>` +
 	`<td class="b1"><a[^>]*>([^<]+)</a>.*?</td>` + // Result text
 	`<td class="b1">([^<]+)</td>`) // Failed test
 
@@ -702,7 +708,7 @@ func (c *Client) resolveProblemShortName(ctx context.Context, problemID string) 
 	return name, nil
 }
 
-var problemStatsRowRe = regexp.MustCompile(`(?s)<td class="b1">(\d+)</td>\s*<td class="b1">(\w+)</td>\s*<td class="b1">[^<]*</td>`)
+var problemStatsRowRe = regexp.MustCompile(`(?s)<td class="b1">(\d+)</td>\s*<td class="b1">([^<]+)</td>\s*<td class="b1">[^<]*</td>`)
 
 func parseProblemStats(body string) map[string]string {
 	out := map[string]string{}
@@ -742,9 +748,9 @@ func (c *Client) listMasterSubmissions(ctx context.Context, userID, problemID st
 	for _, m := range masterRowRe.FindAllStringSubmatch(body[i:], -1) {
 		rows = append(rows, masterSubmissionRow{
 			runID:    m[1],
-			language: m[3],
-			result:   m[4],
-			failed:   m[5],
+			language: strings.TrimSpace(m[3]),
+			result:   strings.TrimSpace(m[4]),
+			failed:   strings.TrimSpace(m[5]),
 		})
 	}
 	return rows, nil
@@ -810,6 +816,12 @@ func (c *Client) fetchTestCounts(ctx context.Context, runID string) (passed, tot
 	if strings.Contains(body, "Report is not available") {
 		return 0, 0, nil
 	}
+	// An error page has no test rows, so counting it would yield (0,0) —
+	// indistinguishable from a compile error, which makes pick.Best discard
+	// a perfectly good submission. Surface it instead.
+	if isErrorPage(body) {
+		return 0, 0, fmt.Errorf("ejudge: run %s report: %w", runID, ErrMalformedResponse)
+	}
 	passed, total = countReportTests(body)
 	return passed, total, nil
 }
@@ -819,7 +831,22 @@ var (
 	reportRowRe     = regexp.MustCompile(`<tr><td class="b1">(\d+)</td><td class="b1"><font color="(?:red|green)">([^<]+)</font></td>`)
 )
 
+// isErrorPage reports whether body is one of ejudge's error pages rather
+// than a run report. Those pages render their message in exactly the same
+// <h2><font color="red"> shape as a real verdict, so without this check a
+// transient master error or a lost session reads back as a legitimately
+// judged failing run — and the repair loop burns a retry on it instead of
+// the request surfacing as infrastructure failure.
+func isErrorPage(body string) bool {
+	return strings.Contains(body, "Operation completed with errors") ||
+		strings.Contains(body, "<h2><font color=\"red\">Error:") ||
+		strings.Contains(body, "<h2><font color=\"red\">Permission denied</font></h2>")
+}
+
 func parseReportVerdict(body string) (string, error) {
+	if isErrorPage(body) {
+		return "", fmt.Errorf("ejudge: run report: %w", ErrMalformedResponse)
+	}
 	m := reportVerdictRe.FindStringSubmatch(body)
 	if m == nil {
 		return "", fmt.Errorf("ejudge: run report: %w", ErrMalformedResponse)
@@ -876,7 +903,14 @@ func reportTestDetail(body string, testID int) (input, output, correct string, o
 var sizedFieldRe = regexp.MustCompile(`--- (\w+): size (\d+) ---</u>\n?`)
 
 // readSizedField finds "--- label: size N ---</u>" in section and returns
-// the following N raw (still HTML-escaped) bytes, decoded.
+// the field's N bytes of content.
+//
+// The declared size is a byte count of the *raw* file, but the page carries
+// it HTML-escaped, where a single '<' occupies 4 bytes and '&' 5. Slicing
+// the escaped text by the raw size therefore stops short — often mid-entity
+// — on any test data containing those characters, which is exactly the
+// input the repair model reasons about. So unescape first, then take size
+// bytes.
 func readSizedField(section, label string) (string, bool) {
 	for _, m := range sizedFieldRe.FindAllStringSubmatchIndex(section, -1) {
 		name := section[m[2]:m[3]]
@@ -887,11 +921,11 @@ func readSizedField(section, label string) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		start := m[1]
-		if start+size > len(section) {
-			size = len(section) - start
+		decoded := html.UnescapeString(section[m[1]:])
+		if size > len(decoded) {
+			size = len(decoded)
 		}
-		return html.UnescapeString(section[start : start+size]), true
+		return decoded[:size], true
 	}
 	return "", false
 }

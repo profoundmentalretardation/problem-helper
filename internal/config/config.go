@@ -159,6 +159,20 @@ func ParseAgents(data []byte) (AgentsConfig, error) {
 	if raw.Defaults == nil {
 		return AgentsConfig{}, fmt.Errorf("config: agents.yaml: %q block is required", "defaults")
 	}
+	// Both defaults fail *open* when zero, so an omitted or mistyped key is
+	// far worse than a loud startup error: n_submissions == 0 skips the
+	// truncation in every platform backend (the unbounded scrape maxNSubmissions
+	// exists to prevent), and daily_requests_per_user == 0 makes the rate
+	// limiter reject every single POST /help.
+	if raw.Defaults.NSubmissions <= 0 {
+		return AgentsConfig{}, fmt.Errorf(
+			"config: agents.yaml: defaults.%s must be positive, got %d", "n_submissions", raw.Defaults.NSubmissions)
+	}
+	if raw.Defaults.DailyRequestsPerUser <= 0 {
+		return AgentsConfig{}, fmt.Errorf(
+			"config: agents.yaml: defaults.%s must be positive, got %d",
+			"daily_requests_per_user", raw.Defaults.DailyRequestsPerUser)
+	}
 
 	agents := map[string]*AgentConfig{
 		"repair":    raw.Repair,

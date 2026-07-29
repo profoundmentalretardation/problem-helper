@@ -56,6 +56,11 @@ type fakeQueueStore struct {
 	mu         sync.Mutex
 	pending    []*store.HelpRequest
 	heartbeats []uuid.UUID
+
+	// claimed tracks who the fake believes owns each row, so a test can
+	// simulate a reclaim taking the claim away mid-run. Empty means every
+	// heartbeat is accepted.
+	claimed map[uuid.UUID]*store.HelpRequest
 }
 
 func (f *fakeQueueStore) ClaimNext(_ context.Context, _ string) (*store.HelpRequest, error) {
@@ -69,11 +74,24 @@ func (f *fakeQueueStore) ClaimNext(_ context.Context, _ string) (*store.HelpRequ
 	return hr, nil
 }
 
-func (f *fakeQueueStore) Heartbeat(_ context.Context, id uuid.UUID) error {
+func (f *fakeQueueStore) Heartbeat(_ context.Context, id uuid.UUID, workerID string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.heartbeats = append(f.heartbeats, id)
-	return nil
+	if f.claimed == nil {
+		return true, nil
+	}
+	hr, ok := f.claimed[id]
+	if !ok || hr.ClaimedBy == nil || *hr.ClaimedBy != workerID {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (f *fakeQueueStore) GetHelpRequest(_ context.Context, id uuid.UUID) (*store.HelpRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claimed[id], nil
 }
 
 func (f *fakeQueueStore) heartbeatCount() int {
@@ -281,6 +299,137 @@ func TestWorker_GracefulShutdown_WaitsForInFlightRequest(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	if fq.heartbeatCount() != hbAfterDone {
 		t.Error("heartbeats kept arriving after Run returned — the ticker must stop with the pipeline")
+	}
+}
+
+// ctxWatchingPipeline blocks until its run context is canceled, so a test
+// can observe whether the worker aborts an in-flight run.
+type ctxWatchingPipeline struct {
+	started  chan struct{}
+	canceled chan struct{}
+	release  chan struct{} // optional: also returns when closed
+}
+
+func (p *ctxWatchingPipeline) RunPipeline(ctx context.Context, _ uuid.UUID) error {
+	close(p.started)
+	select {
+	case <-ctx.Done():
+		close(p.canceled)
+		return ctx.Err()
+	case <-p.release:
+		return nil
+	}
+}
+
+// If a worker's heartbeats lapse long enough for the reclaim sweep to hand
+// its request to another worker, it has to stop — otherwise two workers run
+// the same pipeline concurrently, each submitting to the judge as the
+// system user and each spending the model budget in full.
+func TestWorker_AbortsRunAfterLosingItsClaim(t *testing.T) {
+	id := uuid.New()
+	other := "worker-2"
+	fq := &fakeQueueStore{
+		pending: []*store.HelpRequest{{ID: id, Status: store.StatusRunning}},
+		// The row is already owned by someone else, so the first heartbeat
+		// finds it taken.
+		claimed: map[uuid.UUID]*store.HelpRequest{
+			id: {ID: id, Status: store.StatusRunning, ClaimedBy: &other},
+		},
+	}
+	fp := &ctxWatchingPipeline{
+		started: make(chan struct{}), canceled: make(chan struct{}), release: make(chan struct{}),
+	}
+
+	w := &worker.Worker{
+		ID:                "worker-1",
+		Store:             fq,
+		Pipeline:          fp,
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		ReclaimInterval:   -1,
+		MetaloopInterval:  -1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-fp.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline never started")
+	}
+	select {
+	case <-fp.canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker kept running a request it no longer owns")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+}
+
+// The counterpart: while the worker still owns the row, a heartbeat that
+// touches no row must not kill the run — and the ordinary case must not be
+// disturbed at all.
+func TestWorker_KeepsRunningWhileItStillOwnsTheClaim(t *testing.T) {
+	id := uuid.New()
+	me := "worker-1"
+	fq := &fakeQueueStore{
+		pending: []*store.HelpRequest{{ID: id, Status: store.StatusRunning}},
+		claimed: map[uuid.UUID]*store.HelpRequest{
+			id: {ID: id, Status: store.StatusRunning, ClaimedBy: &me},
+		},
+	}
+	release := make(chan struct{})
+	fp := &ctxWatchingPipeline{
+		started: make(chan struct{}), canceled: make(chan struct{}), release: release,
+	}
+
+	w := &worker.Worker{
+		ID:                me,
+		Store:             fq,
+		Pipeline:          fp,
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		ReclaimInterval:   -1,
+		MetaloopInterval:  -1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-fp.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline never started")
+	}
+	select {
+	case <-fp.canceled:
+		t.Fatal("worker aborted a run it still owns")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
 	}
 }
 

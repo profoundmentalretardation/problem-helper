@@ -306,6 +306,56 @@ func TestRun_Garbage_NothingWrittenStaysUnprocessed(t *testing.T) {
 	}
 }
 
+// max_cost_per_loop is declared for the curator in agents.yaml and
+// validated at startup, so it has to actually bound a sweep — otherwise a
+// user with a long backlog can run up an unbounded bill overnight, with
+// nothing in config to stop it.
+func TestRun_MaxCostPerLoop_StopsBeforeNextCall(t *testing.T) {
+	s, ctx := withStore(t)
+	reqID := createRequest(t, s, ctx, "user-1")
+
+	for i := 0; i < 3; i++ {
+		if err := s.InsertRawMistake(ctx, store.RawMistake{
+			RequestID: reqID, UserID: "user-1", Text: fmt.Sprintf("observation %d", i),
+		}); err != nil {
+			t.Fatalf("insert raw mistake: %v", err)
+		}
+	}
+
+	// The call budget alone (3 raw + 2 slack = 5) would allow all four
+	// replies; the cost cap must stop the loop after the first call, whose
+	// cost already exceeds it.
+	usage := llm.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
+	chat := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: createJSON("off-by-one", "loop bound is one short"), Usage: usage},
+		llm.ScriptedResponse{JSON: createJSON("another", "another habit"), Usage: usage},
+		llm.ScriptedResponse{JSON: createJSON("third", "third habit"), Usage: usage},
+		llm.ScriptedResponse{JSON: finishJSON, Usage: usage},
+	)
+	runner := newRunner(s, chat, 2, t)
+	runner.Agent.MaxCostPerLoop = 1.0
+
+	got, err := runner.Run(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != curator.StatusGaveUp {
+		t.Fatalf("status = %q, want %q", got.Status, curator.StatusGaveUp)
+	}
+	if got.Calls != 1 {
+		t.Errorf("calls = %d, want 1 (the cap is checked before each call, so it overshoots by at most one)", got.Calls)
+	}
+
+	// finish was never reached, so the batch stays for the next sweep.
+	unprocessed, err := s.ListUnprocessedRawMistakes(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("list unprocessed: %v", err)
+	}
+	if len(unprocessed) != 3 {
+		t.Errorf("unprocessed = %d, want 3 (the batch is retried next sweep)", len(unprocessed))
+	}
+}
+
 func TestRun_RendersRawAndExistingMistakesIntoThePrompt(t *testing.T) {
 	s, ctx := withStore(t)
 	reqID := createRequest(t, s, ctx, "user-1")

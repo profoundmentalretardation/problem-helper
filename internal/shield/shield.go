@@ -44,7 +44,7 @@ var languageAliases = map[string]Language{
 	"clang++": LangCPP, "clang-pp": LangCPP, "g++-vg": LangCPP,
 	"cpp11": LangCPP, "cpp17": LangCPP, "cpp20": LangCPP,
 	// Java
-	"java": LangJava, "java7": LangJava, "java8": LangJava,
+	"java": LangJava, "javac": LangJava, "java7": LangJava, "java8": LangJava,
 	"java11": LangJava, "java17": LangJava, "java21": LangJava,
 	// Go
 	"go": LangGo, "golang": LangGo, "gccgo": LangGo,

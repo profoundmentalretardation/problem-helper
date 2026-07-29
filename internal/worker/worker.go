@@ -33,8 +33,9 @@ const (
 // it.
 type QueueStore interface {
 	ClaimNext(ctx context.Context, workerID string) (*store.HelpRequest, error)
-	Heartbeat(ctx context.Context, id uuid.UUID) error
+	Heartbeat(ctx context.Context, id uuid.UUID, workerID string) (bool, error)
 	ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID, error)
+	GetHelpRequest(ctx context.Context, id uuid.UUID) (*store.HelpRequest, error)
 }
 
 // PipelineRunner runs one claimed request through the full pipeline;
@@ -172,13 +173,17 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	runCtx := context.WithoutCancel(ctx)
+	// Detached from ctx so a caller canceling ctx never aborts in-flight
+	// work, but still cancelable: losing the claim to a reclaim must stop
+	// this run rather than let two workers drive the same request.
+	runCtx, lostClaim := context.WithCancel(context.WithoutCancel(ctx))
+	defer lostClaim()
 	stop := make(chan struct{})
 	var hbWG sync.WaitGroup
 	hbWG.Add(1)
 	go func() {
 		defer hbWG.Done()
-		w.heartbeatUntil(runCtx, hr.ID, stop)
+		w.heartbeatUntil(runCtx, hr.ID, stop, lostClaim)
 	}()
 
 	runErr := w.runPipelineRecovered(runCtx, hr.ID)
@@ -206,8 +211,11 @@ func (w *Worker) runPipelineRecovered(ctx context.Context, requestID uuid.UUID) 
 }
 
 // heartbeatUntil refreshes id's heartbeat on a fixed interval until stop is
-// closed.
-func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan struct{}) {
+// closed. A refresh that touches no row means this worker is no longer the
+// claimant; if the row has since been reclaimed by someone else,
+// heartbeatUntil calls lostClaim to abort the in-flight pipeline so the two
+// workers don't run it concurrently.
+func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan struct{}, lostClaim context.CancelFunc) {
 	ticker := time.NewTicker(w.heartbeatInterval())
 	defer ticker.Stop()
 	for {
@@ -215,11 +223,44 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 		case <-stop:
 			return
 		case <-ticker.C:
-			if err := w.Store.Heartbeat(ctx, id); err != nil {
+			ok, err := w.Store.Heartbeat(ctx, id, w.ID)
+			if err != nil {
 				w.logf("worker: heartbeat for request %s: %v", id, err)
+				continue
 			}
+			if ok {
+				continue
+			}
+			// No row refreshed. That is the normal case once the pipeline
+			// has reached a terminal status but hasn't returned yet, so
+			// confirm the claim was actually taken from us before killing
+			// the run.
+			if w.claimLost(ctx, id) {
+				w.logf("worker: request %s reclaimed by another worker, aborting run", id)
+				lostClaim()
+			}
+			return
 		}
 	}
+}
+
+// claimLost reports whether id is still queued or running but no longer
+// claimed by this worker — i.e. a reclaim sweep handed it to someone else.
+// A terminal row, or a store error, is not treated as a lost claim: killing
+// a run that is merely finishing would be worse than the extra tick.
+func (w *Worker) claimLost(ctx context.Context, id uuid.UUID) bool {
+	hr, err := w.Store.GetHelpRequest(ctx, id)
+	if err != nil {
+		w.logf("worker: checking claim for request %s: %v", id, err)
+		return false
+	}
+	if hr == nil {
+		return false
+	}
+	if hr.Status != store.StatusPending && hr.Status != store.StatusRunning {
+		return false
+	}
+	return hr.ClaimedBy == nil || *hr.ClaimedBy != w.ID
 }
 
 // reclaimLoop runs a reclaim sweep on a fixed interval until ctx is

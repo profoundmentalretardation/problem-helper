@@ -140,11 +140,15 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// A bind failure must take the process down. Logging and carrying on
+	// leaves a worker-only process that answers no HTTP at all while every
+	// supervisor watching the exit code still sees it as healthy.
+	serveErr := make(chan error, 1)
 	go func() {
 		defer wg.Done()
 		log.Printf("problem-helper: HTTP listening on %s", addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("problem-helper: HTTP server: %v", err)
+			serveErr <- err
 		}
 	}()
 
@@ -155,8 +159,15 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		}
 	}()
 
-	<-ctx.Done()
-	log.Print("problem-helper: shutdown signal received, draining in-flight work")
+	var runErr error
+	select {
+	case <-ctx.Done():
+		log.Print("problem-helper: shutdown signal received, draining in-flight work")
+	case err := <-serveErr:
+		runErr = fmt.Errorf("HTTP server: %w", err)
+		log.Printf("problem-helper: %v, draining in-flight work", runErr)
+		stop()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
@@ -166,7 +177,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 
 	wg.Wait()
 	log.Print("problem-helper: shutdown complete")
-	return nil
+	return runErr
 }
 
 // newPlatform selects the judging platform backend from cfg.Env.Platform:

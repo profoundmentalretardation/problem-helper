@@ -248,6 +248,18 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 
 		run, err := r.Platform.SubmitAsSystem(ctx, p.ProblemID, code, p.Language)
 		if err != nil {
+			// The judge refusing byte-identical code is the model repeating
+			// itself, not our infrastructure breaking: burn the retry and
+			// let the loop terminate as no_fix rather than failing the whole
+			// request (which would report an internal error to the caller
+			// and pollute the failed/no_fix analytics split).
+			if errors.Is(err, platform.ErrDuplicateSubmission) {
+				if evErr := r.recordDuplicateSubmission(ctx, p.RequestID, attempts); evErr != nil {
+					return Result{}, evErr
+				}
+				previousCode = code
+				continue
+			}
 			return Result{}, fmt.Errorf("repair: submitting for verification: %w", err)
 		}
 		if err := r.recordRunID(ctx, p.RequestID, run.ID, attempts); err != nil {
@@ -509,6 +521,22 @@ func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, runID str
 	}
 	if err := r.Events.AppendEvent(ctx, requestID, "repair_run_submitted", payload); err != nil {
 		return fmt.Errorf("repair: recording run id: %w", err)
+	}
+	return nil
+}
+
+func (r *Runner) recordDuplicateSubmission(ctx context.Context, requestID uuid.UUID, attempt int) error {
+	if r.Events == nil {
+		return nil
+	}
+	payload, err := json.Marshal(struct {
+		Attempt int `json:"attempt"`
+	}{attempt})
+	if err != nil {
+		return fmt.Errorf("repair: encoding duplicate-submission event: %w", err)
+	}
+	if err := r.Events.AppendEvent(ctx, requestID, "repair_duplicate_submission", payload); err != nil {
+		return fmt.Errorf("repair: recording duplicate submission: %w", err)
 	}
 	return nil
 }

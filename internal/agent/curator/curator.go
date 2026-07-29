@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -102,6 +103,11 @@ var responseSchema = map[string]any{
 	"required": []any{"action"},
 }
 
+// maxBatchSize caps how many raw mistakes one Run folds in. The batch sizes
+// both the prompt and the call budget, so it needs a ceiling that does not
+// depend on how long a student went un-curated.
+const maxBatchSize = 50
+
 // Run folds userID's unprocessed raw mistakes into their mistakes tally.
 // The call budget is one call per raw mistake in the batch (each may need
 // its own merge_into or create_mistake) plus Agent.MaxRetries of slack for
@@ -118,6 +124,14 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 	}
 	if len(raw) == 0 {
 		return Result{Status: StatusNoUnprocessed}, nil
+	}
+	// The whole batch is inlined into the system prompt of every call in
+	// the loop, and the call budget scales with the batch too — so an
+	// unbounded batch is quadratic in tokens. raw is oldest-first and
+	// finish only marks the ids in this slice, so the overflow is simply
+	// picked up by the next sweep.
+	if len(raw) > maxBatchSize {
+		raw = raw[:maxBatchSize]
 	}
 
 	existing, err := r.Mistakes.ListMistakes(ctx, userID)
@@ -141,10 +155,18 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 
 	messages := []llm.Message{{Role: "system", Content: rendered}}
 	var merged, created, calls int
+	loopCost := 0.0
 	callBudget := len(raw) + r.Agent.MaxRetries
 
 	for {
 		if calls >= callBudget {
+			return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
+		}
+		// Checked before the call, like repair's loop cap: a call's cost is
+		// only known once it returns, so the loop can overshoot by at most
+		// one call. Without this the cap configured for the curator in
+		// agents.yaml is silently a no-op.
+		if r.Agent.MaxCostPerLoop > 0 && loopCost >= r.Agent.MaxCostPerLoop {
 			return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
 		}
 		calls++
@@ -162,6 +184,9 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 		})
 		if err != nil {
 			return Result{}, fmt.Errorf("curator: chat: %w", err)
+		}
+		if cost, perr := strconv.ParseFloat(resp.Cost, 64); perr == nil {
+			loopCost += cost
 		}
 
 		var action curatorAction
