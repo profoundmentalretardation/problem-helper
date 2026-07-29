@@ -655,9 +655,9 @@ package doc for full detail):
 
 ### Task 19: [Final] Update documentation
 
-- [ ] update `AGENTS.md` with patterns/conventions discovered during implementation
-- [ ] write `README.md` (what it is, how to run, config reference incl. auth tokens)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update `AGENTS.md` with patterns/conventions discovered during implementation
+- [x] write `README.md` (what it is, how to run, config reference incl. auth tokens)
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 

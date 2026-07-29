@@ -4,6 +4,7 @@
 __pycache__/
 research/state/*.db
 .gocache/
+.gomodcache/
 .gopath/
 .cache/
 /helper

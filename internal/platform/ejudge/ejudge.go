@@ -5,7 +5,7 @@
 // HTML forms and numeric "action" query parameters — there is no usable
 // JSON API for this flow (the *_JSON actions exist in the protocol header
 // but proved unreliable/undocumented against a live 3.8.0 instance; see
-// docs/plans/20260729-mvp-service.md Task 15 notes). This client scrapes
+// docs/plans/completed/20260729-mvp-service.md Task 15 notes). This client scrapes
 // HTML instead, mirroring what a browser driving the CGI UI would do:
 //
 //   - cgi-bin/new-client (the "participant" role, role=0): problem

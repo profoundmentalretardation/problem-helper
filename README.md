@@ -1,0 +1,83 @@
+# Problem Helper — MVP Service
+
+A Go service that helps students with programming homework **without talking to them directly**.
+A frontend layer (Telegram bot, web, anything) calls this HTTP API with `user_id` + `problem_id`;
+the service pulls the student's submissions from a judging platform (ejudge first), finds the
+defect in their best failing attempt, verifies a fix by actually running it on the platform as a
+system user, and returns a non-obvious hint that teaches instead of giving the answer away.
+
+See `AGENTS.md` for the pipeline diagram, package layout, and conventions. The full spec,
+decisions, and task breakdown live in `docs/plans/completed/20260729-mvp-service.md`.
+
+## Running locally
+
+Requires Go 1.26+, Docker (for Postgres), and an OpenAI-compatible LLM endpoint.
+
+```sh
+docker compose up -d          # starts Postgres on localhost:5432 (user/pass/db: helper)
+cp .env.example .env          # fill in LLM_BASE_URL / LLM_API_KEY, see below
+export $(cat .env | xargs)    # or use direnv / your shell's env loader
+make build
+make run                      # runs ./helper, applies migrations on startup, listens on :8080
+```
+
+`make test` runs `go test ./...` (store tests need `TEST_DATABASE_URL`, default
+`postgres://helper:helper@localhost:5432/helper?sslmode=disable`, pointed at the same
+docker-compose Postgres). `make lint` runs `golangci-lint run`. Both are required to pass before
+any change is considered done.
+
+The binary takes flags for non-default paths/address:
+
+```sh
+./helper -agents agents.yaml -prompts prompts -addr :8080 -shutdown-timeout 30s
+```
+
+## Configuration
+
+### Environment variables (all required)
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string |
+| `LLM_BASE_URL`, `LLM_API_KEY` | OpenAI-compatible endpoint for repair/hint/guardrail/curator calls |
+| `PLATFORM` | `ejudge` (production) or `mock` (local/dev, no real judge needed) |
+| `API_TOKEN` | bearer token for `POST /help` and `GET /requests/{id}` |
+| `ADMIN_TOKEN` | bearer token for `/admin/*` |
+| `EJUDGE_URL`, `EJUDGE_SYSTEM_LOGIN`, `EJUDGE_SYSTEM_PASSWORD` | ejudge system-user credentials (required even when `PLATFORM=mock`; see `internal/config`) |
+
+### `agents.yaml` (checked in, validated at startup)
+
+Per-agent model, temperature, retry/cost caps, and per-1M-token pricing for every configured
+model — see the checked-in `agents.yaml` for the current values and `internal/config/config.go`
+for validation rules (all four agent keys and a pricing entry per configured model are required;
+unknown keys are rejected).
+
+### Prompts
+
+`prompts/*.md` hold the system prompts (`repair`, `hint`, `guardrail`, `curator`) with
+`{{placeholder}}` templating, loaded and validated at startup — see `internal/prompt`.
+
+## API
+
+All endpoints require `Authorization: Bearer <token>` (`API_TOKEN` for the first two,
+`ADMIN_TOKEN` for `/admin/*`).
+
+- `POST /help` `{user_id, problem_id, n_submissions?}` → `202 {request_id}`. Enqueues the
+  pipeline; a worker picks it up asynchronously. Rate-limited per user per day
+  (`daily_requests_per_user` in `agents.yaml`).
+- `GET /requests/{id}` → current `status` plus a status-specific field: `hint` (done),
+  `message` (already_solved / no_submissions / no_fix / no_hint), or `error` (failed).
+- `POST /admin/metaloop/run` → runs the curator sweep on demand (same work the nightly cron
+  does) and returns a summary (`users_processed`, `merged`, `created`, `gave_up`).
+- `POST /admin/requests/{id}/useless` → flags a delivered hint as unhelpful, independent of
+  pipeline status.
+- `GET /admin/requests?useless=&status=&model=` → filterable request listing.
+
+Analytics (cost per request/model/agent, request counts by status, hint-effectiveness inputs)
+are exposed as Go query functions in `internal/store/analytics.go` rather than HTTP endpoints —
+call them from `psql`/a script, or wire an endpoint if a consumer needs one.
+
+## Repository layout
+
+See `AGENTS.md` → "Go layout" for the package breakdown, and `research/README.md` for how the
+frozen Python prototypes map onto the Go packages that replaced them.
