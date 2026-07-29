@@ -98,9 +98,32 @@ research/              frozen Python prototypes (reference only, see research/RE
   Go error bubbling out of `RunPipeline`.
 - **Resume is step-level, not attempt-level**: a crash resumes the pipeline at the last
   completed *step* (`help_requests.resume_step`); a crash strictly inside an in-flight
-  repair/hint loop attempt re-enters that attempt from scratch on resume. This is intentional
-  MVP scope, documented in `internal/worker/pipeline.go`'s header comment — don't "fix" it
-  without checking the plan's "Resume granularity" decision first.
+  repair/hint loop re-enters that whole loop on resume. This is intentional MVP scope,
+  documented in `internal/worker/pipeline.go`'s header comment — don't "fix" it without
+  checking the plan's "Resume granularity" decision first.
+- **A resume checkpoint is only worth writing if the step's output is readable back.** The
+  repair and hint checkpoints were originally written but never consulted, because the state
+  the next step needs lived in memory: `resume_step='repair'` still re-ran loop 1 — re-spending
+  both model budgets and submitting to the judge again under the system login — and the
+  reclaim loop can do that up to `store.maxClaimAttempts` times. Loop 1's verified code and run
+  id are now persisted (`help_requests.repair_code` / `repair_run_id`, migration 0003) *before*
+  the checkpoint, and the hint checkpoint moved to *after* `InsertHint`/`SetHintID`, so
+  resuming past it means "stored, only delivery left". A checkpoint past a step whose output is
+  missing is treated as a corrupt row (`infraFail`), never as a licence to re-run the step.
+- **`store.Migrate` holds a session advisory lock** (`migrateLockKey`): the "is this recorded?"
+  check and the apply are separate statements, so two callers starting together — two instances
+  rolling out, or `go test ./...` running the store and worker package binaries against the same
+  `TEST_DATABASE_URL` — both see a new migration as unapplied and the loser dies at startup on
+  whatever the winner already created. Adding a migration is what surfaces this; the lock is
+  what keeps it from being a release-day incident.
+- **Preprocessor directives are preserved but still scanned for comments**
+  (`stripCLikeComments` in `internal/shield/clike.go`): copying a `#`-line through unscanned
+  left `#define N 100 // payload` intact and, worse, let a `/*` opened on a directive line put
+  the scanner in the wrong state so the comment's *body* on following lines was emitted as
+  ordinary code — a shield bypass in the language family this course uses most. Scanning them
+  also matches C itself, which removes comments in translation phase 3, before directives run
+  in phase 4. `#` has no special meaning to the scanner, and `skipEscaped` stopping at newlines
+  is what keeps `#error don't` from swallowing the rest of the file.
 - **`agents.yaml` validation is strict by construction**: `yaml.Decoder.KnownFields(true)`
   rejects unknown keys at both the top level and inside each agent block; every agent's `model`
   must have a matching `pricing` entry or `config.Load` fails at startup — a misconfigured or
@@ -122,7 +145,11 @@ research/              frozen Python prototypes (reference only, see research/RE
   between tool-loop calls within an attempt; `hint` has no tool loop, so it checks after the
   writer call and, when hit, abandons the attempt before the guardrail call — the last point at
   which spending can still be avoided. The guardrail's own cost therefore counts toward
-  `max_cost_per_loop` but never toward `max_cost_per_retry`.
+  `max_cost_per_loop` but never toward `max_cost_per_retry`. What a cap is charged is what
+  `llm.Chat` *spent*, not what its last HTTP call spent: `Chat` retries once on a
+  schema-invalid reply and both calls burned tokens, so `Response.Usage`/`Cost` sum every call
+  it made. Returning only the retry's figures let a model that keeps missing the schema
+  overshoot both caps by a whole call while the `llm_calls` rows said otherwise.
 - **The curator's `max_retries` is slack, not a total call budget**: `curator.Run`'s budget is
   one call per raw mistake in the batch *plus* `max_retries`, because each raw mistake may need
   its own `merge_into`/`create_mistake` before `finish`. Sizing it from `max_retries` alone made
@@ -168,6 +195,15 @@ research/              frozen Python prototypes (reference only, see research/RE
   the content HTML-escaped, so `<` occupies 4 bytes and `&` 5 — slicing the escaped text by the
   raw size truncates mid-entity and hands the repair model corrupted test data for the very
   test it is diagnosing.
+- **The submit response's newest run is not necessarily ours**: every verification submits under
+  one `EJUDGE_SYSTEM_LOGIN`, and `SubmitAsSystem` reads its run id off the top row of a
+  "Previous submissions" table that the whole service shares. `fetchSubmitPage` now records that
+  table's newest id *before* the POST and `isNewerRunID` requires the parsed id to beat it, so a
+  concurrent repair of the same problem (several instances, or `Worker.Concurrency > 1`) can't
+  cross-assign run ids and have `repair.success` "verify" a run that never held this code.
+  Submits also go through `submitWithSession`, which re-logs in and re-posts once on
+  `Error: Invalid session` — a submit lands minutes into a run, so it is the call most exposed to
+  session expiry, and without that an expired session became `status=failed` on a healthy request.
 - **"The judge said no" is not "our infrastructure broke"**: `platform.ErrDuplicateSubmission`
   is the backend-independent sentinel (ejudge's own error wraps it) for a judge refusing
   byte-identical code under `ignore_duplicated_runs`. That is the repair model repeating
@@ -197,7 +233,10 @@ research/              frozen Python prototypes (reference only, see research/RE
   script/psql. Only `useless`/`status`/`model` filtering on `GET /admin/requests` is exposed
   over HTTP. `HintEffectivenessInputs` keys off the `hint_delivered` event, which the pipeline
   emits on the cache-hit path too (payload `{"cached": true}`) — a re-delivery is still a
-  delivery, so don't add a delivery path without that event.
+  delivery, so don't add a delivery path without that event. Because more than one such event
+  per request is therefore normal, its `submissions` count is `COUNT(DISTINCT sub.id)` — the two
+  LEFT JOINs fan each other out, and a plain `COUNT` multiplies the snapshot size by the number
+  of deliveries.
 - **Failure detail is redacted from callers, not from operators**: `GET /requests/{id}` returns a
   fixed message for `status=failed` because `help_requests.error` holds a wrapped Go error that
   can carry provider response bodies, ejudge URLs, or DB text; the full string stays on the row,

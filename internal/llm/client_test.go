@@ -169,6 +169,21 @@ func TestChat_RetriesOnceOnInvalidJSON(t *testing.T) {
 	if len(recorder.calls) != 2 {
 		t.Fatalf("llm_calls rows recorded = %d, want 2 (both the invalid and the retry)", len(recorder.calls))
 	}
+
+	// ...and the caller's cost caps are charged for both. Returning only the
+	// retry's usage would let a model that keeps missing the schema spend
+	// twice what max_cost_per_retry / max_cost_per_loop allow.
+	wantUsage := llm.Usage{InputTokens: 220, CachedInputTokens: 0, OutputTokens: 22}
+	if resp.Usage != wantUsage {
+		t.Errorf("Usage = %+v, want %+v (both calls summed)", resp.Usage, wantUsage)
+	}
+	wantCost := llm.Cost(wantUsage, testPricing()["gpt-test"])
+	if resp.Cost != wantCost {
+		t.Errorf("Cost = %s, want %s (both calls, not just the retry)", resp.Cost, wantCost)
+	}
+	if resp.Cost == llm.Cost(llm.Usage{InputTokens: 120, OutputTokens: 12}, testPricing()["gpt-test"]) {
+		t.Errorf("Cost = %s, which is only the retry's cost — the rejected call was not charged", resp.Cost)
+	}
 }
 
 func TestChat_MissingRequiredFieldTreatedAsInvalid(t *testing.T) {

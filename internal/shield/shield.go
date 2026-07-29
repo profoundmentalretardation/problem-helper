@@ -1,8 +1,9 @@
 // Package shield sanitizes student code before it reaches a model: strips
-// comments (dispatched by language, preprocessor directives preserved for
-// C/C++), normalizes and strips invalid/confusable Unicode, and records a
-// diff plus a structured report of what was removed. This is the MVP scope
-// from the plan — identifier-level analysis is post-MVP.
+// comments (dispatched by language, preprocessor directives left intact but
+// still scanned for comments), normalizes and strips invalid/confusable
+// Unicode, and records a diff plus a structured report of what was removed.
+// This is the MVP scope from the plan — identifier-level analysis is
+// post-MVP.
 package shield
 
 import (
@@ -95,10 +96,8 @@ func Strip(code string, language string) (Result, error) {
 	var withoutComments string
 	var comments []string
 	switch lang {
-	case LangC, LangCPP:
-		withoutComments, comments = stripCLikeComments(code, true)
-	case LangJava, LangGo:
-		withoutComments, comments = stripCLikeComments(code, false)
+	case LangC, LangCPP, LangJava, LangGo:
+		withoutComments, comments = stripCLikeComments(code)
 	case LangPython:
 		withoutComments, comments = stripPythonComments(code)
 	default:

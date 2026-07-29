@@ -90,9 +90,18 @@ func New(baseURL, apiKey string, rec CallRecorder, pricing map[string]config.Pri
 // reply isn't valid JSON matching the schema, it retries exactly once with
 // the invalid reply and an explanation appended to the conversation. Every
 // underlying HTTP call is recorded as its own llm_calls row regardless of
-// validity — a rejected reply still spent real tokens.
+// validity — a rejected reply still spent real tokens. The returned Usage
+// and Cost cover every call this Chat made, not just the last one.
 func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 	messages := append([]Message(nil), req.Messages...)
+
+	// The caller's cost caps are charged what this Chat call actually spent,
+	// not what its last HTTP call spent: a rejected reply burned real tokens,
+	// so returning only the retry's usage would let a model that keeps
+	// missing the schema overshoot max_cost_per_retry / max_cost_per_loop by
+	// a whole call. Usage is summed and cost recomputed from the total —
+	// Cost is linear in tokens, so that equals the sum of the per-call costs.
+	var total Usage
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
@@ -103,6 +112,10 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 		}
 		latency := time.Since(start)
 		cost := Cost(usage, c.pricing[req.Model])
+
+		total.InputTokens += usage.InputTokens
+		total.CachedInputTokens += usage.CachedInputTokens
+		total.OutputTokens += usage.OutputTokens
 
 		if recErr := c.record(ctx, req, messages, content, usage, cost, latency); recErr != nil {
 			return Response{}, recErr
@@ -119,7 +132,11 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 			continue
 		}
 
-		return Response{JSON: json.RawMessage(content), Usage: usage, Cost: cost}, nil
+		return Response{
+			JSON:  json.RawMessage(content),
+			Usage: total,
+			Cost:  Cost(total, c.pricing[req.Model]),
+		}, nil
 	}
 
 	return Response{}, fmt.Errorf("%w: %v", ErrInvalidResponse, lastErr)

@@ -126,7 +126,11 @@ type HintEffectivenessRow struct {
 func (s *Store) HintEffectivenessInputs(ctx context.Context, userID, problemID string) ([]HintEffectivenessRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT hr.id, hr.created_at,
-		       COUNT(sub.id) AS submission_count,
+		       -- DISTINCT because the events join below fans this row out
+		       -- once per hint_delivered event, and a request can have more
+		       -- than one (a cache re-delivery, or a redelivery after a
+		       -- crash between the event and the status transition).
+		       COUNT(DISTINCT sub.id) AS submission_count,
 		       MAX(sub.submitted_at) AS last_submitted_at,
 		       MAX(ev.created_at) FILTER (WHERE ev.kind = 'hint_delivered') AS hint_delivered_at
 		FROM help_requests hr

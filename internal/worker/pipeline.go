@@ -9,11 +9,17 @@
 // steps that mutate the store (snapshotting submissions, inserting the
 // shield record) never run twice for the same request.
 //
-// The repair and hint loops (steps 7-8) are not further subdivided: per the
-// plan's "Resume granularity" decision, attempt-level checkpointing inside
-// a loop is post-MVP, so a crash mid-loop re-enters the whole loop on
-// resume (the loop's own baseline run is never re-submitted — only new
-// verification attempts are, same as a non-resumed run).
+// The repair and hint loops (steps 7-8) are checkpointed like every other
+// step — the repair loop's verified code and run id are persisted
+// (help_requests.repair_code / repair_run_id) before its checkpoint, and the
+// hint row is inserted before its checkpoint, so a resumed row hands the
+// stored code to loop 2 or goes straight to delivery instead of re-entering
+// a loop that submits to the judge and spends the model budget again.
+//
+// Neither loop is subdivided further: per the plan's "Resume granularity"
+// decision, attempt-level checkpointing inside a loop is post-MVP, so a
+// crash strictly inside an in-flight attempt re-enters that whole loop on
+// resume.
 package worker
 
 import (
@@ -77,6 +83,7 @@ type Store interface {
 	FindApprovedHint(ctx context.Context, problemID, codeHash string) (*store.Hint, error)
 	InsertHint(ctx context.Context, h store.Hint) error
 	SetResumeStep(ctx context.Context, id uuid.UUID, step string) error
+	SetRepairResult(ctx context.Context, id uuid.UUID, code, runID string) error
 	GetSubmission(ctx context.Context, id uuid.UUID) (*store.Submission, error)
 	GetShieldRecordByRequest(ctx context.Context, requestID uuid.UUID) (*store.ShieldRecord, error)
 	SetBestSubmission(ctx context.Context, id, submissionID uuid.UUID) error
@@ -279,74 +286,104 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 	// before its last checkpoint — a hit would have finished the pipeline
 	// terminally, never leaving a later checkpoint to resume from.
 
-	// The curated per-student mistake profile the nightly metaloop builds is
-	// only worth anything if it comes back into a prompt — this is the read
-	// side of that loop.
-	mistakes, err := pl.topMistakes(ctx, hr.UserID)
-	if err != nil {
-		return pl.infraFail(ctx, requestID, err)
+	var repairCode string
+	if resumeIdx < stepOrder[StepRepair] {
+		// The curated per-student mistake profile the nightly metaloop builds
+		// is only worth anything if it comes back into a prompt — this is the
+		// read side of that loop.
+		mistakes, err := pl.topMistakes(ctx, hr.UserID)
+		if err != nil {
+			return pl.infraFail(ctx, requestID, err)
+		}
+
+		repairResult, err := pl.Repair.Run(ctx, repair.Params{
+			RequestID:          requestID,
+			UserID:             hr.UserID,
+			ProblemID:          hr.ProblemID,
+			Language:           best.Language,
+			ProblemStatement:   statement.Text,
+			UserCode:           shielded.CodeAfter,
+			Mistakes:           mistakes,
+			BaselineRunID:      best.ID,
+			BaselineTestsTotal: best.TestsTotal,
+		})
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("running repair loop: %w", err))
+		}
+		if err := pl.event(ctx, requestID, "repair_result", map[string]any{
+			"status": repairResult.Status, "reason": repairResult.Reason, "attempts": repairResult.Attempts,
+		}); err != nil {
+			return err
+		}
+		if repairResult.Status == repair.StatusNoFix {
+			return pl.finishWithReason(ctx, requestID, store.StatusNoFix, string(repairResult.Reason))
+		}
+		// Persisted before the checkpoint, not after: the checkpoint is only
+		// honest if the code it claims is done is already readable back.
+		if err := pl.Store.SetRepairResult(ctx, requestID, repairResult.Code, repairResult.RunID); err != nil {
+			return fmt.Errorf("pipeline: recording repair result: %w", err)
+		}
+		if err := pl.checkpoint(ctx, requestID, StepRepair); err != nil {
+			return err
+		}
+		repairCode = repairResult.Code
+	} else if hr.RepairCode != nil {
+		repairCode = *hr.RepairCode
+	} else {
+		// Checkpoint past the repair step with no persisted code: the row is
+		// inconsistent with itself, and re-running loop 1 would submit to the
+		// judge again on a request we cannot account for.
+		return pl.infraFail(ctx, requestID,
+			errors.New("resume checkpoint is past the repair step but no repair code was persisted"))
 	}
 
-	repairResult, err := pl.Repair.Run(ctx, repair.Params{
-		RequestID:          requestID,
-		UserID:             hr.UserID,
-		ProblemID:          hr.ProblemID,
-		Language:           best.Language,
-		ProblemStatement:   statement.Text,
-		UserCode:           shielded.CodeAfter,
-		Mistakes:           mistakes,
-		BaselineRunID:      best.ID,
-		BaselineTestsTotal: best.TestsTotal,
-	})
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("running repair loop: %w", err))
-	}
-	if err := pl.event(ctx, requestID, "repair_result", map[string]any{
-		"status": repairResult.Status, "reason": repairResult.Reason, "attempts": repairResult.Attempts,
-	}); err != nil {
-		return err
-	}
-	if repairResult.Status == repair.StatusNoFix {
-		return pl.finishWithReason(ctx, requestID, store.StatusNoFix, string(repairResult.Reason))
-	}
-	if err := pl.checkpoint(ctx, requestID, StepRepair); err != nil {
-		return err
+	var hintID uuid.UUID
+	if resumeIdx < stepOrder[StepHint] {
+		hintResult, err := pl.Hint.Run(ctx, hint.Params{
+			RequestID:    requestID,
+			OriginalCode: shielded.CodeAfter,
+			WorkingCode:  repairCode,
+		})
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("running hint loop: %w", err))
+		}
+		if err := pl.event(ctx, requestID, "hint_result", map[string]any{
+			"status": hintResult.Status, "reason": hintResult.Reason, "attempts": hintResult.Attempts,
+		}); err != nil {
+			return err
+		}
+		if hintResult.Status == hint.StatusNoHint {
+			return pl.finishWithReason(ctx, requestID, store.StatusNoHint, string(hintResult.Reason))
+		}
+
+		hintID = uuid.New()
+		if err := pl.Store.InsertHint(ctx, store.Hint{
+			ID:        hintID,
+			RequestID: requestID,
+			ProblemID: hr.ProblemID,
+			CodeHash:  codeHash,
+			Text:      hintResult.Hint,
+			Approved:  true,
+		}); err != nil {
+			return fmt.Errorf("pipeline: inserting hint: %w", err)
+		}
+		if err := pl.Store.SetHintID(ctx, requestID, hintID); err != nil {
+			return fmt.Errorf("pipeline: recording delivered hint id: %w", err)
+		}
+		// The checkpoint goes after the hint row exists, so resuming past it
+		// means "the hint is stored, only delivery is left" — a crash between
+		// the guardrail's approval and the insert re-runs loop 2 (attempt-level
+		// scope), it does not skip a hint that was never written.
+		if err := pl.checkpoint(ctx, requestID, StepHint); err != nil {
+			return err
+		}
+	} else if hr.HintID != nil {
+		hintID = *hr.HintID
+	} else {
+		return pl.infraFail(ctx, requestID,
+			errors.New("resume checkpoint is past the hint step but no hint was persisted"))
 	}
 
-	hintResult, err := pl.Hint.Run(ctx, hint.Params{
-		RequestID:    requestID,
-		OriginalCode: shielded.CodeAfter,
-		WorkingCode:  repairResult.Code,
-	})
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("running hint loop: %w", err))
-	}
-	if err := pl.event(ctx, requestID, "hint_result", map[string]any{
-		"status": hintResult.Status, "reason": hintResult.Reason, "attempts": hintResult.Attempts,
-	}); err != nil {
-		return err
-	}
-	if hintResult.Status == hint.StatusNoHint {
-		return pl.finishWithReason(ctx, requestID, store.StatusNoHint, string(hintResult.Reason))
-	}
-	if err := pl.checkpoint(ctx, requestID, StepHint); err != nil {
-		return err
-	}
-
-	hintID := uuid.New()
-	if err := pl.Store.InsertHint(ctx, store.Hint{
-		ID:        hintID,
-		RequestID: requestID,
-		ProblemID: hr.ProblemID,
-		CodeHash:  codeHash,
-		Text:      hintResult.Hint,
-		Approved:  true,
-	}); err != nil {
-		return fmt.Errorf("pipeline: inserting hint: %w", err)
-	}
-	if err := pl.Store.SetHintID(ctx, requestID, hintID); err != nil {
-		return fmt.Errorf("pipeline: recording delivered hint id: %w", err)
-	}
 	if err := pl.event(ctx, requestID, "hint_delivered", map[string]any{"hint_id": hintID}); err != nil {
 		return err
 	}

@@ -789,3 +789,157 @@ func TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps(t *testing.T) {
 		t.Errorf("events = %+v, want no best_submission_picked event on a resumed run past StepSubmissions", events)
 	}
 }
+
+// A checkpoint past the repair step means loop 1 already produced a verified
+// fix and paid for it — in model spend and in a real judge submission under
+// the system login. Resuming must pick that code back up, not run loop 1
+// again: both the platform and the repair model are left unscripted here, so
+// either being consulted panics.
+func TestRunPipeline_ResumesAfterRepairCheckpoint_ReusesPersistedFix(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New() // no submit, no tests, no status: only the always-re-read statement
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+
+	subID := uuid.New()
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{ID: subID, PlatformSubmissionID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now(), IsBest: true},
+	}); err != nil {
+		t.Fatalf("pre-seed submissions: %v", err)
+	}
+	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+		t.Fatalf("pre-seed best submission: %v", err)
+	}
+	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
+		RequestID: id, CodeBefore: "print(1)", CodeAfter: "print(1)", Diff: "",
+	}); err != nil {
+		t.Fatalf("pre-seed shield record: %v", err)
+	}
+	if err := s.SetRepairResult(ctx, id, "print(2)", "run-1"); err != nil {
+		t.Fatalf("pre-seed repair result: %v", err)
+	}
+	if err := s.SetResumeStep(ctx, id, worker.StepRepair); err != nil {
+		t.Fatalf("pre-seed resume step: %v", err)
+	}
+
+	repairChat := llm.NewScripted(s, testPricing()) // no responses: a call panics
+	hintWriter := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"hint":"Think about what your very first print should show."}`,
+		Usage: llm.Usage{InputTokens: 50, OutputTokens: 10},
+	})
+	guardrail := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"approved":true,"reason":"makes them think"}`,
+		Usage: llm.Usage{InputTokens: 80, OutputTokens: 5},
+	})
+
+	pl := &worker.Pipeline{
+		Store:    s,
+		Platform: plat,
+		Repair:   newRepairRunner(t, s, plat, repairChat),
+		Hint:     newHintRunner(t, hintWriter, guardrail),
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusDone {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusDone)
+	}
+	if repairChat.Remaining() != 0 {
+		t.Errorf("repair model was consulted on a resumed run past StepRepair")
+	}
+
+	events, err := s.ListEvents(ctx, id)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if hasEventKind(events, "repair_result") {
+		t.Errorf("events = %+v, want no repair_result event on a resumed run past StepRepair", events)
+	}
+	if !hasEventKind(events, "hint_delivered") {
+		t.Errorf("events = %+v, want a hint_delivered event", events)
+	}
+}
+
+// A checkpoint past the hint step means the hints row is already written and
+// only delivery is outstanding. Resuming must deliver that row — not re-run
+// either loop, and not write a second hint for the same code hash.
+func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New() // only the always-re-read statement is scripted
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+
+	subID := uuid.New()
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{ID: subID, PlatformSubmissionID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now(), IsBest: true},
+	}); err != nil {
+		t.Fatalf("pre-seed submissions: %v", err)
+	}
+	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+		t.Fatalf("pre-seed best submission: %v", err)
+	}
+	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
+		RequestID: id, CodeBefore: "print(1)", CodeAfter: "print(1)", Diff: "",
+	}); err != nil {
+		t.Fatalf("pre-seed shield record: %v", err)
+	}
+	if err := s.SetRepairResult(ctx, id, "print(2)", "run-1"); err != nil {
+		t.Fatalf("pre-seed repair result: %v", err)
+	}
+	hintID := uuid.New()
+	if err := s.InsertHint(ctx, store.Hint{
+		ID: hintID, RequestID: id, ProblemID: "problem-1",
+		CodeHash: worker.HashCode("print(1)"), Text: "Trace your first print.", Approved: true,
+	}); err != nil {
+		t.Fatalf("pre-seed hint: %v", err)
+	}
+	if err := s.SetHintID(ctx, id, hintID); err != nil {
+		t.Fatalf("pre-seed hint id: %v", err)
+	}
+	if err := s.SetResumeStep(ctx, id, worker.StepHint); err != nil {
+		t.Fatalf("pre-seed resume step: %v", err)
+	}
+
+	repairChat := llm.NewScripted(s, testPricing())
+	hintWriter := llm.NewScripted(s, testPricing())
+	guardrail := llm.NewScripted(s, testPricing())
+
+	pl := &worker.Pipeline{
+		Store:    s,
+		Platform: plat,
+		Repair:   newRepairRunner(t, s, plat, repairChat),
+		Hint:     newHintRunner(t, hintWriter, guardrail),
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusDone {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusDone)
+	}
+	if got.HintID == nil || *got.HintID != hintID {
+		t.Errorf("hint_id = %v, want the pre-seeded hint %s", got.HintID, hintID)
+	}
+
+	events, err := s.ListEvents(ctx, id)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if hasEventKind(events, "hint_result") {
+		t.Errorf("events = %+v, want no hint_result event on a resumed run past StepHint", events)
+	}
+	if !hasEventKind(events, "hint_delivered") {
+		t.Errorf("events = %+v, want a hint_delivered event", events)
+	}
+}

@@ -5,36 +5,29 @@ import "strings"
 // stripCLikeComments removes // and /* */ comments from C-family source
 // (c, cpp, java, go) using a byte-level scan that skips over string, char,
 // and (for go) raw-string literals so comment-like text inside them
-// survives untouched. When protectPreprocessor is true, lines that are C/C++
-// preprocessor directives (across backslash-newline continuations) are
-// copied through unscanned, so #include/#define are never touched.
-func stripCLikeComments(code string, protectPreprocessor bool) (string, []string) {
+// survives untouched.
+//
+// Preprocessor directives are scanned like any other line rather than being
+// copied through verbatim. Exempting them would leave the shield's one job
+// undone on the most common language family here: `#define N 100 // payload`
+// would survive intact, and a `/*` opened on a directive line would leave
+// the scanner with no comment state, so the comment's body on the following
+// lines would be emitted as ordinary code. It is also what C itself does —
+// comments are replaced by a space in translation phase 3, before directives
+// are executed in phase 4 — so `#define PATH http://x` losing its trailing
+// `//x` matches the compiler, not just the shield's preference. The
+// directive text itself is untouched: `#` has no special meaning to this
+// scanner, and an unbalanced quote in `#error don't` cannot swallow the rest
+// of the file because skipEscaped stops at the newline.
+func stripCLikeComments(code string) (string, []string) {
 	var out strings.Builder
 	var comments []string
 	n := len(code)
 	i := 0
-	atLineStart := true
 
 	for i < n {
-		if atLineStart {
-			atLineStart = false
-			if protectPreprocessor {
-				if end, ok := preprocessorLineEnd(code, i); ok {
-					out.WriteString(code[i:end])
-					i = end
-					atLineStart = true
-					continue
-				}
-			}
-		}
-
 		c := code[i]
 		switch {
-		case c == '\n':
-			out.WriteByte(c)
-			i++
-			atLineStart = true
-
 		case c == '/' && i+1 < n && code[i+1] == '/':
 			start := i
 			for i < n && code[i] != '\n' {
@@ -78,32 +71,6 @@ func stripCLikeComments(code string, protectPreprocessor bool) (string, []string
 	}
 
 	return out.String(), comments
-}
-
-// preprocessorLineEnd returns the end offset (exclusive) of the C/C++
-// preprocessor directive starting at i — leading horizontal whitespace then
-// '#', following backslash-newline continuations — or ok=false if the line
-// at i is not a directive.
-func preprocessorLineEnd(code string, i int) (int, bool) {
-	n := len(code)
-	j := i
-	for j < n && (code[j] == ' ' || code[j] == '\t') {
-		j++
-	}
-	if j >= n || code[j] != '#' {
-		return 0, false
-	}
-	for j < n {
-		if code[j] == '\\' && j+1 < n && code[j+1] == '\n' {
-			j += 2
-			continue
-		}
-		if code[j] == '\n' {
-			return j + 1, true
-		}
-		j++
-	}
-	return n, true
 }
 
 // isDigitSeparator reports whether the apostrophe at position i is a C++14

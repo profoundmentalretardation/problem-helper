@@ -277,6 +277,34 @@ func TestSetResumeStep_UnknownRequest(t *testing.T) {
 	}
 }
 
+func TestSetRepairResult(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.SetRepairResult(ctx, id, "int main(void){return 0;}", "run-42"); err != nil {
+		t.Fatalf("set repair result: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.RepairCode == nil || *got.RepairCode != "int main(void){return 0;}" {
+		t.Errorf("repair_code = %v, want the verified fix", got.RepairCode)
+	}
+	if got.RepairRunID == nil || *got.RepairRunID != "run-42" {
+		t.Errorf("repair_run_id = %v, want %q", got.RepairRunID, "run-42")
+	}
+}
+
+func TestSetRepairResult_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetRepairResult(ctx, uuid.New(), "code", "run-1")
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
 func TestSetBestSubmission(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)

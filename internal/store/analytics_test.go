@@ -220,6 +220,41 @@ func TestHintEffectivenessInputs(t *testing.T) {
 	}
 }
 
+// The submissions and events joins fan each other out, so a request with
+// more than one hint_delivered event — a cache re-delivery, or a redelivery
+// after a crash between the event and the status transition — would
+// multiply its submission count if the count weren't DISTINCT.
+func TestHintEffectivenessInputs_MultipleDeliveryEventsDoNotInflateCount(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{PlatformSubmissionID: "1", Code: "a", Language: "go", TestsPassed: 1, TestsTotal: 3, SubmittedAt: time.Now()},
+		{PlatformSubmissionID: "2", Code: "b", Language: "go", TestsPassed: 2, TestsTotal: 3, SubmittedAt: time.Now(), IsBest: true},
+	}); err != nil {
+		t.Fatalf("snapshot submissions: %v", err)
+	}
+	for _, payload := range []string{`{"hint_id":"x"}`, `{"hint_id":"x","cached":true}`} {
+		if err := s.AppendEvent(ctx, id, "hint_delivered", []byte(payload)); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+
+	rows, err := s.HintEffectivenessInputs(ctx, "user-1", "problem-1")
+	if err != nil {
+		t.Fatalf("hint effectiveness inputs: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d, want 1", len(rows))
+	}
+	if rows[0].SubmissionCount != 2 {
+		t.Errorf("SubmissionCount = %d, want 2 (two delivery events must not double it)", rows[0].SubmissionCount)
+	}
+	if rows[0].HintDeliveredAt == nil {
+		t.Error("expected non-nil HintDeliveredAt")
+	}
+}
+
 func TestSetUseless(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)

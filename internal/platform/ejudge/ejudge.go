@@ -235,11 +235,7 @@ func (c *Client) SubmitAsSystem(ctx context.Context, problemID, code, lang strin
 		return platform.RunResult{}, fmt.Errorf("%w: %q", ErrUnknownLanguage, lang)
 	}
 
-	sid, err := c.ensureClientSession(ctx)
-	if err != nil {
-		return platform.RunResult{}, err
-	}
-	body, err := c.submitMultipart(ctx, sid, problemID, langID, code)
+	body, err := c.submitWithSession(ctx, problemID, langID, code)
 	if err != nil {
 		return platform.RunResult{}, err
 	}
@@ -255,7 +251,63 @@ func (c *Client) SubmitAsSystem(ctx context.Context, problemID, code, lang strin
 	if err != nil {
 		return platform.RunResult{}, err
 	}
+	// The run id comes from the newest row of a table the whole service
+	// shares, since every verification submits under one system login. If
+	// that row is not newer than the one on the pre-submit page it belongs
+	// to some other submission (a concurrent repair of the same problem, or
+	// a submit ejudge silently dropped), and polling it would "verify" a run
+	// that never contained this code.
+	if !isNewerRunID(runID, page.newestRunID) {
+		return platform.RunResult{}, fmt.Errorf(
+			"ejudge: submit returned run %s, not newer than pre-submit run %s: %w",
+			runID, page.newestRunID, ErrMalformedResponse)
+	}
 	return platform.RunResult{ID: runID, Done: false}, nil
+}
+
+// submitWithSession POSTs the solution, transparently re-logging in and
+// re-posting once if the participant session expired in the meantime. A
+// submit happens minutes into a run — long after ensureClientSession's own
+// login — so it is the call most exposed to expiry, and without this an
+// expired session surfaces as ErrAuthFailed and puts an otherwise healthy
+// request in status=failed.
+func (c *Client) submitWithSession(ctx context.Context, problemID, langID, code string) (string, error) {
+	sid, err := c.ensureClientSession(ctx)
+	if err != nil {
+		return "", err
+	}
+	body, err := c.submitMultipart(ctx, sid, problemID, langID, code)
+	if err != nil {
+		return "", err
+	}
+	if !strings.Contains(body, "Error: Invalid session") {
+		return body, nil
+	}
+
+	c.mu.Lock()
+	c.clientSID = ""
+	c.mu.Unlock()
+	sid, err = c.loginClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	return c.submitMultipart(ctx, sid, problemID, langID, code)
+}
+
+// isNewerRunID reports whether runID is a later run than floor. An empty
+// floor (no previous submissions) accepts anything; ids ejudge did not
+// render as plain integers fall back to "different is good enough" rather
+// than rejecting a submit that probably succeeded.
+func isNewerRunID(runID, floor string) bool {
+	if floor == "" {
+		return true
+	}
+	got, err1 := strconv.Atoi(runID)
+	prev, err2 := strconv.Atoi(floor)
+	if err1 != nil || err2 != nil {
+		return runID != floor
+	}
+	return got > prev
 }
 
 // RunResult polls a run's state via new-master's report page (action=37).
@@ -589,6 +641,12 @@ type submitPage struct {
 	title       string
 	text        string
 	languageIDs map[string]string // short_name -> lang_id
+	// newestRunID is the top row of this page's "Previous submissions"
+	// table, i.e. the newest run the system user had for this problem
+	// before we posted anything. Empty when the table is absent (nothing
+	// submitted yet). SubmitAsSystem uses it as a floor to tell its own run
+	// apart from someone else's.
+	newestRunID string
 }
 
 var (
@@ -633,7 +691,11 @@ func (c *Client) fetchSubmitPage(ctx context.Context, problemID string) (submitP
 		}
 	}
 
-	return submitPage{title: tm[1], text: text, languageIDs: langIDs}, nil
+	// A first-ever submission has no "Previous submissions" table; that is
+	// not an error here, just an empty floor.
+	newest, _ := parseNewestRunID(body)
+
+	return submitPage{title: tm[1], text: text, languageIDs: langIDs, newestRunID: newest}, nil
 }
 
 // htmlToText strips tags and decodes entities for prompt-context display;

@@ -393,6 +393,83 @@ func TestSubmitAsSystem_Duplicate(t *testing.T) {
 	}
 }
 
+// Every verification submits under one system login, so the newest row of
+// the shared "Previous submissions" table is only ours if it is newer than
+// the one that was there before we posted. When it isn't — a concurrent
+// repair of the same problem, or a submit ejudge quietly dropped — polling
+// it would "verify" a run that never contained this code, which is the one
+// guarantee the repair loop exists to provide.
+func TestSubmitAsSystem_RunIDNotNewerThanPreSubmit_IsRejected(t *testing.T) {
+	srv := newSubmitServer(t, func(_ int) string {
+		// The post-submit page still shows run 4 on top — the same run the
+		// pre-submit page showed.
+		return fixture(t, "statement_prob_a.html")
+	})
+	c := newClient(t, srv)
+
+	_, err := c.SubmitAsSystem(context.Background(), "1", "int main(){return 0;}", "gcc")
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Errorf("err = %v, want ErrMalformedResponse for a run id that is not newer than the pre-submit one", err)
+	}
+}
+
+// A submit happens minutes into a repair run, long after the participant
+// session was established, so it is the call most exposed to expiry.
+// Surfacing that as an error would put an otherwise healthy request in
+// status=failed; the client re-logs in and re-posts instead.
+func TestSubmitAsSystem_ExpiredSession_ReLoginsAndRetries(t *testing.T) {
+	srv := newSubmitServer(t, func(n int) string {
+		if n == 1 {
+			return `<html><body><h2>Error: Invalid session</h2></body></html>`
+		}
+		return fixture(t, "submit_run_response.html")
+	})
+	c := newClient(t, srv)
+
+	got, err := c.SubmitAsSystem(context.Background(), "1", "int main(){return 0;}", "gcc")
+	if err != nil {
+		t.Fatalf("SubmitAsSystem: %v", err)
+	}
+	if got.ID != "5" {
+		t.Errorf("ID = %q, want %q (the re-posted submission)", got.ID, "5")
+	}
+}
+
+// newSubmitServer is newFixtureServer's new-client half with the submit POST
+// response chosen per attempt by respond (1-based), so a test can script
+// what the second POST sees.
+func newSubmitServer(t *testing.T, respond func(attempt int) string) *httptest.Server {
+	t.Helper()
+	var submits atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				http.Error(w, "bad multipart body", http.StatusBadRequest)
+				return
+			}
+		} else {
+			_ = r.ParseForm()
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.FormValue("login") != "":
+			serveFixture(w, fixture(t, "login_client_ok.html"))
+		case r.Method == http.MethodPost && r.FormValue("action_40") != "":
+			serveFixture(w, respond(int(submits.Add(1))))
+		case r.URL.Query().Get("action") == "139":
+			serveFixture(w, fixture(t, "statement_prob_a.html"))
+		default:
+			http.Error(w, "unhandled new-client action", http.StatusNotFound)
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 // --- RunResult -------------------------------------------------------------
 
 func TestRunResult_OK(t *testing.T) {

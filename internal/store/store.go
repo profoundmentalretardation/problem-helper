@@ -92,9 +92,35 @@ func WithTx(tx pgx.Tx) *Store {
 	return &Store{db: tx}
 }
 
+// migrateLockKey serializes Migrate across processes. The check ("is this
+// migration recorded?") and the apply are two separate statements, so two
+// callers starting at once — two service instances rolling out together, or
+// `go test ./...` running the store and worker package binaries against the
+// same TEST_DATABASE_URL — both see a new migration as unapplied and both
+// run it. The second one fails on whatever the first already created, taking
+// a healthy process down at startup.
+const migrateLockKey = 8829471
+
 // Migrate applies every migrations/*.sql file, in filename order, that has
-// not already been recorded in schema_migrations. Safe to call repeatedly.
+// not already been recorded in schema_migrations. Safe to call repeatedly
+// and safe to call concurrently: it holds a session-level advisory lock for
+// the whole scan-and-apply, so a second caller waits and then finds every
+// migration already recorded.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("store: acquiring migration connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
+		return fmt.Errorf("store: locking migrations: %w", err)
+	}
+	defer func() {
+		// Unlock on the same session that locked; the lock is released by the
+		// connection dropping anyway, but not while it sits in the pool.
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLockKey)
+	}()
+
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			name        TEXT PRIMARY KEY,
@@ -179,8 +205,14 @@ type HelpRequest struct {
 	ClaimedBy         *string
 	HeartbeatAt       *time.Time
 	ResumeStep        *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// RepairCode / RepairRunID hold the verified fix from loop 1 and the
+	// judge run it was accepted on. They are what makes the "repair" resume
+	// checkpoint honourable: the hint loop needs the working code, so
+	// without them a reclaimed row has no choice but to re-run loop 1.
+	RepairCode  *string
+	RepairRunID *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // CreateHelpRequest inserts a new help_requests row with status=pending.
@@ -204,7 +236,8 @@ func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest,
 	row := s.db.QueryRow(ctx, `
 		SELECT id, user_id, problem_id, platform, n_submissions_taken, status,
 		       failure_reason, best_submission_id, hint_id, useless, error,
-		       claimed_by, heartbeat_at, resume_step, created_at, updated_at
+		       claimed_by, heartbeat_at, resume_step, repair_code, repair_run_id,
+		       created_at, updated_at
 		FROM help_requests WHERE id = $1`, id)
 
 	var hr HelpRequest
@@ -212,7 +245,8 @@ func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest,
 	if err := row.Scan(
 		&hr.ID, &hr.UserID, &hr.ProblemID, &hr.Platform, &hr.NSubmissionsTaken, &status,
 		&hr.FailureReason, &hr.BestSubmissionID, &hr.HintID, &hr.Useless, &hr.Error,
-		&hr.ClaimedBy, &hr.HeartbeatAt, &hr.ResumeStep, &hr.CreatedAt, &hr.UpdatedAt,
+		&hr.ClaimedBy, &hr.HeartbeatAt, &hr.ResumeStep, &hr.RepairCode, &hr.RepairRunID,
+		&hr.CreatedAt, &hr.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
@@ -395,6 +429,23 @@ func (s *Store) SetResumeStep(ctx context.Context, id uuid.UUID, step string) er
 		`UPDATE help_requests SET resume_step = $1, updated_at = now() WHERE id = $2`, step, id)
 	if err != nil {
 		return fmt.Errorf("store: setting resume step: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
+// SetRepairResult records loop 1's verified fix — the working code and the
+// judge run it was accepted on — before the "repair" checkpoint is written,
+// so a reclaimed row can hand that code to the hint loop instead of running
+// loop 1 (and submitting to the judge) a second time.
+func (s *Store) SetRepairResult(ctx context.Context, id uuid.UUID, code, runID string) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET repair_code = $1, repair_run_id = $2, updated_at = now()
+		 WHERE id = $3`, code, runID, id)
+	if err != nil {
+		return fmt.Errorf("store: setting repair result: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
