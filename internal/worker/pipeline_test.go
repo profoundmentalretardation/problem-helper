@@ -509,3 +509,95 @@ func TestRunPipeline_RespectsNSubmissionsLimit(t *testing.T) {
 		t.Errorf("submissions = %+v, want exactly [sub-old] (n_submissions_taken=1 truncates to the first scripted submission)", subs)
 	}
 }
+
+// TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps simulates a
+// worker crash-reclaimed after the shield step: the request is claimed
+// (running), submissions and the shield record already committed to the
+// store, resume_step="shield". Re-running the pipeline must not re-fetch
+// the problem status or submissions (unscripted, so the mock would panic)
+// and must not insert duplicate submissions/shield rows — only the steps
+// after the checkpoint (cache miss onward) should execute.
+func TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New()
+	// Deliberately NOT scripted: ProblemStatus, Submissions. A resumed run
+	// past StepSubmissions must never call either.
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 2, TestsTotal: 2})
+	plat.ScriptTestCase("sub-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-1", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("run-1", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+
+	// Pre-populate exactly what steps 3-5 (submissions, pick, shield) would
+	// have committed before the simulated crash.
+	subID := uuid.New()
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{ID: subID, PlatformSubmissionID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now(), IsBest: true},
+	}); err != nil {
+		t.Fatalf("pre-seed submissions: %v", err)
+	}
+	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+		t.Fatalf("pre-seed best submission: %v", err)
+	}
+	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
+		RequestID: id, CodeBefore: "print(1)", CodeAfter: "print(1)", Diff: "",
+	}); err != nil {
+		t.Fatalf("pre-seed shield record: %v", err)
+	}
+	if err := s.SetResumeStep(ctx, id, worker.StepShield); err != nil {
+		t.Fatalf("pre-seed resume step: %v", err)
+	}
+
+	repairChat := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"print(2)","mistakes":[]}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+	hintWriter := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"hint":"Think about what your very first print should show."}`,
+		Usage: llm.Usage{InputTokens: 50, OutputTokens: 10},
+	})
+	guardrail := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"approved":true,"reason":"makes them think"}`,
+		Usage: llm.Usage{InputTokens: 80, OutputTokens: 5},
+	})
+
+	pl := &worker.Pipeline{
+		Store:    s,
+		Platform: plat,
+		Repair:   newRepairRunner(t, s, plat, repairChat),
+		Hint:     newHintRunner(t, hintWriter, guardrail),
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusDone {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusDone)
+	}
+
+	subs, err := s.ListSubmissions(ctx, id)
+	if err != nil {
+		t.Fatalf("list submissions: %v", err)
+	}
+	if len(subs) != 1 {
+		t.Errorf("submissions = %+v, want exactly the one pre-seeded row (resume must not re-snapshot)", subs)
+	}
+
+	events, err := s.ListEvents(ctx, id)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if hasEventKind(events, "problem_status") {
+		t.Errorf("events = %+v, want no problem_status event on a resumed run past StepStatus", events)
+	}
+	if hasEventKind(events, "best_submission_picked") {
+		t.Errorf("events = %+v, want no best_submission_picked event on a resumed run past StepSubmissions", events)
+	}
+}

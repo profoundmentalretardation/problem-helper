@@ -2,9 +2,18 @@
 // diagram) as a function of a claimed (status=running) help_requests row:
 // platform status/statement/submissions, best-submission pick, shield,
 // hint-cache lookup, the repair loop, the hint loop, and delivery.
-// resume_step is checkpointed after each step for Task 14's crash-reclaim
-// to resume against; branching on an existing resume_step to skip completed
-// work is Task 14's scope, not this one's.
+// resume_step is checkpointed after each step; a reclaimed row (Task 14)
+// resumes at its last checkpoint instead of restarting from step 1 —
+// RunPipeline reloads whatever that step already persisted (best
+// submission, shield record) from the store instead of re-deriving it, so
+// steps that mutate the store (snapshotting submissions, inserting the
+// shield record) never run twice for the same request.
+//
+// The repair and hint loops (steps 7-8) are not further subdivided: per the
+// plan's "Resume granularity" decision, attempt-level checkpointing inside
+// a loop is post-MVP, so a crash mid-loop re-enters the whole loop on
+// resume (the loop's own baseline run is never re-submitted — only new
+// verification attempts are, same as a non-resumed run).
 package worker
 
 import (
@@ -35,6 +44,28 @@ const (
 	StepHint        = "hint"
 )
 
+// stepOrder ranks the checkpoints in pipeline order, so resumeIndex can
+// tell "already past this step" from a stored resume_step. 0 is reserved
+// for "no checkpoint yet" (a fresh request, ResumeStep == nil).
+var stepOrder = map[string]int{
+	StepStatus:      1,
+	StepStatement:   2,
+	StepSubmissions: 3,
+	StepShield:      4,
+	StepCache:       5,
+	StepRepair:      6,
+	StepHint:        7,
+}
+
+// resumeIndex returns step's position in stepOrder, or 0 if step is nil —
+// a fresh request that hasn't completed any pipeline step yet.
+func resumeIndex(step *string) int {
+	if step == nil {
+		return 0
+	}
+	return stepOrder[*step]
+}
+
 // Store is the persistence dependency the pipeline needs; *store.Store
 // satisfies it.
 type Store interface {
@@ -46,6 +77,8 @@ type Store interface {
 	FindApprovedHint(ctx context.Context, problemID, codeHash string) (*store.Hint, error)
 	InsertHint(ctx context.Context, h store.Hint) error
 	SetResumeStep(ctx context.Context, id uuid.UUID, step string) error
+	GetSubmission(ctx context.Context, id uuid.UUID) (*store.Submission, error)
+	GetShieldRecordByRequest(ctx context.Context, requestID uuid.UUID) (*store.ShieldRecord, error)
 	SetBestSubmission(ctx context.Context, id, submissionID uuid.UUID) error
 	SetHintID(ctx context.Context, id, hintID uuid.UUID) error
 	SetFailureReason(ctx context.Context, id uuid.UUID, reason string) error
@@ -82,98 +115,151 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 	if err != nil {
 		return fmt.Errorf("pipeline: loading request: %w", err)
 	}
+	resumeIdx := resumeIndex(hr.ResumeStep)
 
-	status, err := pl.Platform.ProblemStatus(ctx, hr.UserID, hr.ProblemID)
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("checking problem status: %w", err))
-	}
-	if err := pl.event(ctx, requestID, "problem_status", map[string]any{"solved": status.Solved}); err != nil {
-		return err
-	}
-	if status.Solved {
-		return pl.finish(ctx, requestID, store.StatusAlreadySolved)
-	}
-	if err := pl.checkpoint(ctx, requestID, StepStatus); err != nil {
-		return err
+	// A row only reaches "running" with a checkpoint past StepStatus if an
+	// earlier run of this same request already found it unsolved (a solved
+	// problem stops the pipeline in a terminal status, never reaching this
+	// checkpoint) — so a resumed run skips the recheck instead of spending
+	// another platform call and duplicate event on it.
+	if resumeIdx < stepOrder[StepStatus] {
+		status, err := pl.Platform.ProblemStatus(ctx, hr.UserID, hr.ProblemID)
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("checking problem status: %w", err))
+		}
+		if err := pl.event(ctx, requestID, "problem_status", map[string]any{"solved": status.Solved}); err != nil {
+			return err
+		}
+		if status.Solved {
+			return pl.finish(ctx, requestID, store.StatusAlreadySolved)
+		}
+		if err := pl.checkpoint(ctx, requestID, StepStatus); err != nil {
+			return err
+		}
 	}
 
+	// The problem statement is never persisted (only the repair loop needs
+	// it), so it's re-fetched on every run regardless of resume — a cheap,
+	// idempotent read with no store side effect to duplicate.
 	statement, err := pl.Platform.ProblemStatement(ctx, hr.ProblemID)
 	if err != nil {
 		return pl.infraFail(ctx, requestID, fmt.Errorf("fetching problem statement: %w", err))
 	}
-	if err := pl.checkpoint(ctx, requestID, StepStatement); err != nil {
-		return err
-	}
-
-	subs, err := pl.Platform.Submissions(ctx, hr.UserID, hr.ProblemID, hr.NSubmissionsTaken)
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("fetching submissions: %w", err))
-	}
-
-	best, err := pick.Best(subs)
-	if errors.Is(err, pick.ErrNoSubmissions) {
-		if _, serr := pl.snapshotSubmissions(ctx, requestID, subs, ""); serr != nil {
-			return serr
+	if resumeIdx < stepOrder[StepStatement] {
+		if err := pl.checkpoint(ctx, requestID, StepStatement); err != nil {
+			return err
 		}
-		return pl.finish(ctx, requestID, store.StatusNoSubmissions)
-	}
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("picking best submission: %w", err))
 	}
 
-	bestStoreID, err := pl.snapshotSubmissions(ctx, requestID, subs, best.ID)
-	if err != nil {
-		return err
-	}
-	if err := pl.Store.SetBestSubmission(ctx, requestID, bestStoreID); err != nil {
-		return fmt.Errorf("pipeline: recording best submission: %w", err)
-	}
-	if err := pl.event(ctx, requestID, "best_submission_picked", map[string]any{
-		"platform_submission_id": best.ID, "tests_passed": best.TestsPassed, "tests_total": best.TestsTotal,
-	}); err != nil {
-		return err
-	}
-	if err := pl.checkpoint(ctx, requestID, StepSubmissions); err != nil {
-		return err
+	var best platform.Submission
+	if resumeIdx < stepOrder[StepSubmissions] {
+		subs, err := pl.Platform.Submissions(ctx, hr.UserID, hr.ProblemID, hr.NSubmissionsTaken)
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("fetching submissions: %w", err))
+		}
+
+		picked, err := pick.Best(subs)
+		if errors.Is(err, pick.ErrNoSubmissions) {
+			if _, serr := pl.snapshotSubmissions(ctx, requestID, subs, ""); serr != nil {
+				return serr
+			}
+			return pl.finish(ctx, requestID, store.StatusNoSubmissions)
+		}
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("picking best submission: %w", err))
+		}
+		best = picked
+
+		bestStoreID, err := pl.snapshotSubmissions(ctx, requestID, subs, best.ID)
+		if err != nil {
+			return err
+		}
+		if err := pl.Store.SetBestSubmission(ctx, requestID, bestStoreID); err != nil {
+			return fmt.Errorf("pipeline: recording best submission: %w", err)
+		}
+		if err := pl.event(ctx, requestID, "best_submission_picked", map[string]any{
+			"platform_submission_id": best.ID, "tests_passed": best.TestsPassed, "tests_total": best.TestsTotal,
+		}); err != nil {
+			return err
+		}
+		if err := pl.checkpoint(ctx, requestID, StepSubmissions); err != nil {
+			return err
+		}
+	} else {
+		// Already snapshotted and picked before the last checkpoint;
+		// reload rather than re-fetching (which would duplicate the
+		// snapshot rows) or re-picking (the platform's submission list may
+		// have changed since).
+		if hr.BestSubmissionID == nil {
+			return fmt.Errorf("pipeline: resuming past %s checkpoint with no best_submission_id recorded", StepSubmissions)
+		}
+		saved, err := pl.Store.GetSubmission(ctx, *hr.BestSubmissionID)
+		if err != nil {
+			return fmt.Errorf("pipeline: reloading best submission on resume: %w", err)
+		}
+		best = platform.Submission{
+			ID:          saved.PlatformSubmissionID,
+			Code:        saved.Code,
+			Language:    saved.Language,
+			TestsPassed: saved.TestsPassed,
+			TestsTotal:  saved.TestsTotal,
+			SubmittedAt: saved.SubmittedAt,
+		}
 	}
 
-	shielded, err := shield.Strip(best.Code, best.Language)
-	if errors.Is(err, shield.ErrUnsupportedLanguage) {
-		return pl.finishWithError(ctx, requestID, fmt.Sprintf("unsupported submission language %q", best.Language))
-	}
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("shielding submission: %w", err))
-	}
-	removed, err := json.Marshal(shielded.Removed)
-	if err != nil {
-		return fmt.Errorf("pipeline: encoding shield removal report: %w", err)
-	}
-	if err := pl.Store.InsertShieldRecord(ctx, store.ShieldRecord{
-		RequestID:  requestID,
-		CodeBefore: shielded.CodeBefore,
-		CodeAfter:  shielded.CodeAfter,
-		Diff:       shielded.Diff,
-		Removed:    removed,
-	}); err != nil {
-		return fmt.Errorf("pipeline: recording shield record: %w", err)
-	}
-	if err := pl.checkpoint(ctx, requestID, StepShield); err != nil {
-		return err
+	var shielded shield.Result
+	if resumeIdx < stepOrder[StepShield] {
+		shielded, err = shield.Strip(best.Code, best.Language)
+		if errors.Is(err, shield.ErrUnsupportedLanguage) {
+			return pl.finishWithError(ctx, requestID, fmt.Sprintf("unsupported submission language %q", best.Language))
+		}
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("shielding submission: %w", err))
+		}
+		removed, err := json.Marshal(shielded.Removed)
+		if err != nil {
+			return fmt.Errorf("pipeline: encoding shield removal report: %w", err)
+		}
+		if err := pl.Store.InsertShieldRecord(ctx, store.ShieldRecord{
+			RequestID:  requestID,
+			CodeBefore: shielded.CodeBefore,
+			CodeAfter:  shielded.CodeAfter,
+			Diff:       shielded.Diff,
+			Removed:    removed,
+		}); err != nil {
+			return fmt.Errorf("pipeline: recording shield record: %w", err)
+		}
+		if err := pl.checkpoint(ctx, requestID, StepShield); err != nil {
+			return err
+		}
+	} else {
+		// Already shielded and recorded before the last checkpoint; reload
+		// instead of re-stripping (which would insert a duplicate record).
+		rec, err := pl.Store.GetShieldRecordByRequest(ctx, requestID)
+		if err != nil {
+			return fmt.Errorf("pipeline: reloading shield record on resume: %w", err)
+		}
+		shielded = shield.Result{CodeBefore: rec.CodeBefore, CodeAfter: rec.CodeAfter, Diff: rec.Diff}
 	}
 
 	codeHash := HashCode(shielded.CodeAfter)
-	if cached, ok := Lookup(ctx, pl.Store, hr.ProblemID, codeHash); ok {
-		if err := pl.Store.SetHintID(ctx, requestID, cached.ID); err != nil {
-			return fmt.Errorf("pipeline: recording cached hint id: %w", err)
+	if resumeIdx < stepOrder[StepCache] {
+		if cached, ok := Lookup(ctx, pl.Store, hr.ProblemID, codeHash); ok {
+			if err := pl.Store.SetHintID(ctx, requestID, cached.ID); err != nil {
+				return fmt.Errorf("pipeline: recording cached hint id: %w", err)
+			}
+			if err := pl.event(ctx, requestID, "hint_cache_hit", map[string]any{"hint_id": cached.ID}); err != nil {
+				return err
+			}
+			return pl.finish(ctx, requestID, store.StatusDone)
 		}
-		if err := pl.event(ctx, requestID, "hint_cache_hit", map[string]any{"hint_id": cached.ID}); err != nil {
+		if err := pl.checkpoint(ctx, requestID, StepCache); err != nil {
 			return err
 		}
-		return pl.finish(ctx, requestID, store.StatusDone)
 	}
-	if err := pl.checkpoint(ctx, requestID, StepCache); err != nil {
-		return err
-	}
+	// resumeIdx >= StepCache means this request already missed the cache
+	// before its last checkpoint — a hit would have finished the pipeline
+	// terminally, never leaving a later checkpoint to resume from.
 
 	repairResult, err := pl.Repair.Run(ctx, repair.Params{
 		RequestID:          requestID,

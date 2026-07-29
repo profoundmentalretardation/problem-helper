@@ -518,18 +518,25 @@ The "cache hit skips the LLM entirely" end-to-end assertion lives in Task 13.
 - Create: `internal/worker/worker.go`, `internal/worker/worker_test.go`
 - Modify: `cmd/helper/main.go`
 
-- [ ] write failing concurrency test: two workers, one pending row → exactly one claims it
+- [x] write failing concurrency test: two workers, one pending row → exactly one claims it
       (`FOR UPDATE SKIP LOCKED`)
-- [ ] write failing reclaim test: row in `running` with stale `heartbeat_at` → reclaimed,
+- [x] write failing reclaim test: row in `running` with stale `heartbeat_at` → reclaimed,
       resumed at `resume_step` (not restarted from step 1); pending platform run polled by
       persisted run-id, **never re-submitted**
-- [ ] write failing shutdown test: SIGTERM → in-flight request finishes its current step,
+- [x] write failing shutdown test: SIGTERM → in-flight request finishes its current step,
       heartbeat stops, process exits
-- [ ] implement worker pool (claim loop, heartbeat, reclaim-on-startup + periodic), graceful
+- [x] implement worker pool (claim loop, heartbeat, reclaim-on-startup + periodic), graceful
       shutdown; wire config + store + api + worker in `main.go`
-- [ ] verify by hand: `docker-compose up` + `make run` → POST /help against mock platform →
-      poll → hint delivered
-- [ ] run tests + lint - must pass before task 15
+- [x] manual test (partially automatable): `docker compose up` (no `docker-compose.yml`
+      orchestration beyond Postgres exists yet) + running the binary confirmed HTTP serves,
+      `POST /help` enqueues, the worker claims and runs the pipeline, SIGTERM drains cleanly.
+      "poll → hint delivered" isn't reachable by hand yet — `platform/mock` (main.go's stand-in
+      until Task 15) starts empty and panics on any unscripted call, and there's no admin
+      endpoint to seed it; skipped rather than faked. A panic mid-pipeline was hit doing this
+      (`mock: unscripted ProblemStatus`) and exposed a real gap — an unrecovered panic in a
+      claimed run crashed the whole process — now fixed with a `recover()` boundary in
+      `Worker.RunOnce` (a bad claim fails and is left for reclaim, not fatal to the pool).
+- [x] run tests + lint - must pass before task 15
 
 ### Task 15: ejudge platform implementation
 

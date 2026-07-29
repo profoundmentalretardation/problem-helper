@@ -259,6 +259,87 @@ func isLegalTransition(from, to Status) bool {
 	return false
 }
 
+// ClaimNext atomically claims one pending help_requests row for workerID,
+// using SELECT ... FOR UPDATE SKIP LOCKED so concurrent claimants each land
+// on a distinct row instead of blocking on one another. Returns nil, nil if
+// no row is pending — a miss, not an error.
+func (s *Store) ClaimNext(ctx context.Context, workerID string) (*HelpRequest, error) {
+	row := s.db.QueryRow(ctx, `
+		UPDATE help_requests
+		SET status = $1, claimed_by = $2, heartbeat_at = now(), updated_at = now()
+		WHERE id = (
+			SELECT id FROM help_requests
+			WHERE status = $3
+			ORDER BY created_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		RETURNING id, user_id, problem_id, platform, n_submissions_taken, status,
+		          failure_reason, best_submission_id, hint_id, useless, error,
+		          claimed_by, heartbeat_at, resume_step, created_at, updated_at`,
+		StatusRunning, workerID, StatusPending)
+
+	var hr HelpRequest
+	var status string
+	if err := row.Scan(
+		&hr.ID, &hr.UserID, &hr.ProblemID, &hr.Platform, &hr.NSubmissionsTaken, &status,
+		&hr.FailureReason, &hr.BestSubmissionID, &hr.HintID, &hr.Useless, &hr.Error,
+		&hr.ClaimedBy, &hr.HeartbeatAt, &hr.ResumeStep, &hr.CreatedAt, &hr.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: claiming next help request: %w", err)
+	}
+	hr.Status = Status(status)
+	return &hr, nil
+}
+
+// Heartbeat refreshes heartbeat_at for a request its claimant is still
+// actively working. A no-op (not an error) if the row is no longer running
+// — e.g. it finished between the last tick and this one.
+func (s *Store) Heartbeat(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET heartbeat_at = now() WHERE id = $1 AND status = $2`,
+		id, StatusRunning,
+	); err != nil {
+		return fmt.Errorf("store: updating heartbeat: %w", err)
+	}
+	return nil
+}
+
+// ReclaimStale moves running rows whose heartbeat is older than before back
+// to pending, clearing claimed_by/heartbeat_at so another worker can claim
+// them. resume_step is deliberately left untouched, so the row resumes at
+// its last completed pipeline step instead of restarting. Returns the
+// reclaimed request ids.
+func (s *Store) ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID, error) {
+	rows, err := s.db.Query(ctx, `
+		UPDATE help_requests
+		SET status = $1, claimed_by = NULL, heartbeat_at = NULL, updated_at = now()
+		WHERE status = $2 AND heartbeat_at < $3
+		RETURNING id`,
+		StatusPending, StatusRunning, before,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: reclaiming stale requests: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("store: scanning reclaimed request id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating reclaimed requests: %w", err)
+	}
+	return ids, nil
+}
+
 // SetResumeStep records the last pipeline step a request completed, so a
 // crash-reclaimed row resumes there instead of restarting from step 1.
 func (s *Store) SetResumeStep(ctx context.Context, id uuid.UUID, step string) error {
@@ -505,6 +586,28 @@ func (s *Store) ListSubmissions(ctx context.Context, requestID uuid.UUID) ([]Sub
 	return out, nil
 }
 
+// GetSubmission fetches one submissions row by id — used by a
+// crash-resumed pipeline to reload the best submission it already
+// snapshotted and picked before its last checkpoint.
+func (s *Store) GetSubmission(ctx context.Context, id uuid.UUID) (*Submission, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, request_id, platform_submission_id, code, language,
+		       tests_passed, tests_total, submitted_at, is_best
+		FROM submissions WHERE id = $1`, id)
+
+	var sub Submission
+	if err := row.Scan(
+		&sub.ID, &sub.RequestID, &sub.PlatformSubmissionID, &sub.Code, &sub.Language,
+		&sub.TestsPassed, &sub.TestsTotal, &sub.SubmittedAt, &sub.IsBest,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: getting submission: no row with id %s", id)
+		}
+		return nil, fmt.Errorf("store: getting submission: %w", err)
+	}
+	return &sub, nil
+}
+
 // ShieldRecord is one shield_records row: the audit trail for what the
 // shield stripped from a submission before any model saw it. CodeBefore,
 // CodeAfter and Diff are all stored deliberately, for audit.
@@ -551,6 +654,25 @@ func (s *Store) GetShieldRecord(ctx context.Context, id uuid.UUID) (*ShieldRecor
 	if err := row.Scan(&r.ID, &r.RequestID, &r.CodeBefore, &r.CodeAfter, &r.Diff, &r.Removed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("store: getting shield record: no row with id %s", id)
+		}
+		return nil, fmt.Errorf("store: getting shield record: %w", err)
+	}
+	return &r, nil
+}
+
+// GetShieldRecordByRequest fetches the shield_records row for a request —
+// used by a crash-resumed pipeline that already shielded the code before
+// its last checkpoint, so it never re-shields (and re-inserts) it.
+func (s *Store) GetShieldRecordByRequest(ctx context.Context, requestID uuid.UUID) (*ShieldRecord, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, request_id, code_before, code_after, diff, removed
+		FROM shield_records WHERE request_id = $1
+		ORDER BY created_at DESC LIMIT 1`, requestID)
+
+	var r ShieldRecord
+	if err := row.Scan(&r.ID, &r.RequestID, &r.CodeBefore, &r.CodeAfter, &r.Diff, &r.Removed); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: getting shield record: no row for request %s", requestID)
 		}
 		return nil, fmt.Errorf("store: getting shield record: %w", err)
 	}

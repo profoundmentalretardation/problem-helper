@@ -713,3 +713,212 @@ func TestInsertRawMistake_UnknownRequest(t *testing.T) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
 }
+
+func TestClaimNext_ClaimsPendingRow(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	got, err := s.ClaimNext(ctx, "worker-1")
+	if err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+	if got == nil {
+		t.Fatal("claim next: got nil, want the pending request")
+	}
+	if got.ID != id {
+		t.Errorf("claimed id = %s, want %s", got.ID, id)
+	}
+	if got.Status != store.StatusRunning {
+		t.Errorf("status = %s, want running", got.Status)
+	}
+	if got.ClaimedBy == nil || *got.ClaimedBy != "worker-1" {
+		t.Errorf("claimed_by = %v, want worker-1", got.ClaimedBy)
+	}
+	if got.HeartbeatAt == nil {
+		t.Error("heartbeat_at not set by claim")
+	}
+}
+
+func TestClaimNext_NoPendingRows(t *testing.T) {
+	s, ctx := withStore(t)
+
+	got, err := s.ClaimNext(ctx, "worker-1")
+	if err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil (a miss is not an error)", got)
+	}
+}
+
+func TestClaimNext_SkipsAlreadyRunningRow(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+		t.Fatalf("transition to running: %v", err)
+	}
+
+	got, err := s.ClaimNext(ctx, "worker-1")
+	if err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %+v, want nil (only pending rows are claimable)", got)
+	}
+}
+
+func TestHeartbeat_UpdatesRunningRow(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+
+	if err := s.Heartbeat(ctx, id); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.HeartbeatAt == nil {
+		t.Error("heartbeat_at is nil after heartbeat")
+	}
+	if got.Status != store.StatusRunning {
+		t.Errorf("status = %s, want running", got.Status)
+	}
+}
+
+func TestHeartbeat_NoopWhenNotRunning(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx) // still pending, never claimed
+
+	if err := s.Heartbeat(ctx, id); err != nil {
+		t.Fatalf("heartbeat on a non-running row should be a silent no-op, got: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.HeartbeatAt != nil {
+		t.Errorf("heartbeat_at = %v, want nil (heartbeat must not touch a non-running row)", got.HeartbeatAt)
+	}
+}
+
+func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+	if err := s.SetResumeStep(ctx, id, "shield"); err != nil {
+		t.Fatalf("set resume step: %v", err)
+	}
+
+	reclaimed, err := s.ReclaimStale(ctx, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("reclaim stale: %v", err)
+	}
+	if len(reclaimed) != 1 || reclaimed[0] != id {
+		t.Fatalf("reclaimed = %v, want [%s]", reclaimed, id)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusPending {
+		t.Errorf("status = %s, want pending", got.Status)
+	}
+	if got.ClaimedBy != nil {
+		t.Errorf("claimed_by = %v, want nil", got.ClaimedBy)
+	}
+	if got.HeartbeatAt != nil {
+		t.Errorf("heartbeat_at = %v, want nil", got.HeartbeatAt)
+	}
+	if got.ResumeStep == nil || *got.ResumeStep != "shield" {
+		t.Errorf("resume_step = %v, want it preserved as %q", got.ResumeStep, "shield")
+	}
+}
+
+func TestReclaimStale_LeavesFreshHeartbeatAlone(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+
+	reclaimed, err := s.ReclaimStale(ctx, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("reclaim stale: %v", err)
+	}
+	if len(reclaimed) != 0 {
+		t.Fatalf("reclaimed = %v, want none (heartbeat is fresh)", reclaimed)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusRunning {
+		t.Errorf("status = %s, want still running", got.Status)
+	}
+}
+
+func TestGetSubmission(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	subID := uuid.New()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{ID: subID, PlatformSubmissionID: "sub-1", Code: "print(1)", Language: "python3", TestsPassed: 4, TestsTotal: 5, SubmittedAt: now, IsBest: true},
+	}); err != nil {
+		t.Fatalf("snapshot submissions: %v", err)
+	}
+
+	got, err := s.GetSubmission(ctx, subID)
+	if err != nil {
+		t.Fatalf("get submission: %v", err)
+	}
+	if got.PlatformSubmissionID != "sub-1" || got.Code != "print(1)" || !got.IsBest {
+		t.Errorf("unexpected row: %+v", got)
+	}
+}
+
+func TestGetSubmission_Unknown(t *testing.T) {
+	s, ctx := withStore(t)
+	if _, err := s.GetSubmission(ctx, uuid.New()); err == nil {
+		t.Fatal("want error for unknown submission id")
+	}
+}
+
+func TestGetShieldRecordByRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
+		RequestID:  id,
+		CodeBefore: "int x = 1; // c\n",
+		CodeAfter:  "int x = 1; \n",
+		Diff:       "diff",
+	}); err != nil {
+		t.Fatalf("insert shield record: %v", err)
+	}
+
+	got, err := s.GetShieldRecordByRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get shield record by request: %v", err)
+	}
+	if got.CodeAfter != "int x = 1; \n" {
+		t.Errorf("code_after = %q, want %q", got.CodeAfter, "int x = 1; \n")
+	}
+}
+
+func TestGetShieldRecordByRequest_Unknown(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.GetShieldRecordByRequest(ctx, id); err == nil {
+		t.Fatal("want error when no shield record exists for the request")
+	}
+}
