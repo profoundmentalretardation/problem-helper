@@ -576,6 +576,22 @@ func (s *Store) InsertHint(ctx context.Context, h Hint) error {
 	return nil
 }
 
+// GetHint fetches one hints row by id.
+func (s *Store) GetHint(ctx context.Context, id uuid.UUID) (*Hint, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, request_id, problem_id, code_hash, text, approved, created_at
+		FROM hints WHERE id = $1`, id)
+
+	var h Hint
+	if err := row.Scan(&h.ID, &h.RequestID, &h.ProblemID, &h.CodeHash, &h.Text, &h.Approved, &h.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: getting hint: no row with id %s", id)
+		}
+		return nil, fmt.Errorf("store: getting hint: %w", err)
+	}
+	return &h, nil
+}
+
 // FindApprovedHint returns the approved hint cached for this problem +
 // post-shield code hash, or nil if none exists — a miss is not an error.
 func (s *Store) FindApprovedHint(ctx context.Context, problemID, codeHash string) (*Hint, error) {
@@ -594,6 +610,20 @@ func (s *Store) FindApprovedHint(ctx context.Context, problemID, codeHash string
 		return nil, fmt.Errorf("store: finding approved hint: %w", err)
 	}
 	return &h, nil
+}
+
+// CountRequestsSince counts help_requests rows created by a user at or after
+// since — the rate-limit query behind the API's daily_requests_per_user cap.
+func (s *Store) CountRequestsSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	row := s.db.QueryRow(ctx,
+		`SELECT count(*) FROM help_requests WHERE user_id = $1 AND created_at >= $2`,
+		userID, since,
+	)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, fmt.Errorf("store: counting requests since %s: %w", since, err)
+	}
+	return n, nil
 }
 
 func isUniqueViolation(err error) bool {

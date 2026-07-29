@@ -476,16 +476,16 @@ The "cache hit skips the LLM entirely" end-to-end assertion lives in Task 13.
 **Files:**
 - Create: `internal/api/api.go`, `internal/api/api_test.go`
 
-- [ ] write failing tests (handlers against a fake worker/store): `POST /help
+- [x] write failing tests (handlers against a fake worker/store): `POST /help
       {user_id, problem_id, n_submissions?}` → 202 + request_id, default n_submissions from
       config; `GET /requests/{id}` → per-status payloads exactly as in Technical Details
       (already_solved / no_submissions / done+hint / no_fix / no_hint / failed+error);
       validation → 400; unknown id → 404
-- [ ] write failing auth tests: missing/wrong bearer on `/help`+`/requests` → 401
+- [x] write failing auth tests: missing/wrong bearer on `/help`+`/requests` → 401
       (`API_TOKEN`); on `/admin/*` → 401 (`ADMIN_TOKEN`)
-- [ ] write failing rate-limit test: user over `daily_requests_per_user` → 429
-- [ ] implement handlers + middleware until green
-- [ ] run tests + lint - must pass before task 13
+- [x] write failing rate-limit test: user over `daily_requests_per_user` → 429
+- [x] implement handlers + middleware until green
+- [x] run tests + lint - must pass before task 13
 
 ### Task 13: Pipeline orchestration
 

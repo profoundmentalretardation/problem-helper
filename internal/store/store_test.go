@@ -486,6 +486,85 @@ func TestInsertHint_UnknownRequest(t *testing.T) {
 	}
 }
 
+func TestGetHint(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	hintID := uuid.New()
+
+	if err := s.InsertHint(ctx, store.Hint{
+		ID:        hintID,
+		RequestID: id,
+		ProblemID: "problem-1",
+		CodeHash:  "hash-a",
+		Text:      "look at your loop bound",
+		Approved:  true,
+	}); err != nil {
+		t.Fatalf("insert hint: %v", err)
+	}
+
+	got, err := s.GetHint(ctx, hintID)
+	if err != nil {
+		t.Fatalf("get hint: %v", err)
+	}
+	if got.Text != "look at your loop bound" || !got.Approved {
+		t.Errorf("unexpected hint: %+v", got)
+	}
+}
+
+func TestGetHint_Unknown(t *testing.T) {
+	s, ctx := withStore(t)
+	if _, err := s.GetHint(ctx, uuid.New()); err == nil {
+		t.Error("expected error for unknown hint id")
+	}
+}
+
+func TestCountRequestsSince(t *testing.T) {
+	s, ctx := withStore(t)
+
+	id1 := uuid.New()
+	if err := s.CreateHelpRequest(ctx, store.HelpRequestInput{
+		ID: id1, UserID: "user-rate", ProblemID: "problem-1", Platform: "mock", NSubmissionsTaken: 5,
+	}); err != nil {
+		t.Fatalf("create help request: %v", err)
+	}
+	id2 := uuid.New()
+	if err := s.CreateHelpRequest(ctx, store.HelpRequestInput{
+		ID: id2, UserID: "user-rate", ProblemID: "problem-2", Platform: "mock", NSubmissionsTaken: 5,
+	}); err != nil {
+		t.Fatalf("create help request: %v", err)
+	}
+	// A different user's requests must not count toward user-rate's total.
+	if err := s.CreateHelpRequest(ctx, store.HelpRequestInput{
+		ID: uuid.New(), UserID: "someone-else", ProblemID: "problem-1", Platform: "mock", NSubmissionsTaken: 5,
+	}); err != nil {
+		t.Fatalf("create help request: %v", err)
+	}
+
+	got, err := s.CountRequestsSince(ctx, "user-rate", time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("count requests: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("count = %d, want 2", got)
+	}
+
+	got, err = s.CountRequestsSince(ctx, "user-rate", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("count requests: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("count with future since = %d, want 0", got)
+	}
+
+	got, err = s.CountRequestsSince(ctx, "nobody", time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("count requests: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("count for unknown user = %d, want 0", got)
+	}
+}
+
 func TestInsertRawMistake_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
 	err := s.InsertRawMistake(ctx, store.RawMistake{
