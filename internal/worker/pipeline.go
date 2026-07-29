@@ -146,6 +146,9 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		return pl.infraFail(ctx, requestID, fmt.Errorf("fetching problem statement: %w", err))
 	}
 	if resumeIdx < stepOrder[StepStatement] {
+		if err := pl.event(ctx, requestID, "problem_statement", map[string]any{"problem_id": statement.ProblemID}); err != nil {
+			return err
+		}
 		if err := pl.checkpoint(ctx, requestID, StepStatement); err != nil {
 			return err
 		}
@@ -229,6 +232,9 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		}); err != nil {
 			return fmt.Errorf("pipeline: recording shield record: %w", err)
 		}
+		if err := pl.event(ctx, requestID, "shield_applied", map[string]any{"removed": shielded.Removed}); err != nil {
+			return err
+		}
 		if err := pl.checkpoint(ctx, requestID, StepShield); err != nil {
 			return err
 		}
@@ -272,7 +278,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		BaselineTestsTotal: best.TestsTotal,
 	})
 	if err != nil {
-		return fmt.Errorf("pipeline: running repair loop: %w", err)
+		return pl.infraFail(ctx, requestID, fmt.Errorf("running repair loop: %w", err))
 	}
 	if err := pl.event(ctx, requestID, "repair_result", map[string]any{
 		"status": repairResult.Status, "reason": repairResult.Reason, "attempts": repairResult.Attempts,
@@ -292,7 +298,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		WorkingCode:  repairResult.Code,
 	})
 	if err != nil {
-		return fmt.Errorf("pipeline: running hint loop: %w", err)
+		return pl.infraFail(ctx, requestID, fmt.Errorf("running hint loop: %w", err))
 	}
 	if err := pl.event(ctx, requestID, "hint_result", map[string]any{
 		"status": hintResult.Status, "reason": hintResult.Reason, "attempts": hintResult.Attempts,

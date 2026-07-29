@@ -20,13 +20,21 @@ type testKey struct {
 	testID int
 }
 
+// submitItem is one queued response for SubmitAsSystem — either a result or
+// an error, never both.
+type submitItem struct {
+	result platform.RunResult
+	err    error
+}
+
 // Platform is the scriptable fake. Zero value is not usable; construct with
 // New.
 type Platform struct {
 	statements  map[string]platform.Statement
 	statuses    map[pairKey]platform.Status
+	statusErrs  map[pairKey]error
 	submissions map[pairKey][]platform.Submission
-	submitQueue map[string][]platform.RunResult
+	submitQueue map[string][]submitItem
 	runResults  map[string]platform.RunResult
 	testCases   map[testKey]platform.TestCase
 }
@@ -36,8 +44,9 @@ func New() *Platform {
 	return &Platform{
 		statements:  map[string]platform.Statement{},
 		statuses:    map[pairKey]platform.Status{},
+		statusErrs:  map[pairKey]error{},
 		submissions: map[pairKey][]platform.Submission{},
-		submitQueue: map[string][]platform.RunResult{},
+		submitQueue: map[string][]submitItem{},
 		runResults:  map[string]platform.RunResult{},
 		testCases:   map[testKey]platform.TestCase{},
 	}
@@ -53,6 +62,13 @@ func (p *Platform) ScriptStatus(userID, problemID string, s platform.Status) {
 	p.statuses[pairKey{userID, problemID}] = s
 }
 
+// ScriptStatusError scripts ProblemStatus(userID, problemID) to fail with
+// err instead of returning a status — for tests exercising a platform
+// outage.
+func (p *Platform) ScriptStatusError(userID, problemID string, err error) {
+	p.statusErrs[pairKey{userID, problemID}] = err
+}
+
 // ScriptSubmissions scripts the result of Submissions(userID, problemID, _);
 // the limit argument truncates this slice at call time.
 func (p *Platform) ScriptSubmissions(userID, problemID string, subs []platform.Submission) {
@@ -63,7 +79,15 @@ func (p *Platform) ScriptSubmissions(userID, problemID string, subs []platform.S
 // successive SubmitAsSystem(problemID, ...) calls. The result is also made
 // pollable via RunResult(result.ID) immediately.
 func (p *Platform) ScriptSubmitResult(problemID string, r platform.RunResult) {
-	p.submitQueue[problemID] = append(p.submitQueue[problemID], r)
+	p.submitQueue[problemID] = append(p.submitQueue[problemID], submitItem{result: r})
+}
+
+// ScriptSubmitError appends err to the same ordered queue as
+// ScriptSubmitResult, so a specific SubmitAsSystem call in a multi-attempt
+// sequence can be made to fail — for tests exercising a platform outage
+// mid-repair-loop.
+func (p *Platform) ScriptSubmitError(problemID string, err error) {
+	p.submitQueue[problemID] = append(p.submitQueue[problemID], submitItem{err: err})
 }
 
 // ScriptRunResult scripts the result of RunResult(runID) directly, without
@@ -87,6 +111,9 @@ func (p *Platform) ProblemStatement(_ context.Context, problemID string) (platfo
 }
 
 func (p *Platform) ProblemStatus(_ context.Context, userID, problemID string) (platform.Status, error) {
+	if err, ok := p.statusErrs[pairKey{userID, problemID}]; ok {
+		return platform.Status{}, err
+	}
 	s, ok := p.statuses[pairKey{userID, problemID}]
 	if !ok {
 		panic(fmt.Sprintf("mock: unscripted ProblemStatus(%q, %q)", userID, problemID))
@@ -110,10 +137,13 @@ func (p *Platform) SubmitAsSystem(_ context.Context, problemID, _, _ string) (pl
 	if len(q) == 0 {
 		panic(fmt.Sprintf("mock: unscripted SubmitAsSystem(%q)", problemID))
 	}
-	r := q[0]
+	item := q[0]
 	p.submitQueue[problemID] = q[1:]
-	p.runResults[r.ID] = r
-	return r, nil
+	if item.err != nil {
+		return platform.RunResult{}, item.err
+	}
+	p.runResults[item.result.ID] = item.result
+	return item.result, nil
 }
 
 func (p *Platform) RunResult(_ context.Context, runID string) (platform.RunResult, error) {

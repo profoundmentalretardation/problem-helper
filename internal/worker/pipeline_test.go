@@ -5,6 +5,7 @@ package worker_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -220,6 +221,76 @@ func TestRunPipeline_UnsupportedLanguage(t *testing.T) {
 	}
 }
 
+func TestRunPipeline_PlatformErrorFetchingStatus_Failed(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New()
+	plat.ScriptStatusError("user-1", "problem-1", errors.New("ejudge: connection refused"))
+
+	pl := &worker.Pipeline{Store: s, Platform: plat}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusFailed {
+		t.Errorf("status = %q, want %q", got.Status, store.StatusFailed)
+	}
+	if got.Error == nil || *got.Error == "" {
+		t.Errorf("error = %v, want a clear message", got.Error)
+	}
+}
+
+// TestRunPipeline_PlatformErrorDuringRepairLoop_Failed verifies the "platform
+// down mid-loop -> failed" edge case: a platform error surfacing from inside
+// the repair loop (not just steps 1-3/5) must still land the request on
+// status=failed with the error recorded, per RunPipeline's own doc comment
+// and the plan's status-transition table — not left stuck running nor
+// silently bubbled as an unrecorded Go error.
+func TestRunPipeline_PlatformErrorDuringRepairLoop_Failed(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New()
+	plat.ScriptStatus("user-1", "problem-1", platform.Status{Solved: false})
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	plat.ScriptSubmissions("user-1", "problem-1", []platform.Submission{
+		{ID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now()},
+	})
+	plat.ScriptTestCase("sub-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-1", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+	plat.ScriptSubmitError("problem-1", errors.New("ejudge: connection refused"))
+
+	repairChat := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"print(2)","mistakes":[]}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+
+	pl := &worker.Pipeline{
+		Store:    s,
+		Platform: plat,
+		Repair:   newRepairRunner(t, s, plat, repairChat),
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusFailed {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusFailed)
+	}
+	if got.Error == nil || *got.Error == "" {
+		t.Errorf("error = %v, want a clear message", got.Error)
+	}
+}
+
 func TestRunPipeline_CacheHit_ZeroModelCalls(t *testing.T) {
 	s, ctx := withStore(t)
 	id := newClaimedRequest(t, s, ctx, 10)
@@ -347,8 +418,8 @@ func TestRunPipeline_FullHappyPath(t *testing.T) {
 		t.Fatalf("list events: %v", err)
 	}
 	for _, kind := range []string{
-		"problem_status", "best_submission_picked", "repair_run_submitted",
-		"repair_result", "hint_result", "hint_delivered",
+		"problem_status", "problem_statement", "best_submission_picked", "shield_applied",
+		"repair_run_submitted", "repair_result", "hint_result", "hint_delivered",
 	} {
 		if !hasEventKind(events, kind) {
 			t.Errorf("events = %+v, want a %q event", events, kind)

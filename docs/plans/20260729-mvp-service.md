@@ -615,16 +615,43 @@ package doc for full detail):
 
 ### Task 18: Verify acceptance criteria
 
-- [ ] walk the pipeline diagram step by step against the code — every step, status and event
-      present
-- [ ] verify edge cases: solved-early-exit, no_submissions, cache hit, regression-blocking
+- [x] walk the pipeline diagram step by step against the code — every step, status and event
+      present. Found and fixed real gaps: `cmd/helper/main.go` was hardcoding `platform/mock`
+      even after Task 15 shipped the ejudge client, ignoring the required `PLATFORM`/`EJUDGE_*`
+      config entirely — added `newPlatform` to select ejudge vs mock from `cfg.Env.Platform`.
+      Steps 2 (`ProblemStatement`) and 5 (shield) wrote no `events` row — added
+      `problem_statement` and `shield_applied` events. Steps 7/8 (repair/hint loops): a platform
+      error surfacing from inside either loop was returned as a bare Go error instead of
+      transitioning the row to `failed`, contradicting `RunPipeline`'s own doc comment — fixed
+      by routing those errors through `infraFail`.
+- [x] verify edge cases: solved-early-exit, no_submissions, cache hit, regression-blocking
       success rule, guardrail never-approves → `no_hint`, platform down mid-loop → `failed`,
-      crash-reclaim-resume without re-submitting
-- [ ] run full test suite: `go test ./...`
-- [ ] run `golangci-lint run` — clean
-- [ ] check test coverage: `go test -cover ./...`, no package silently at 0%
-- [ ] full smoke run via docker-compose with mock platform: POST /help (with token) → poll →
-      hint delivered; inspect events / llm_calls / hints rows by hand
+      crash-reclaim-resume without re-submitting. All implemented and tested; added
+      `platform/mock` error-scripting (`ScriptStatusError`, `ScriptSubmitError`) plus
+      `TestRunPipeline_PlatformErrorFetchingStatus_Failed` and
+      `TestRunPipeline_PlatformErrorDuringRepairLoop_Failed` to close the previously-untested
+      "platform down mid-loop" edge case (this is what exposed the steps 7/8 bug above). The
+      crash-reclaim-resume case never re-submits at the pipeline-step granularity (tested,
+      `TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps` /
+      `TestWorker_ReclaimedRequest_IsReClaimedAndRun`); a crash strictly inside an in-flight
+      repair-loop attempt re-enters that attempt from scratch on resume — documented as
+      intentional post-MVP scope in `pipeline.go`'s header comment, per the plan's "Resume
+      granularity" decision (attempt-level checkpointing inside a loop is post-MVP).
+- [x] run full test suite: `go test ./...` — all packages pass
+- [x] run `golangci-lint run` — clean, 0 issues
+- [x] check test coverage: `go test -cover ./...`, no package silently at 0% (only `cmd/helper`,
+      the main-wiring entrypoint, and `internal/platform`, a pure interface file, have no test
+      files — both expected)
+- [x] full smoke run via docker-compose with mock platform: ran the real binary against the
+      dockerized Postgres with `PLATFORM=mock` — HTTP serves, `POST /help` (with bearer token)
+      enqueues and returns `request_id` (202), the worker claims and runs it, `GET /requests/{id}`
+      reflects `running`, SIGTERM drains cleanly, events/help_requests rows inspected by hand via
+      `psql`. Reaching `hint delivered` end-to-end needs mock platform data seeded before the
+      worker's first (panic-on-unscripted-call) platform call, and there is still no admin seed
+      endpoint for that — same limitation already recorded in Task 14's manual-test note;
+      skipped rather than faked. The full happy-path-to-`done` pipeline (incl. hint delivery) is
+      already covered end-to-end by `TestRunPipeline_FullHappyPath` against the same dockerized
+      Postgres, scripted LLM, and mock platform.
 
 ### Task 19: [Final] Update documentation
 

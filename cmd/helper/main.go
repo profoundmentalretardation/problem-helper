@@ -24,6 +24,8 @@ import (
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
 	"github.com/profoundmentalretardation/problem-helper/internal/format"
 	"github.com/profoundmentalretardation/problem-helper/internal/llm"
+	"github.com/profoundmentalretardation/problem-helper/internal/platform"
+	"github.com/profoundmentalretardation/problem-helper/internal/platform/ejudge"
 	"github.com/profoundmentalretardation/problem-helper/internal/platform/mock"
 	"github.com/profoundmentalretardation/problem-helper/internal/prompt"
 	"github.com/profoundmentalretardation/problem-helper/internal/store"
@@ -82,10 +84,10 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	st := store.New(pool)
 	chat := llm.New(cfg.Env.LLMBaseURL, cfg.Env.LLMAPIKey, st, cfg.Agents.Pricing)
 
-	// platform/mock stands in for the real judging platform until Task 15
-	// wires up ejudge; every step before it runs against platform/mock, per
-	// the plan's Platform interface section.
-	plt := mock.New()
+	plt, err := newPlatform(cfg.Env)
+	if err != nil {
+		return err
+	}
 
 	pipeline := &worker.Pipeline{
 		Store:    st,
@@ -164,6 +166,20 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	wg.Wait()
 	log.Print("problem-helper: shutdown complete")
 	return nil
+}
+
+// newPlatform selects the judging platform backend from cfg.Env.Platform:
+// "ejudge" for production, "mock" for local/dev runs (see docker-compose
+// smoke test in the plan's Task 18).
+func newPlatform(env config.Env) (platform.Platform, error) {
+	switch env.Platform {
+	case "ejudge":
+		return ejudge.New(env.EjudgeURL, env.EjudgeSystemLogin, env.EjudgeSystemPassword), nil
+	case "mock":
+		return mock.New(), nil
+	default:
+		return nil, fmt.Errorf("config: unknown PLATFORM %q (want \"ejudge\" or \"mock\")", env.Platform)
+	}
 }
 
 // hostname returns the local hostname, or a random id if it can't be read
