@@ -447,3 +447,28 @@ func TestParseAgents_GuardrailFamily(t *testing.T) {
 		})
 	}
 }
+
+// EJUDGE_CONTEST_ID is optional — ejudge's own first contest is "1", which is
+// what the platform client has always used — but it has to be *readable*.
+// ejudge scopes both sessions to a single contest, so a service that can only
+// ever talk to contest 1 cannot serve any other course, and it fails silently:
+// it logs in, finds no runs, and answers no_submissions for every student.
+func TestLoadEnv_ContestIDDefaultsButIsOverridable(t *testing.T) {
+	env, err := LoadEnv(lookupFrom(fullEnv()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.EjudgeContestID != "1" {
+		t.Errorf("EjudgeContestID = %q, want the default %q", env.EjudgeContestID, "1")
+	}
+
+	withID := fullEnv()
+	withID["EJUDGE_CONTEST_ID"] = "42"
+	env, err = LoadEnv(lookupFrom(withID))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.EjudgeContestID != "42" {
+		t.Errorf("EjudgeContestID = %q, want %q", env.EjudgeContestID, "42")
+	}
+}

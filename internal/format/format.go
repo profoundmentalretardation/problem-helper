@@ -17,6 +17,10 @@ import (
 // defaultTimeout bounds how long the external command may run.
 const defaultTimeout = 5 * time.Second
 
+// waitDelay bounds how long cmd.Wait may block on inherited pipes after the
+// direct child has been killed. See the comment at its use site.
+const waitDelay = time.Second
+
 // Runner runs the formatter command configured in agents.yaml. The zero
 // value is disabled and returns code untouched.
 type Runner struct {
@@ -59,6 +63,15 @@ func (r Runner) Format(ctx context.Context, code string) Result {
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, fields[0], fields[1:]...)
+	// CommandContext kills only the direct child, and because stdin/stdout/
+	// stderr are not *os.File, os/exec wires them through pipes and cmd.Wait
+	// blocks until the copying goroutines see EOF. A formatter that forks
+	// (any `sh -c` wrapper) leaves a grandchild holding the pipe's write end,
+	// so cmd.Run() blocks forever *past* the timeout — inside a step whose
+	// contract is that it never aborts the repair loop, and with the worker's
+	// heartbeat still ticking so the request is never even reclaimed.
+	// WaitDelay bounds that wait and closes the pipes.
+	cmd.WaitDelay = waitDelay
 	cmd.Stdin = strings.NewReader(code)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

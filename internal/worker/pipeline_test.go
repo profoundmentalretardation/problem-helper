@@ -946,3 +946,46 @@ func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T)
 		t.Errorf("events = %+v, want a hint_delivered event", events)
 	}
 }
+
+// TestRunPipeline_CheckpointPastSubmissionsWithNoBestSubmission_FailsTheRequest
+// pins that a corrupt row terminates instead of cycling. A checkpoint past
+// the submissions step with no best_submission_id — the state migration 0004
+// creates by nulling a dangling id — is inconsistent with itself, and
+// re-picking is not an option because the platform's submission list may have
+// changed. Returning a bare error left the row running with a dead heartbeat,
+// so every reclaim sweep handed it back and hit this deterministically until
+// claim_attempts ran out, replacing the real cause with "abandoned after N
+// claim attempts". Same rule the repair and hint checkpoints already follow.
+func TestRunPipeline_CheckpointPastSubmissionsWithNoBestSubmission_FailsTheRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	plat := mock.New()
+	plat.ScriptStatus("user-1", "problem-1", platform.Status{Solved: false})
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "A", Text: "text"})
+
+	if err := s.SetResumeStep(ctx, id, "", worker.StepSubmissions); err != nil {
+		t.Fatalf("pre-seed resume step: %v", err)
+	}
+
+	pl := &worker.Pipeline{
+		Store:    s,
+		Platform: plat,
+		Repair:   newRepairRunner(t, s, plat, llm.NewScripted(s, testPricing())),
+		Hint:     newHintRunner(t, llm.NewScripted(s, testPricing()), llm.NewScripted(s, testPricing())),
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline returned an error instead of terminating the request: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Status != store.StatusFailed {
+		t.Fatalf("status = %q, want %q (a corrupt row must terminate, not stay reclaimable)", got.Status, store.StatusFailed)
+	}
+	if got.Error == nil || !strings.Contains(*got.Error, "best_submission_id") {
+		t.Errorf("error = %v, want it to name the missing checkpoint output", got.Error)
+	}
+}

@@ -230,7 +230,16 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		// snapshot rows) or re-picking (the platform's submission list may
 		// have changed since).
 		if hr.BestSubmissionID == nil {
-			return fmt.Errorf("pipeline: resuming past %s checkpoint with no best_submission_id recorded", StepSubmissions)
+			// Same rule as the repair and hint checkpoints: a checkpoint past
+			// a step whose output is missing is a corrupt row, not a licence
+			// to re-run the step. Returning a bare error instead left the row
+			// running with a dead heartbeat, so every reclaim sweep handed it
+			// back and hit this deterministically until claim_attempts ran
+			// out — landing in failed with the real cause overwritten by
+			// "abandoned after N claim attempts". Migration 0004 can produce
+			// exactly this state by nulling a dangling best_submission_id.
+			return pl.infraFail(ctx, requestID, fmt.Errorf(
+				"resume checkpoint is past the %s step but no best_submission_id was persisted", StepSubmissions))
 		}
 		saved, err := pl.Store.GetSubmission(ctx, *hr.BestSubmissionID)
 		if err != nil {

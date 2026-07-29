@@ -1275,3 +1275,97 @@ func TestRunResult_ErrorBannerInProgramOutputIsNotAnErrorPage(t *testing.T) {
 		t.Error("Done = false, want true (the run was judged)")
 	}
 }
+
+// TestLogin_PermissionDeniedInPageContentIsNotAnAuthFailure closes the last
+// sentinel that was matched against a whole document. A successful master
+// login response *is* the full main page, which renders participant display
+// names and problem titles — text the service does not author. A body-wide
+// match therefore turned a good login into ErrAuthFailed, i.e. every request
+// in the service failing authentication on correct credentials.
+func TestLogin_PermissionDeniedInPageContentIsNotAnAuthFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		body := fixture(t, "login_master_ok.html")
+		body = strings.Replace(body, "<body>", "<body><p>Permission denied</p>", 1)
+		serveFixture(w, body)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	if _, err := c.Submissions(context.Background(), "user1", "1", 10); errors.Is(err, ejudge.ErrAuthFailed) {
+		t.Fatalf("Submissions returned ErrAuthFailed: the phrase was page content, not ejudge's own <title>")
+	}
+}
+
+// The other direction: ejudge's real permission-denied page — a master-role
+// document whose title carries the phrase — must still be an auth failure.
+func TestLogin_RealPermissionDeniedPageIsAnAuthFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		serveFixture(w, fixture(t, "login_master_permission_denied.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	if _, err := c.Submissions(context.Background(), "user1", "1", 10); !errors.Is(err, ejudge.ErrAuthFailed) {
+		t.Fatalf("err = %v, want ErrAuthFailed", err)
+	}
+}
+
+// A master-role error page carries no <font color="red"> markup — it renders
+// a plain <h2>Permission denied</h2> — so the two markup predicates matched
+// nothing and isErrorPage answered false. fetchTestCounts then fell through
+// to countReportTests and reported (0, 0), the silent compile-error lookalike
+// the gate exists to prevent.
+func TestRunResult_MasterRoleErrorPageIsRecognised(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("action") == "37" {
+			serveFixture(w, fixture(t, "login_master_permission_denied.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_master_ok.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	if _, err := c.RunResult(context.Background(), "5"); err == nil {
+		t.Fatal("RunResult returned no error on a master-role error page: a transient master error must not read back as a judged run")
+	}
+}
+
+// WithContestID has to actually reach the wire: ejudge scopes both sessions
+// to one contest, so a service pinned to contest 1 cannot serve any other
+// course — and it fails silently, finding no runs and answering
+// no_submissions for every student.
+func TestWithContestID_IsSentOnLogin(t *testing.T) {
+	got := make(chan string, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if id := r.PostFormValue("contest_id"); id != "" {
+			select {
+			case got <- id:
+			default:
+			}
+		}
+		serveFixture(w, fixture(t, "login_master_ok.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := ejudge.New(srv.URL, "ejudge", "ejudge", ejudge.WithContestID("42"))
+	_, _ = c.Submissions(context.Background(), "user1", "1", 10)
+
+	select {
+	case id := <-got:
+		if id != "42" {
+			t.Errorf("contest_id = %q, want %q", id, "42")
+		}
+	default:
+		t.Fatal("no login carried a contest_id")
+	}
+}

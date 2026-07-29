@@ -260,10 +260,20 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 	}
 }
 
-// claimLost reports whether id is still queued or running but no longer
-// claimed by this worker — i.e. a reclaim sweep handed it to someone else.
-// A terminal row, or a store error, is not treated as a lost claim: killing
-// a run that is merely finishing would be worse than the extra tick.
+// claimLost reports whether this worker no longer owns id — i.e. a reclaim
+// sweep took the row away from us. A store error is not treated as a lost
+// claim: killing a run that is merely finishing would be worse than the
+// extra tick.
+//
+// Ownership is decided by claimed_by, not by the status, because ReclaimStale
+// has *two* exits for a stale row and both clear claimed_by: back to pending,
+// and — past maxClaimAttempts — straight to failed. Checking the status first
+// swallowed the second one: a row abandoned by the reclaim sweep looked like
+// an ordinary terminal row, the heartbeat goroutine returned without
+// canceling the run, and the pipeline kept going against an already-terminal
+// row — spending both model budgets before the next claim-scoped write
+// finally refused. A run that finished normally still has claimed_by = w.ID
+// (TransitionStatus never clears it), so it is correctly not a lost claim.
 func (w *Worker) claimLost(ctx context.Context, id uuid.UUID) bool {
 	hr, err := w.Store.GetHelpRequest(ctx, id)
 	if err != nil {
@@ -271,9 +281,6 @@ func (w *Worker) claimLost(ctx context.Context, id uuid.UUID) bool {
 		return false
 	}
 	if hr == nil {
-		return false
-	}
-	if hr.Status != store.StatusPending && hr.Status != store.StatusRunning {
 		return false
 	}
 	return hr.ClaimedBy == nil || *hr.ClaimedBy != w.ID

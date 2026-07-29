@@ -480,6 +480,57 @@ research/              frozen Python prototypes (reference only, see research/RE
   likely on the error path (the likeliest way to reach it is `ctx` itself dying) but is not
   exclusive to it: successful and schema-invalid replies take the same detour, bounded by
   `recordTimeout` since the parent's deadline no longer applies.
+- **Claim ownership is decided by `claimed_by`, never by the status**
+  (`worker.claimLost`): `ReclaimStale` has *two* exits for a stale row and both clear
+  `claimed_by` — back to `pending`, and past `maxClaimAttempts` straight to `failed`. Checking
+  the status first swallowed the second: an abandoned row looked like an ordinary terminal row,
+  so `heartbeatUntil` returned without canceling the run and the pipeline kept executing against
+  an already-terminal row, spending both model budgets before the next claim-scoped write could
+  refuse. A normally-finished run still has `claimed_by = w.ID` (`TransitionStatus` never clears
+  it), so it is correctly not a lost claim.
+- **Every retry path has to append a turn before it retries** (`internal/agent/hint/hint.go`):
+  `llm.Chat`'s own schema retry runs on a *private copy* of the conversation and returns no
+  JSON, so an `ErrInvalidResponse` that `continue`d without appending anything resent a
+  byte-identical message list — the model repeated itself and every retry burned two billed HTTP
+  calls on the same exchange. Same rule the cost-cap path and `repair.runAttempt` already follow.
+- **Fail *closed* on an unterminated multi-line literal** (`unterminatedEnd` in
+  `internal/shield/clike.go`): running a raw string, Java text block or Go backtick string to
+  `len(code)` when its partner is missing handed the whole rest of the file to a phantom literal,
+  so every later comment was emitted as ordinary code with `Removed.Comments` empty — a bypass
+  with no signal that anything was missed. They end at their opening line instead, like
+  `skipEscaped`. Literal *forms* are language-gated for the same reason the pre-lexical rules
+  are (`clikeSyntax.backticks`, `.rawStrings`): a delimiter honoured in a language that does not
+  have it is the same bypass from the other side — one stray backtick used to disable the shield
+  for the rest of a C/C++/Java file.
+- **A verification run judged on zero tests is not a run the tools can read from**
+  (`internal/agent/repair/repair.go`): adopting it as `currentRunID` made `list_test_results`
+  answer `{"total":0,"tests":[]}` and `get_test` always answer out-of-range for the rest of the
+  loop, so every later attempt repaired blind. The likeliest trigger is a compilation error —
+  the most common outcome of model-proposed code. `previousCode` still advances, so the model is
+  told which code failed; the resume path applies the same rule to an unrecognised run id.
+- **ejudge sentinels are read off the `<title>` even on the login response** (`extractSID`): a
+  successful master login response *is* the full main page, which renders participant display
+  names and problem titles, so the last body-wide `strings.Contains("Permission denied")` turned
+  a good login into `ErrAuthFailed` — every request in the service failing authentication on
+  correct credentials. `isErrorPage` needs the title too: its two markup predicates match only
+  the *client*-role shape, while every `masterGet` lands on master-role pages whose errors render
+  as a plain `<h2>Operation completed with errors</h2>`, so a master-only error fell through
+  `fetchTestCounts` to `(0, 0)` — the silent compile-error lookalike that gate exists to prevent.
+- **The ejudge contest id is configuration, not a constant** (`EJUDGE_CONTEST_ID`, optional,
+  default `1`): ejudge scopes both sessions to one contest, and `WithContestID` had no callers,
+  so the service could only ever serve contest 1 — and it failed *silently*, logging in, finding
+  no runs, and answering `no_submissions` for every student.
+- **An external command needs `WaitDelay`, not just a context** (`internal/format/format.go`):
+  `CommandContext` kills only the direct child, and because stdio is wired through pipes
+  `cmd.Wait` blocks until the copy goroutines see EOF — so a formatter that forks leaves a
+  grandchild holding the write end and `Format` never returns, inside the one step whose contract
+  is that it never aborts the repair loop, with the heartbeat still ticking so the request is
+  never even reclaimed.
+- **A handler that outlives `WriteTimeout` must extend its own deadline**
+  (`handleMetaloopRun`): `metaloopRunTimeout` is 30 minutes against a 30-second server
+  `WriteTimeout`, so the sweep completed on its detached context but the operator never saw the
+  summary and retried — each retry then blocking on the curator's mutex for up to
+  `metaloopRunTimeout`. `http.NewResponseController` scopes the extension to this one route.
 - **A guardrail reply that half-matches the schema is not a verdict** (`checkGuardrail`):
   `llm.Chat` only asserts the schema's keys are *present*, so `{"approved":true,"reason":42}`
   reached the parser intact. Every field is type-checked, and any mismatch fails closed.

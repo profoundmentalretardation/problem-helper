@@ -397,3 +397,44 @@ func TestRun_MaxCostPerRetry_SkipsGuardrailButNextAttemptGetsAFreshBudget(t *tes
 		t.Errorf("writer responses remaining = %d, want 0", writer.Remaining())
 	}
 }
+
+// TestRun_InvalidResponse_FeedsTheErrorBackBeforeRetrying pins that a
+// schema-invalid writer reply is followed by a user turn. llm.Chat's own
+// schema retry runs on a private copy of the conversation and returns no
+// JSON, so without an appended turn attempt N+1 resends a byte-identical
+// message list — the model repeats itself and every retry (two billed HTTP
+// calls each) burns on the same exchange. Same contract as the cost-cap path.
+func TestRun_InvalidResponse_FeedsTheErrorBackBeforeRetrying(t *testing.T) {
+	writer := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{Err: llm.ErrInvalidResponse, Usage: llm.Usage{InputTokens: 50, OutputTokens: 10}},
+		llm.ScriptedResponse{JSON: hintJSON("Which window never gets scored?"), Usage: llm.Usage{InputTokens: 60, OutputTokens: 10}},
+	)
+	guardrail := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: verdictJSON(true, "makes them think"), Usage: llm.Usage{InputTokens: 80, OutputTokens: 5}},
+	)
+
+	runner := newRunner(writer, guardrail, t)
+	got, err := runner.Run(context.Background(), baseParams())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != hint.StatusApproved {
+		t.Fatalf("status = %q, want %q", got.Status, hint.StatusApproved)
+	}
+
+	calls := writer.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("writer calls = %d, want 2", len(calls))
+	}
+	if len(calls[1].Messages) <= len(calls[0].Messages) {
+		t.Fatalf("retry sent %d messages, first attempt sent %d: the retry must carry feedback, not resend an identical conversation",
+			len(calls[1].Messages), len(calls[0].Messages))
+	}
+	last := calls[1].Messages[len(calls[1].Messages)-1]
+	if last.Role != "user" {
+		t.Errorf("last message role = %q, want %q (the model must be answering a turn, not its own reply)", last.Role, "user")
+	}
+	if writer.Remaining() != 0 || guardrail.Remaining() != 0 {
+		t.Errorf("scripted responses left unused: writer=%d guardrail=%d", writer.Remaining(), guardrail.Remaining())
+	}
+}

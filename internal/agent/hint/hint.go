@@ -142,6 +142,18 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			// are the split the pipeline exists to keep.
 			loopCost += parseCost(resp.Cost)
 			if errors.Is(err, llm.ErrInvalidResponse) {
+				// Feed the failure back before retrying. Chat's own
+				// schema retry runs on a private copy of the
+				// conversation, and resp.JSON is nil here, so nothing
+				// was appended above — without this turn attempt N+1
+				// resends a byte-identical message list and the model
+				// simply repeats the malformed reply, burning every
+				// retry (two billed HTTP calls each) on the same
+				// exchange. Same reasoning as the cost-cap path below
+				// and as repair.runAttempt.
+				messages = append(messages, llm.Message{
+					Role: "user", Content: `{"approved":false,"reason":"your reply was not valid JSON matching the required schema; reply with a JSON object with a string \"hint\" field"}`,
+				})
 				continue
 			}
 			return Result{}, fmt.Errorf("hint: chat: %w", err)

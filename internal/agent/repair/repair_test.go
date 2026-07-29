@@ -962,3 +962,57 @@ func TestRun_InvalidModelResponseBurnsRetryNotTheRequest(t *testing.T) {
 		t.Errorf("attempts = %d, want 2 (each unusable reply burns one)", got.Attempts)
 	}
 }
+
+// TestRun_VerificationRunWithNoTestsIsNotAdoptedAsTheCurrentRun pins that a
+// verification run judged on no tests at all — a compilation error, the most
+// common outcome of model-proposed code — is not carried as the run the tools
+// read from. Adopting it made list_test_results answer {"total":0,"tests":[]}
+// and get_test always answer out-of-range for the rest of the loop, so every
+// later attempt repaired blind. Same rule the resume path already applies to
+// a run id the judge does not recognise.
+func TestRun_VerificationRunWithNoTestsIsNotAdoptedAsTheCurrentRun(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-best", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+
+	// attempt 1 fails to compile: judged, but on zero tests.
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-ce", Done: true, TestsPassed: 0, TestsTotal: 0})
+	// attempt 2 compiles and passes.
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, Passed: true, TestsPassed: 2, TestsTotal: 2})
+	plat.ScriptTestCase("run-2", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("run-2", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"does not compile","mistakes":[]}`},
+		// Attempt 2 asks what the tests are before proposing a fix. If the
+		// compile-error run had been adopted this answers total 0.
+		llm.ScriptedResponse{JSON: `{"action":"list_test_results"}`},
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 2
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+
+	calls := scripted.Calls()
+	listReplyMsg := calls[2].Messages[len(calls[2].Messages)-1]
+	var listReply struct {
+		OK    bool `json:"ok"`
+		Total int  `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(listReplyMsg.Content), &listReply); err != nil {
+		t.Fatalf("unmarshal list_test_results reply: %v", err)
+	}
+	if listReply.Total != 2 {
+		t.Fatalf("total = %d, want 2: a run judged on zero tests must not replace the baseline, or the model repairs blind", listReply.Total)
+	}
+}

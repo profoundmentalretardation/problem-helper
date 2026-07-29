@@ -223,7 +223,8 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 func newPlatform(env config.Env) (platform.Platform, error) {
 	switch env.Platform {
 	case "ejudge":
-		return ejudge.New(env.EjudgeURL, env.EjudgeSystemLogin, env.EjudgeSystemPassword), nil
+		return ejudge.New(env.EjudgeURL, env.EjudgeSystemLogin, env.EjudgeSystemPassword,
+			ejudge.WithContestID(env.EjudgeContestID)), nil
 	case "mock":
 		return mock.New(), nil
 	default:

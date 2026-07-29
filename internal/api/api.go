@@ -120,6 +120,11 @@ const maxNSubmissions = 200
 // context detached from the request's.
 const metaloopRunTimeout = 30 * time.Minute
 
+// writeDeadlineSlack is the margin added to metaloopRunTimeout when this
+// handler extends its connection's write deadline, so the deadline outlives
+// the sweep's own context rather than racing it.
+const writeDeadlineSlack = time.Minute
+
 func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 	var body helpRequestBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxHelpBodyBytes)).Decode(&body); err != nil {
@@ -252,6 +257,19 @@ func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
 	// skipped for no reason a caller cares about.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), metaloopRunTimeout)
 	defer cancel()
+
+	// The server's WriteTimeout is far shorter than metaloopRunTimeout, so
+	// without extending this connection's own deadline the write deadline
+	// expires long before the sweep returns: the sweep completes (it runs on
+	// the detached context above) but the operator never sees the summary and
+	// retries, and each retry then blocks on the curator's mutex for up to
+	// metaloopRunTimeout. Extending the deadline for this one handler keeps
+	// the server-wide timeout intact for every other route.
+	//
+	// A failure here is not fatal — a wrapped ResponseWriter may not support
+	// the control interface, and the sweep is still worth running — so the
+	// error is deliberately ignored.
+	_ = http.NewResponseController(w).SetWriteDeadline(s.now().Add(metaloopRunTimeout + writeDeadlineSlack))
 
 	summary, err := s.metaloop.Run(ctx)
 	if err != nil {

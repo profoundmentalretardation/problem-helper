@@ -443,6 +443,65 @@ func TestWorker_KeepsRunningWhileItStillOwnsTheClaim(t *testing.T) {
 	}
 }
 
+// TestWorker_AbortsRunAfterTheReclaimSweepAbandonsIt covers the reclaim
+// sweep's *other* exit. Past maxClaimAttempts ReclaimStale does not put the
+// row back to pending — it moves it straight to failed, clearing claimed_by
+// either way. Deciding ownership from the status first swallowed that case:
+// the abandoned row looked like an ordinary terminal row, the heartbeat
+// goroutine returned without canceling the run, and the pipeline kept going
+// against an already-terminal row, spending both model budgets before the
+// next claim-scoped write could refuse.
+func TestWorker_AbortsRunAfterTheReclaimSweepAbandonsIt(t *testing.T) {
+	id := uuid.New()
+	fq := &fakeQueueStore{
+		pending: []*store.HelpRequest{{ID: id, Status: store.StatusRunning}},
+		// Abandoned by the sweep: terminal status, and nobody owns it.
+		claimed: map[uuid.UUID]*store.HelpRequest{
+			id: {ID: id, Status: store.StatusFailed, ClaimedBy: nil},
+		},
+	}
+	fp := &ctxWatchingPipeline{
+		started: make(chan struct{}), canceled: make(chan struct{}), release: make(chan struct{}),
+	}
+
+	w := &worker.Worker{
+		ID:                "worker-1",
+		Store:             fq,
+		Pipeline:          fp,
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		ReclaimInterval:   -1,
+		MetaloopInterval:  -1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-fp.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline never started")
+	}
+	select {
+	case <-fp.canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker kept running a request the reclaim sweep abandoned")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+}
+
 // A heartbeat that keeps erroring is not a heartbeat: heartbeat_at stops
 // advancing, so after StaleAfter another instance's reclaim sweep may hand the
 // request to a new claimant. A worker that only logged the error and kept

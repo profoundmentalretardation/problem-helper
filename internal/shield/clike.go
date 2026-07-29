@@ -93,7 +93,7 @@ func stripCLikeComments(code string, lang Language) (string, []string) {
 			case textBlocks && isEffTripleQuote(code, i, syn):
 				end = textBlockEnd(code, i, syn)
 			default:
-				if raw, ok := rawStringEnd(code, i); ok {
+				if raw, ok := rawStringEnd(code, i, syn); ok {
 					end = raw
 				} else {
 					end = skipEscaped(code, i, '"', syn)
@@ -109,7 +109,13 @@ func stripCLikeComments(code string, lang Language) (string, []string) {
 			dir.code(code[i:end])
 			i = end
 
-		case c == '`':
+		// Go only: a backtick is not a delimiter in C, C++ or Java, and
+		// skipRaw runs to the end of the file when it finds no partner. One
+		// stray backtick therefore used to turn the whole remainder of a
+		// C-family file into a literal — every // payload after it reaching
+		// the model as ordinary code, with Removed.Comments empty so nothing
+		// in the removal report signalled it.
+		case c == '`' && syn.backticks:
 			end := skipRaw(code, i, '`')
 			out.WriteString(code[i:end])
 			dir.code(code[i:end])
@@ -225,18 +231,30 @@ func (d *directiveTracker) newlinePadding(comment string) string {
 // Go has neither, which is why the flags are per-language rather than always
 // on: splicing a Java or Go line comment across a trailing backslash would
 // delete the next line of real code from the submission.
+//
+// backticks and rawStrings are the same idea applied to *literal forms*: a
+// delimiter the scanner honours in a language that does not have it hands the
+// rest of the file to a phantom literal, which is a bypass in the same
+// direction. Only Go has backtick strings and only C++ has R"delim(...)delim",
+// so both are gated rather than applied family-wide.
 type clikeSyntax struct {
 	splices    bool
 	unicodeEsc bool
 	textBlocks bool
+	backticks  bool
+	rawStrings bool
 }
 
 func syntaxFor(lang Language) clikeSyntax {
 	switch lang {
-	case LangC, LangCPP:
+	case LangC:
 		return clikeSyntax{splices: true}
+	case LangCPP:
+		return clikeSyntax{splices: true, rawStrings: true}
 	case LangJava:
 		return clikeSyntax{unicodeEsc: true, textBlocks: true}
+	case LangGo:
+		return clikeSyntax{backticks: true}
 	default:
 		return clikeSyntax{}
 	}
@@ -404,7 +422,13 @@ func isIdentChar(c byte) bool {
 // A miss returns false so the caller falls back to the ordinary string scan —
 // `R` is a legal identifier, and `R"foo"` in Go is an identifier followed by
 // a plain string, not a raw literal.
-func rawStringEnd(code string, i int) (int, bool) {
+func rawStringEnd(code string, i int, syn clikeSyntax) (int, bool) {
+	// C++ only. In C, Java and Go `R"..."` is an identifier followed by an
+	// ordinary string, so honouring the raw form there scans a plain string
+	// by rules the compiler does not use.
+	if !syn.rawStrings {
+		return 0, false
+	}
 	if i == 0 || code[i-1] != 'R' {
 		return 0, false
 	}
@@ -436,7 +460,7 @@ func rawStringEnd(code string, i int) (int, bool) {
 	closing := ")" + code[i+1:j] + `"`
 	rest := strings.Index(code[j+1:], closing)
 	if rest < 0 {
-		return len(code), true // unterminated: the rest of the file is literal
+		return unterminatedEnd(code, i), true // unterminated: fail closed
 	}
 	return j + 1 + rest + len(closing), true
 }
@@ -548,41 +572,62 @@ func isEffTripleQuote(code string, i int, syn clikeSyntax) bool {
 }
 
 // skipRaw returns the index just past a raw literal (e.g. a Go backtick
-// string) opened at i, with no escape processing.
+// string) opened at i, with no escape processing. An unterminated literal
+// ends at its opening line, per unterminatedEnd.
 func skipRaw(code string, i int, quote byte) int {
 	n := len(code)
 	j := i + 1
 	for j < n && code[j] != quote {
 		j++
 	}
-	if j < n {
-		j++
+	if j >= n {
+		return unterminatedEnd(code, i)
 	}
-	return j
+	return j + 1
+}
+
+// unterminatedEnd is where a multi-line literal opened at i is deemed to end
+// when its closing delimiter is never found: the end of the line it opened
+// on.
+//
+// These scanners must fail *closed*, the same way skipEscaped stops at the
+// newline. Running an unterminated literal to len(code) hands the entire rest
+// of the file to a phantom literal, so every comment after it — the payloads
+// the shield exists to remove — is emitted as ordinary code with
+// Removed.Comments empty, i.e. no signal that anything was missed. Ending at
+// the line instead costs at most one mis-scanned line of a submission that
+// does not compile anyway, and keeps the scanner in a sane state for the rest
+// of the file.
+func unterminatedEnd(code string, i int) int {
+	if nl := strings.IndexByte(code[i:], '\n'); nl >= 0 {
+		return i + nl
+	}
+	return len(code)
 }
 
 // textBlockEnd returns the index just past the closing """ of the Java text
-// block opening at i, or len(code) if it is unterminated. A backslash
-// escapes the next character, so \""" does not close the block.
+// block opening at i, or the end of its opening line if it is unterminated
+// (see unterminatedEnd). A backslash escapes the next character, so \""" does
+// not close the block.
 func textBlockEnd(code string, i int, syn clikeSyntax) int {
 	n := len(code)
 	j := i
 	for k := 0; k < 3; k++ { // past the opening delimiter
 		_, w := syn.effChar(code, j)
 		if w == 0 {
-			return n
+			return unterminatedEnd(code, i)
 		}
 		j += w
 	}
 	for j < n {
 		ch, w := syn.effChar(code, j)
 		if w == 0 {
-			return n
+			return unterminatedEnd(code, i)
 		}
 		if ch == '\\' {
 			_, w2 := syn.effChar(code, j+w)
 			if w2 == 0 {
-				return n
+				return unterminatedEnd(code, i)
 			}
 			j += w + w2
 			continue
@@ -597,5 +642,5 @@ func textBlockEnd(code string, i int, syn clikeSyntax) int {
 		}
 		j += w
 	}
-	return n
+	return unterminatedEnd(code, i)
 }

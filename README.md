@@ -44,6 +44,7 @@ The binary takes flags for non-default paths/address:
 | `API_TOKEN` | bearer token for `POST /help` and `GET /requests/{id}` |
 | `ADMIN_TOKEN` | bearer token for `/admin/*` |
 | `EJUDGE_URL`, `EJUDGE_SYSTEM_LOGIN`, `EJUDGE_SYSTEM_PASSWORD` | ejudge system-user credentials (required even when `PLATFORM=mock`; see `internal/config`) |
+| `EJUDGE_CONTEST_ID` | ejudge contest the sessions are scoped to; optional, defaults to `1`. Both ejudge sessions are per-contest, so a course on any other contest id needs this set — otherwise the client finds no runs and every request answers `no_submissions`. |
 
 ### `agents.yaml` (checked in, validated at startup)
 

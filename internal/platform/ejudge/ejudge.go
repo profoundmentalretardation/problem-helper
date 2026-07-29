@@ -561,7 +561,12 @@ func (c *Client) loginMaster(ctx context.Context) (string, error) {
 }
 
 func extractSID(body string) (string, error) {
-	if strings.Contains(body, "Permission denied") {
+	// Keyed on ejudge's own <title>, like every other sentinel: a successful
+	// login response *is* the full main page, which renders participant
+	// display names and problem titles. A bare body-wide match therefore let
+	// any of that text turn a good login into ErrAuthFailed — i.e. every
+	// request in the service failing authentication on correct credentials.
+	if hasErrorTitle(body, "Permission denied") {
 		return "", ErrAuthFailed
 	}
 	m := sidPattern.FindStringSubmatch(body)
@@ -1161,8 +1166,20 @@ func isErrorPage(body string) bool {
 	// could print that phrase and, since hasErrorDetail gates on this
 	// function, forge ErrRunNotFound/ErrMalformedResponse out of an ordinary
 	// failing run. Both real error fixtures match on the markup instead.
+	//
+	// The two markup predicates match the *client*-role error shape. Every
+	// masterGet lands on a master-role page, whose error documents render as
+	// a plain <h2>Operation completed with errors</h2> / <h2>Permission
+	// denied</h2> with no <font color>, so a master-only error (no embedded
+	// client document) matched neither — fetchTestCounts fell through to
+	// countReportTests and answered (0, 0), the silent compile-error
+	// lookalike this gate exists to prevent, and hasErrorDetail stopped
+	// producing ErrRunNotFound. The <title> is the safe place to look for
+	// those, for the reason hasErrorTitle documents.
 	return strings.Contains(body, "<h2><font color=\"red\">Error:") ||
-		strings.Contains(body, "<h2><font color=\"red\">Permission denied</font></h2>")
+		strings.Contains(body, "<h2><font color=\"red\">Permission denied</font></h2>") ||
+		hasErrorTitle(body, "Operation completed with errors") ||
+		hasErrorTitle(body, "Permission denied")
 }
 
 var titleTagRe = regexp.MustCompile(`(?is)<title>(.*?)</title>`)

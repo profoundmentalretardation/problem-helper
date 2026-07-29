@@ -35,7 +35,17 @@ type Env struct {
 	EjudgeURL            string
 	EjudgeSystemLogin    string
 	EjudgeSystemPassword string
+	// EjudgeContestID is the one ejudge contest both sessions are scoped to.
+	// Optional, defaulting to defaultEjudgeContestID: pointing the service at
+	// a course whose contest id is not "1" was otherwise impossible, and it
+	// failed *silently* — the client logged into contest 1, found no runs and
+	// answered no_submissions for every student.
+	EjudgeContestID string
 }
+
+// defaultEjudgeContestID matches ejudge's own first contest, and the default
+// the platform client has always used.
+const defaultEjudgeContestID = "1"
 
 // MissingEnvError reports a required environment variable that was absent
 // or empty.
@@ -58,6 +68,10 @@ func LoadEnv(lookup func(string) (string, bool)) (Env, error) {
 		}
 		values[name] = v
 	}
+	contestID, ok := lookup("EJUDGE_CONTEST_ID")
+	if !ok || contestID == "" {
+		contestID = defaultEjudgeContestID
+	}
 	return Env{
 		DatabaseURL:          values["DATABASE_URL"],
 		LLMBaseURL:           values["LLM_BASE_URL"],
@@ -68,6 +82,7 @@ func LoadEnv(lookup func(string) (string, bool)) (Env, error) {
 		EjudgeURL:            values["EJUDGE_URL"],
 		EjudgeSystemLogin:    values["EJUDGE_SYSTEM_LOGIN"],
 		EjudgeSystemPassword: values["EJUDGE_SYSTEM_PASSWORD"],
+		EjudgeContestID:      contestID,
 	}, nil
 }
 

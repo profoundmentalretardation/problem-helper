@@ -379,8 +379,19 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			}, nil
 		}
 
-		currentRunID = run.ID
-		currentTestsTotal = result.TestsTotal
+		// Only adopt a run the tools can actually read from. A verification
+		// run judged on no tests at all — a compilation error, the most
+		// common outcome of model-proposed code — would make
+		// list_test_results answer {"total":0,"tests":[]} and get_test always
+		// answer out-of-range for the rest of the loop, so every later
+		// attempt repairs blind. Keeping the previous run leaves the model
+		// with the failing test data it had; previousCode still advances, so
+		// it is told which code failed. Same reasoning the resume path above
+		// applies to a run id the judge does not recognise.
+		if result.TestsTotal > 0 {
+			currentRunID = run.ID
+			currentTestsTotal = result.TestsTotal
+		}
 		previousCode = code
 	}
 }
