@@ -492,15 +492,25 @@ The "cache hit skips the LLM entirely" end-to-end assertion lives in Task 13.
 **Files:**
 - Create: `internal/worker/pipeline.go`, `internal/worker/pipeline_test.go`
 
-- [ ] write failing tests (mock platform + scripted LLM + real store), one per path:
+- [x] write failing tests (mock platform + scripted LLM + real store), one per path:
       solved-early-exit; no_submissions; **cache hit → hint delivered with ZERO model calls**
       (scripted model raises if consulted) and a `hint_cache_hit` event; full path through
       shield → repair → format → hint → guardrail → delivered
-- [ ] write failing tests: every step leaves its `events` row; `n_submissions_taken` recorded;
+- [x] write failing tests: every step leaves its `events` row; `n_submissions_taken` recorded;
       unsupported language → `failed` with clear message; `no_fix` and `no_hint` terminal paths
-- [ ] implement the pipeline (steps 1–9 of the diagram) as a function of (request, deps),
+- [x] implement the pipeline (steps 1–9 of the diagram) as a function of (request, deps),
       checkpointing `resume_step` after each step
-- [ ] run tests + lint - must pass before task 14
+- [x] run tests + lint - must pass before task 14
+
+  ⚠️ Task 3's store had no setters for `resume_step`, `best_submission_id`, `hint_id`,
+  `failure_reason`, `error` (only `TransitionStatus`/`AppendEvent`/inserts existed) — added
+  `SetResumeStep`, `SetBestSubmission`, `SetHintID`, `SetFailureReason`, `SetError` to
+  `internal/store/store.go` with their own tests in `store_test.go`, since the pipeline needs
+  them to record outcomes. The formatter step (Task 9) already lives inside
+  `repair.Runner.Run`, so the pipeline calls the repair loop once and gets formatted code back;
+  it does not call `internal/format` separately. Branching on an existing `resume_step` to skip
+  completed work on a crash-reclaimed row is left to Task 14, which owns claim/reclaim
+  mechanics — Task 13 only writes the checkpoints.
 
 ### Task 14: Queue claim, crash resume, wiring
 

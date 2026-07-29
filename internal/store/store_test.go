@@ -210,6 +210,143 @@ func TestTransitionStatus_UnknownRequest(t *testing.T) {
 	}
 }
 
+func TestSetResumeStep(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.SetResumeStep(ctx, id, "shield"); err != nil {
+		t.Fatalf("set resume step: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.ResumeStep == nil || *got.ResumeStep != "shield" {
+		t.Errorf("resume_step = %v, want %q", got.ResumeStep, "shield")
+	}
+}
+
+func TestSetResumeStep_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetResumeStep(ctx, uuid.New(), "shield")
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+func TestSetBestSubmission(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	subID := uuid.New()
+	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
+		{ID: subID, PlatformSubmissionID: "sub-1", Code: "code", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now(), IsBest: true},
+	}); err != nil {
+		t.Fatalf("snapshot submissions: %v", err)
+	}
+
+	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+		t.Fatalf("set best submission: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.BestSubmissionID == nil || *got.BestSubmissionID != subID {
+		t.Errorf("best_submission_id = %v, want %s", got.BestSubmissionID, subID)
+	}
+}
+
+func TestSetBestSubmission_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetBestSubmission(ctx, uuid.New(), uuid.New())
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+func TestSetHintID(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	hintID := uuid.New()
+	if err := s.InsertHint(ctx, store.Hint{
+		ID: hintID, RequestID: id, ProblemID: "problem-1", CodeHash: "hash", Text: "hint text", Approved: true,
+	}); err != nil {
+		t.Fatalf("insert hint: %v", err)
+	}
+
+	if err := s.SetHintID(ctx, id, hintID); err != nil {
+		t.Fatalf("set hint id: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.HintID == nil || *got.HintID != hintID {
+		t.Errorf("hint_id = %v, want %s", got.HintID, hintID)
+	}
+}
+
+func TestSetHintID_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetHintID(ctx, uuid.New(), uuid.New())
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+func TestSetFailureReason(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.SetFailureReason(ctx, id, "max_retries"); err != nil {
+		t.Fatalf("set failure reason: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.FailureReason == nil || *got.FailureReason != "max_retries" {
+		t.Errorf("failure_reason = %v, want %q", got.FailureReason, "max_retries")
+	}
+}
+
+func TestSetFailureReason_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetFailureReason(ctx, uuid.New(), "max_retries")
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+func TestSetError(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.SetError(ctx, id, "platform unreachable"); err != nil {
+		t.Fatalf("set error: %v", err)
+	}
+
+	got, err := s.GetHelpRequest(ctx, id)
+	if err != nil {
+		t.Fatalf("get help request: %v", err)
+	}
+	if got.Error == nil || *got.Error != "platform unreachable" {
+		t.Errorf("error = %v, want %q", got.Error, "platform unreachable")
+	}
+}
+
+func TestSetError_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.SetError(ctx, uuid.New(), "platform unreachable")
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
 func TestAppendEvent(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)

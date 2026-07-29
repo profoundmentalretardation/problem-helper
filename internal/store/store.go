@@ -259,6 +259,76 @@ func isLegalTransition(from, to Status) bool {
 	return false
 }
 
+// SetResumeStep records the last pipeline step a request completed, so a
+// crash-reclaimed row resumes there instead of restarting from step 1.
+func (s *Store) SetResumeStep(ctx context.Context, id uuid.UUID, step string) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET resume_step = $1, updated_at = now() WHERE id = $2`, step, id)
+	if err != nil {
+		return fmt.Errorf("store: setting resume step: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
+// SetBestSubmission records which snapshotted submission the pipeline picked
+// as best for this request.
+func (s *Store) SetBestSubmission(ctx context.Context, id, submissionID uuid.UUID) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET best_submission_id = $1, updated_at = now() WHERE id = $2`, submissionID, id)
+	if err != nil {
+		return fmt.Errorf("store: setting best submission: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
+// SetHintID records which hints row was (or will be) delivered for this
+// request.
+func (s *Store) SetHintID(ctx context.Context, id, hintID uuid.UUID) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET hint_id = $1, updated_at = now() WHERE id = $2`, hintID, id)
+	if err != nil {
+		return fmt.Errorf("store: setting hint id: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
+// SetFailureReason records why a no_fix/no_hint request stopped short of
+// delivering a hint (e.g. "max_retries", "cost_cap").
+func (s *Store) SetFailureReason(ctx context.Context, id uuid.UUID, reason string) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET failure_reason = $1, updated_at = now() WHERE id = $2`, reason, id)
+	if err != nil {
+		return fmt.Errorf("store: setting failure reason: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
+// SetError records the error message for a request that ends status=failed
+// (infrastructure/platform error, as opposed to a declined no_fix/no_hint).
+func (s *Store) SetError(ctx context.Context, id uuid.UUID, message string) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE help_requests SET error = $1, updated_at = now() WHERE id = $2`, message, id)
+	if err != nil {
+		return fmt.Errorf("store: setting error: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	}
+	return nil
+}
+
 // AppendEvent inserts one events row.
 func (s *Store) AppendEvent(ctx context.Context, requestID uuid.UUID, kind string, payload []byte) error {
 	if len(payload) == 0 {
