@@ -102,6 +102,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 			Agent:    cfg.Agents.Repair,
 			Events:   st,
 			Runs:     st,
+			Claims:   st,
 			Mistakes: st,
 			WorkerID: workerID,
 			Formatter: format.Runner{

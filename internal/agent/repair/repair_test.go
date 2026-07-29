@@ -791,6 +791,100 @@ func TestRun_PersistsRunIDBeforePolling(t *testing.T) {
 	}
 }
 
+// fakeClaims is an in-memory repair.ClaimGuard.
+type fakeClaims struct {
+	ok    bool
+	err   error
+	calls int
+}
+
+func (f *fakeClaims) Heartbeat(_ context.Context, _ uuid.UUID, _ string) (bool, error) {
+	f.calls++
+	return f.ok, f.err
+}
+
+// SubmitAsSystem is the loop's irreversible action — it spends the shared
+// system login's quota on a judge with no fence token of ours — so it is gated
+// on the claim, not merely followed by a claim-scoped write. A worker that was
+// stopped past its lease resumes wherever it was, including one statement
+// before the submit, so the heartbeat goroutine's next tick is too late.
+func TestRun_DoesNotSubmitAfterLosingTheClaim(t *testing.T) {
+	tests := []struct {
+		name   string
+		claims *fakeClaims
+	}{
+		{"reclaimed by another worker", &fakeClaims{ok: false}},
+		{"guard unreachable", &fakeClaims{err: errors.New("boom")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plat := mock.New()
+			plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+			// No ScriptSubmitResult: the mock panics on an unscripted call,
+			// so a submission past the guard fails this test loudly.
+
+			scripted := llm.NewScripted(nil, testPricing(), llm.ScriptedResponse{
+				JSON:  `{"action":"submit","code":"fixed code"}`,
+				Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+			})
+			runs := &fakeRuns{}
+			r := &repair.Runner{
+				Chat: scripted, Platform: plat, Template: testTemplate(t),
+				Agent: testAgent(), Runs: runs, Claims: tt.claims, WorkerID: "worker-old",
+			}
+
+			p := baseParams()
+			p.BaselineRunID = "sub-best"
+			p.BaselineTestsTotal = 1
+			_, err := r.Run(context.Background(), p)
+			if err == nil {
+				t.Fatalf("Run: err = nil, want the loop aborted before submitting")
+			}
+			if tt.claims.err == nil && !errors.Is(err, store.ErrClaimLost) {
+				t.Errorf("err = %v, want wrapping store.ErrClaimLost", err)
+			}
+			if tt.claims.calls != 1 {
+				t.Errorf("claim checks = %d, want 1", tt.claims.calls)
+			}
+			if len(runs.calls) != 0 {
+				t.Errorf("SetRepairResult calls = %d, want 0 (nothing was submitted)", len(runs.calls))
+			}
+		})
+	}
+}
+
+// The other direction: a claim still held submits and verifies as usual.
+func TestRun_ConfirmedClaimSubmitsNormally(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"fixed code"}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+	claims := &fakeClaims{ok: true}
+	r := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t),
+		Agent: testAgent(), Claims: claims, WorkerID: "worker-1",
+	}
+
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	got, err := r.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if claims.calls != 1 {
+		t.Errorf("claim checks = %d, want 1", claims.calls)
+	}
+}
+
 // The crash-resume case itself: handed a run id it already submitted, the
 // loop polls that run instead of submitting again. Re-submitting would spend
 // a second model budget and put another run under the shared system login,

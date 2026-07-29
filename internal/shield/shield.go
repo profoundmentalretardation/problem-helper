@@ -106,7 +106,7 @@ func Strip(code string, language string) (Result, error) {
 	var comments []string
 	switch lang {
 	case LangC, LangCPP, LangJava, LangGo:
-		after, comments = stripCLikeComments(sanitized, lang == LangJava)
+		after, comments = stripCLikeComments(sanitized, lang)
 	case LangPython:
 		after, comments = stripPythonComments(sanitized)
 	default:

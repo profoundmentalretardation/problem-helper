@@ -159,6 +159,27 @@ type RunRecorder interface {
 	SetRepairResult(ctx context.Context, requestID uuid.UUID, workerID, code, runID string) error
 }
 
+// ClaimGuard re-asserts this worker's claim on the request and reports
+// whether it still holds it; *store.Store satisfies it with Heartbeat.
+//
+// It is checked immediately before SubmitAsSystem because that is the loop's
+// irreversible action: it spends the shared EJUDGE_SYSTEM_LOGIN's quota on a
+// judge that has no fencing token of ours to reject a stale writer with, and
+// the run it creates is what a *different* worker's SubmitAsSystem run-id
+// floor then has to disambiguate. Every other write repair makes is
+// claim-scoped in SQL and simply fails; this one cannot be taken back.
+//
+// The worker-side heartbeat (worker.heartbeatUntil) already aborts a run whose
+// lease expired, but it only notices on its next tick, and the process that
+// missed the lease is by definition one that was not running — a stopped
+// container, a paused VM, a long stall — so it can resume anywhere, including
+// on the statement after the check the tick would have failed. Re-asserting
+// the claim here shrinks the window to a single round trip, which is the
+// narrowest it can be without a fence token the judge would honour.
+type ClaimGuard interface {
+	Heartbeat(ctx context.Context, requestID uuid.UUID, workerID string) (bool, error)
+}
+
 // MistakeRecorder persists one raw_mistakes row; *store.Store satisfies it.
 type MistakeRecorder interface {
 	InsertRawMistake(ctx context.Context, m store.RawMistake) error
@@ -174,6 +195,7 @@ type Runner struct {
 	Agent     config.AgentConfig
 	Events    EventRecorder
 	Runs      RunRecorder
+	Claims    ClaimGuard
 	Mistakes  MistakeRecorder
 	Formatter format.Runner
 
@@ -307,6 +329,14 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			}
 		}
 		code := formatted.Code
+
+		// Gate the irreversible action on the claim, not the reversible write
+		// that follows it: SetRepairResult below is claim-scoped, but by the
+		// time it refuses, the judge has already run this code under the
+		// shared system login. See ClaimGuard.
+		if err := r.assertClaim(ctx, p.RequestID); err != nil {
+			return Result{}, err
+		}
 
 		run, err := r.Platform.SubmitAsSystem(ctx, p.ProblemID, code, p.Language)
 		if err != nil {
@@ -613,6 +643,27 @@ func (r *Runner) pollUntilDone(
 		result = next
 	}
 	return result, nil
+}
+
+// assertClaim confirms this worker still owns the request before the loop
+// submits to the judge. A guard error is not evidence that the claim is
+// intact, so it aborts too: the run is reclaimable and will be resumed at its
+// checkpoint, which is strictly better than an unowned submission under the
+// shared system login. Nil Claims or an empty WorkerID skips the check, the
+// same escape hatch WorkerID gives the other claim-scoped writes for tests
+// and for callers driving the loop without a worker.
+func (r *Runner) assertClaim(ctx context.Context, requestID uuid.UUID) error {
+	if r.Claims == nil || r.WorkerID == "" {
+		return nil
+	}
+	ok, err := r.Claims.Heartbeat(ctx, requestID, r.WorkerID)
+	if err != nil {
+		return fmt.Errorf("repair: confirming claim before verification submit: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("repair: not submitting verification run: %w", store.ErrClaimLost)
+	}
+	return nil
 }
 
 func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, code, runID string, attempt int) error {

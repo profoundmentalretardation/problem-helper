@@ -393,3 +393,82 @@ func TestChat_SendsModelTemperatureAndSchema(t *testing.T) {
 		t.Errorf("json_schema.name = %v, want verdict", js["name"])
 	}
 }
+
+// cancelOnRecord cancels the caller's context at the exact moment the row is
+// being written, which is the window the detached recording context exists to
+// survive: the provider has already answered and the tokens are already paid
+// for, so a claim lost (or a shutdown, or a request deadline) between the
+// response and the insert must not lose the llm_calls row.
+type cancelOnRecord struct {
+	cancel        context.CancelFunc
+	calls         []store.LLMCall
+	sawCanceled   bool
+	sawNoDeadline bool
+}
+
+func (f *cancelOnRecord) InsertLLMCall(ctx context.Context, c store.LLMCall) error {
+	f.cancel()
+	if ctx.Err() != nil {
+		f.sawCanceled = true
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		f.sawNoDeadline = true
+	}
+	f.calls = append(f.calls, c)
+	return nil
+}
+
+// A successful call is recorded even if the caller's context dies before the
+// insert lands — the "every model call writes an llm_calls row" invariant is
+// about calls that happened, and this one did.
+func TestChat_SuccessIsRecordedWhenContextDiesBeforeTheInsert(t *testing.T) {
+	srv, _ := newTestServer(t, chatResponseBody(`{"verdict":"approve"}`, 100, 0, 10))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	recorder := &cancelOnRecord{cancel: cancel}
+	client := llm.New(srv.URL, "test-key", recorder, testPricing())
+
+	if _, err := client.Chat(ctx, llm.Request{
+		RequestID: uuid.New(), Agent: "guardrail", Model: "gpt-test", Attempt: 1,
+		Messages: []llm.Message{{Role: "user", Content: "hi"}}, Schema: testSchema,
+	}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if len(recorder.calls) != 1 {
+		t.Fatalf("llm_calls rows recorded = %d, want 1", len(recorder.calls))
+	}
+	if recorder.sawCanceled {
+		t.Error("record ran on the caller's canceled context; it must be detached from it")
+	}
+	if recorder.sawNoDeadline {
+		t.Error("detached record context has no deadline; it must be bounded by recordTimeout")
+	}
+}
+
+// Same for the schema-invalid reply: it burned tokens too, and it is the call
+// a retry-happy model produces most of.
+func TestChat_InvalidReplyIsRecordedWhenContextDiesBeforeTheInsert(t *testing.T) {
+	srv, _ := newTestServer(t,
+		chatResponseBody(`{"nope":"missing verdict"}`, 100, 0, 10),
+		chatResponseBody(`{"verdict":"approve"}`, 100, 0, 10),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	recorder := &cancelOnRecord{cancel: cancel}
+	client := llm.New(srv.URL, "test-key", recorder, testPricing())
+
+	// The cancel fires during the first record, so the retry's HTTP call fails
+	// on the dead context — but the first, paid call is still on the books.
+	_, _ = client.Chat(ctx, llm.Request{
+		RequestID: uuid.New(), Agent: "guardrail", Model: "gpt-test", Attempt: 1,
+		Messages: []llm.Message{{Role: "user", Content: "hi"}}, Schema: testSchema,
+	})
+	if len(recorder.calls) == 0 {
+		t.Fatal("llm_calls rows recorded = 0, want at least the schema-invalid call")
+	}
+	if recorder.sawCanceled {
+		t.Error("record ran on the caller's canceled context; it must be detached from it")
+	}
+}

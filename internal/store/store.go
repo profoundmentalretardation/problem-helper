@@ -350,12 +350,18 @@ func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest,
 // legal, so nothing else would catch it — the old worker's hint gets
 // delivered and the healthy claimant fails on a row it no longer owns. An
 // empty workerID skips the check, for callers with no claim of their own.
+//
+// An *unclaimed* row is no more writable by a named worker than one claimed
+// by somebody else: ReclaimStale clears claimed_by the moment it moves a row
+// back to pending, so "claimed_by IS NULL" is exactly the window between a
+// reclaim and the next claim — the window in which the stale worker is most
+// likely to still be running. Only the row's current claimant may write it.
 func (s *Store) TransitionStatus(ctx context.Context, id uuid.UUID, to Status, workerID string) error {
 	row := s.db.QueryRow(ctx, `
 		WITH upd AS (
 			UPDATE help_requests SET status = $2, updated_at = now()
 			WHERE id = $1 AND status = ANY($3)
-			  AND ($4 = '' OR claimed_by IS NULL OR claimed_by = $4)
+			  AND ($4 = '' OR claimed_by = $4)
 			RETURNING id
 		)
 		SELECT h.status, h.claimed_by, EXISTS (SELECT 1 FROM upd)
@@ -371,8 +377,8 @@ func (s *Store) TransitionStatus(ctx context.Context, id uuid.UUID, to Status, w
 		}
 		return fmt.Errorf("store: updating status: %w", err)
 	}
-	if !updated && workerID != "" && claimedBy != nil && *claimedBy != workerID {
-		return fmt.Errorf("%w: id %s is claimed by %s", ErrClaimLost, id, *claimedBy)
+	if !updated && workerID != "" && (claimedBy == nil || *claimedBy != workerID) {
+		return fmt.Errorf("%w: id %s is claimed by %s", ErrClaimLost, id, derefOrNone(claimedBy))
 	}
 	if !updated {
 		// The outer SELECT sees the pre-UPDATE snapshot, so current is the
@@ -538,7 +544,9 @@ func (s *Store) ReclaimStale(ctx context.Context, staleAfter time.Duration) ([]u
 // model budgets again), and an unscoped SetRepairResult puts the old worker's
 // code under the new claimant's run id, so loop 2 explains code that run
 // never held. TransitionStatus alone catches none of that: it only fires
-// after all of it has committed.
+// after all of it has committed. Like TransitionStatus, a named worker is
+// refused on an unclaimed row too — that is the post-reclaim, pre-claim
+// window, not a licence to write.
 //
 // setSQL is the "UPDATE help_requests SET ..." head only — the WHERE clause
 // carrying the claim predicate is appended here. Its placeholders must be
@@ -549,7 +557,7 @@ func (s *Store) claimScopedUpdate(ctx context.Context, id uuid.UUID, workerID, w
 	row := s.db.QueryRow(ctx, fmt.Sprintf(`
 		WITH upd AS (
 			%s
-			WHERE id = $1 AND ($2 = '' OR claimed_by IS NULL OR claimed_by = $2)
+			WHERE id = $1 AND ($2 = '' OR claimed_by = $2)
 			RETURNING id
 		)
 		SELECT h.claimed_by, EXISTS (SELECT 1 FROM upd)

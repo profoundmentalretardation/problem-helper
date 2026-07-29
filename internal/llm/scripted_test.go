@@ -3,6 +3,8 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -73,5 +75,57 @@ func TestScripted_ReturnsScriptedError(t *testing.T) {
 	_, err := s.Chat(context.Background(), llm.Request{Agent: "repair", Model: "gpt-test"})
 	if err != wantErr {
 		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+}
+
+// A scripted failure is a call that happened, so it writes an llm_calls row
+// exactly like the real Client's error path — otherwise every agent test
+// built on a scripted transport failure or cancellation silently exempts
+// itself from the "every model call writes a row" invariant it exists to
+// model. The row is written even when the caller's context is already dead,
+// which is the usual way this path is reached.
+func TestScripted_ErrorIsStillRecorded(t *testing.T) {
+	recorder := &fakeRecorder{}
+	usage := llm.Usage{InputTokens: 10, OutputTokens: 0}
+	s := llm.NewScripted(recorder, testPricing(), llm.ScriptedResponse{Err: context.Canceled, Usage: usage})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	resp, err := s.Chat(ctx, llm.Request{Agent: "repair", Model: "gpt-test", Attempt: 1})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if resp.Usage != usage {
+		t.Errorf("Usage = %+v, want %+v — a failed call still spent what it spent", resp.Usage, usage)
+	}
+	if len(recorder.calls) != 1 {
+		t.Fatalf("llm_calls rows recorded = %d, want 1", len(recorder.calls))
+	}
+	if !strings.HasPrefix(recorder.calls[0].Response, "error: ") {
+		t.Errorf("recorded response = %q, want the error text in place of a response", recorder.calls[0].Response)
+	}
+}
+
+// Scripted mirrors the real Client's detached recording on the success path
+// too: a context that dies between the reply and the insert must not cost the
+// row, or agent tests would model an invariant the service doesn't have.
+func TestScripted_SuccessIsRecordedWhenContextDiesBeforeTheInsert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	recorder := &cancelOnRecord{cancel: cancel}
+	s := llm.NewScripted(recorder, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"verdict":"approve"}`,
+		Usage: llm.Usage{InputTokens: 10, OutputTokens: 5},
+	})
+
+	if _, err := s.Chat(ctx, llm.Request{Agent: "repair", Model: "gpt-test", Attempt: 1}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if len(recorder.calls) != 1 {
+		t.Fatalf("llm_calls rows recorded = %d, want 1", len(recorder.calls))
+	}
+	if recorder.sawCanceled {
+		t.Error("record ran on the caller's canceled context; it must be detached from it")
 	}
 }

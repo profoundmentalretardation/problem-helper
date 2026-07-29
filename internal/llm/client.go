@@ -61,6 +61,11 @@ type CallRecorder interface {
 	InsertLLMCall(ctx context.Context, c store.LLMCall) error
 }
 
+// recordTimeout bounds the detached llm_calls insert: the write is made on a
+// context detached from the caller's, so it needs a deadline of its own
+// rather than inheriting none.
+const recordTimeout = 5 * time.Second
+
 // ErrInvalidResponse is returned when the model's reply is not valid JSON
 // matching the requested schema, even after one retry.
 var ErrInvalidResponse = errors.New("llm: model did not return valid JSON matching the schema")
@@ -117,7 +122,16 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 			// analytics and, since usage is unknown here, charged 0. The row
 			// carries the error text in place of a response, with zero usage,
 			// which is at least an honest "this call happened".
-			_ = c.record(ctx, req, messages, "error: "+err.Error(), Usage{}, Cost(Usage{}, c.pricing[req.Model]), time.Since(start))
+			//
+			// record detaches from ctx (see its comment): the likeliest way to
+			// reach this path at all is ctx itself dying (a worker shutting
+			// down, the HTTP client's timeout firing on a canceled parent), and
+			// recording on that same context makes the insert fail exactly when
+			// there is something to record.
+			recErr := c.record(ctx, req, messages, "error: "+err.Error(), Usage{}, Cost(Usage{}, c.pricing[req.Model]), time.Since(start))
+			if recErr != nil {
+				return c.spent(req, total), errors.Join(err, recErr)
+			}
 			return c.spent(req, total), err
 		}
 		latency := time.Since(start)
@@ -162,6 +176,15 @@ func (c *Client) spent(req Request, total Usage) Response {
 	return Response{Usage: total, Cost: Cost(total, c.pricing[req.Model])}
 }
 
+// record writes one llm_calls row. It always runs on a context detached from
+// the caller's, bounded by recordTimeout: by the time record is reached the
+// provider has already answered and the tokens are already paid for, so a ctx
+// that dies in the window between the response and the insert — a worker
+// losing its claim, a shutdown, a request deadline expiring — would drop the
+// row for a call that definitely happened, breaking the "every model call
+// writes an llm_calls row" invariant on exactly the runs cost analytics needs.
+// This holds for successful, schema-invalid and failed calls alike. Same
+// reasoning as the curator's sealBatch.
 func (c *Client) record(ctx context.Context, req Request, messages []Message, content string, usage Usage, cost string, latency time.Duration) error {
 	if c.rec == nil {
 		return nil
@@ -169,7 +192,9 @@ func (c *Client) record(ctx context.Context, req Request, messages []Message, co
 	row := callRow(req, content, usage, cost)
 	row.LatencyMS = int(latency.Milliseconds())
 	row.Prompt = renderPrompt(messages)
-	if err := c.rec.InsertLLMCall(ctx, row); err != nil {
+	recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	if err := c.rec.InsertLLMCall(recCtx, row); err != nil {
 		return fmt.Errorf("llm: recording call: %w", err)
 	}
 	return nil

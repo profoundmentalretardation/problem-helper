@@ -212,9 +212,21 @@ func (w *Worker) runPipelineRecovered(ctx context.Context, requestID uuid.UUID) 
 // claimant; if the row has since been reclaimed by someone else,
 // heartbeatUntil calls lostClaim to abort the in-flight pipeline so the two
 // workers don't run it concurrently.
+//
+// A heartbeat that *errors* is treated the same way once the lease it was
+// keeping alive has expired. The row's heartbeat_at stops advancing the moment
+// the store call starts failing (a dropped connection, a paused database), so
+// after StaleAfter any other instance's reclaim sweep is entitled to hand the
+// request to a new claimant — while this one, which merely logged the error and
+// carried on, is still running the same pipeline: two workers submitting to the
+// judge under the shared system login and spending both model budgets twice.
+// The store-side predicates catch that only after the side effects. Giving up
+// at the lease boundary is the conservative half of the same rule the reclaim
+// sweep follows.
 func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan struct{}, lostClaim context.CancelFunc) {
 	ticker := time.NewTicker(w.heartbeatInterval())
 	defer ticker.Stop()
+	lastOK := time.Now()
 	for {
 		select {
 		case <-stop:
@@ -223,9 +235,16 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 			ok, err := w.Store.Heartbeat(ctx, id, w.ID)
 			if err != nil {
 				w.logf("worker: heartbeat for request %s: %v", id, err)
+				if time.Since(lastOK) >= w.staleAfter() {
+					w.logf("worker: request %s has not been heartbeated for %s, lease expired, aborting run",
+						id, w.staleAfter())
+					lostClaim()
+					return
+				}
 				continue
 			}
 			if ok {
+				lastOK = time.Now()
 				continue
 			}
 			// No row refreshed. That is the normal case once the pipeline

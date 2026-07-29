@@ -799,8 +799,12 @@ func TestRunPipeline_ResumesAfterRepairCheckpoint_ReusesPersistedFix(t *testing.
 	s, ctx := withStore(t)
 	id := newClaimedRequest(t, s, ctx, 10)
 
-	plat := mock.New() // no submit, no tests, no status: only the always-re-read statement
-	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	// Nothing at all is scripted: past the repair checkpoint the pipeline has
+	// every input it needs on the row, so any platform call — the problem
+	// statement included — panics here. A statement endpoint that is briefly
+	// down must not turn a request that only has a hint left to write into
+	// status=failed.
+	plat := mock.New()
 
 	subID := uuid.New()
 	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{
@@ -873,8 +877,7 @@ func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T)
 	s, ctx := withStore(t)
 	id := newClaimedRequest(t, s, ctx, 10)
 
-	plat := mock.New() // only the always-re-read statement is scripted
-	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	plat := mock.New() // nothing scripted: a resumed delivery needs no platform call
 
 	subID := uuid.New()
 	if err := s.SnapshotSubmissions(ctx, id, []store.Submission{

@@ -8,6 +8,9 @@ package worker_test
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log"
 	"sync"
 	"testing"
 	"time"
@@ -61,6 +64,10 @@ type fakeQueueStore struct {
 	// simulate a reclaim taking the claim away mid-run. Empty means every
 	// heartbeat is accepted.
 	claimed map[uuid.UUID]*store.HelpRequest
+
+	// hbErr, when set, makes every Heartbeat call fail — a database the
+	// worker cannot reach while its lease quietly expires.
+	hbErr error
 }
 
 func (f *fakeQueueStore) ClaimNext(_ context.Context, _ string) (*store.HelpRequest, error) {
@@ -78,6 +85,9 @@ func (f *fakeQueueStore) Heartbeat(_ context.Context, id uuid.UUID, workerID str
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.heartbeats = append(f.heartbeats, id)
+	if f.hbErr != nil {
+		return false, f.hbErr
+	}
 	if f.claimed == nil {
 		return true, nil
 	}
@@ -430,6 +440,64 @@ func TestWorker_KeepsRunningWhileItStillOwnsTheClaim(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after cancel")
+	}
+}
+
+// A heartbeat that keeps erroring is not a heartbeat: heartbeat_at stops
+// advancing, so after StaleAfter another instance's reclaim sweep may hand the
+// request to a new claimant. A worker that only logged the error and kept
+// going would then be running the same pipeline as the new claimant —
+// submitting to the judge under the shared system login and spending both
+// model budgets twice. It has to give up its own run at the lease boundary.
+func TestWorker_AbortsTheRunWhenHeartbeatsKeepFailing(t *testing.T) {
+	id := uuid.New()
+	fq := &fakeQueueStore{
+		pending: []*store.HelpRequest{{ID: id, Status: store.StatusRunning}},
+		hbErr:   errors.New("connection refused"),
+	}
+	release := make(chan struct{})
+	defer close(release)
+	fp := &ctxWatchingPipeline{
+		started: make(chan struct{}), canceled: make(chan struct{}), release: release,
+	}
+
+	w := &worker.Worker{
+		ID:                "worker-1",
+		Store:             fq,
+		Pipeline:          fp,
+		Logger:            log.New(io.Discard, "", 0),
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		StaleAfter:        50 * time.Millisecond,
+		ReclaimInterval:   -1,
+		MetaloopInterval:  -1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-fp.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline never started")
+	}
+
+	start := time.Now()
+	select {
+	case <-fp.canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker kept running with a lease it could no longer refresh")
+	}
+	// The other direction: it must not bail on the first failed tick either,
+	// or one blip on the database kills a run that was never reclaimed.
+	if elapsed := time.Since(start); elapsed < 40*time.Millisecond {
+		t.Errorf("aborted after %s, want the run to survive until the %s lease expires", elapsed, w.StaleAfter)
 	}
 }
 

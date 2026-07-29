@@ -265,6 +265,33 @@ func TestSubmissions_IncludesCodeLanguageAndTestCounts(t *testing.T) {
 	}
 }
 
+// The source page's timestamp and its code table are parsed independently, so
+// markup that changed on the code table alone (an ejudge upgrade, a theme, a
+// proxy rewriting the page) used to yield a perfectly successful submission
+// with code="". Nothing downstream can tell that from a student who submitted
+// an empty file: the repair model diagnoses a blank program, the hint explains
+// it, and the "fix" goes to the judge. It has to be a malformed response.
+func TestSubmissions_MissingSourceMarkupIsNotEmptyCode(t *testing.T) {
+	base := newFixtureServer(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("action") == "36" {
+			body := fixture(t, "view_source_wa.html")
+			// The timestamp still parses; only the code table's markup moved.
+			body = strings.ReplaceAll(body, `<table class="b0">`, `<table class="src">`)
+			serveFixture(w, body)
+			return
+		}
+		proxyTo(t, base, w, r)
+	}))
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	_, err := c.Submissions(context.Background(), "ejudge", "1", 1)
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Errorf("err = %v, want ErrMalformedResponse — an unparseable source page is not an empty submission", err)
+	}
+}
+
 // ejudge names languages after the compiler, so the short names on a real
 // C++ course are "g++"/"clang++" — characters a \w-based row regex cannot
 // match. A row that fails to match is not an error, it is silently absent,
@@ -439,6 +466,228 @@ func TestSubmitAsSystem_ExpiredSession_ReLoginsAndRetries(t *testing.T) {
 	}
 	if got.ID != "5" {
 		t.Errorf("ID = %q, want %q (the re-posted submission)", got.ID, "5")
+	}
+}
+
+// waSource is run 6's source exactly as testdata/view_source_wa.html renders
+// it — the code a test "submits" when it wants that run to be identifiable as
+// its own.
+const waSource = "#include <stdio.h>\n" +
+	"int main(void) {\n" +
+	"    int a, b;\n" +
+	"    scanf(\"%d %d\", &a, &b);\n" +
+	"    printf(\"%d\\n\", a - b);\n" +
+	"    return 0;\n" +
+	"}\n" +
+	"\n" +
+	"// capture-bad"
+
+// newAmbiguousSubmitServer answers the submit POST with a page showing *two*
+// runs above the pre-submit floor (runs 7 and 6 against the statement page's
+// 4) and serves each run's source from new-master, so a test can check which
+// one the client claims as its own.
+func newAmbiguousSubmitServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			serveFixture(w, fixture(t, "submit_run_slow_response.html"))
+			return
+		}
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "139" || r.FormValue("action") == "139" {
+			serveFixture(w, fixture(t, "statement_prob_a.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_client_ok.html"))
+	})
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		if r.URL.Query().Get("action") == "36" {
+			switch r.URL.Query().Get("run_id") {
+			case "7":
+				serveFixture(w, fixture(t, "view_source_ok.html"))
+			case "6":
+				serveFixture(w, fixture(t, "view_source_wa.html"))
+			default:
+				http.Error(w, "unhandled run_id", http.StatusNotFound)
+			}
+			return
+		}
+		http.Error(w, "unhandled new-master action", http.StatusNotFound)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// "Newest run above the pre-submit floor" identifies our run only while
+// nothing else is submitting: every verification shares one system login, so a
+// concurrent repair of the same problem can land on top of ours between the
+// POST and its response. Polling that run reports another request's code as
+// this one's verification — so when more than one run appears, the tie is
+// broken on the source ejudge stored, not on the ordering.
+func TestSubmitAsSystem_ConcurrentSubmitDoesNotStealTheRunID(t *testing.T) {
+	srv := newAmbiguousSubmitServer(t)
+	c := newClient(t, srv)
+
+	got, err := c.SubmitAsSystem(context.Background(), "1", waSource, "gcc")
+	if err != nil {
+		t.Fatalf("SubmitAsSystem: %v", err)
+	}
+	if got.ID != "6" {
+		t.Errorf("ID = %q, want %q — run 7 appeared in the same window but carries somebody else's code", got.ID, "6")
+	}
+}
+
+// Source alone does not identify a run: a run's verification identity is
+// (source, compiler). ejudge's ignore_duplicated_runs rejects the same source
+// resubmitted under the same login *and* language, so the one collision that
+// survives is exactly this one — the same file submitted as gcc by us and as
+// g++ by a concurrent repair. Picking the newest source match there polls
+// another request's run, compiled by another compiler, for this one's verdict.
+func TestSubmitAsSystem_ConcurrentSubmitOfSameSourceInAnotherLanguage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			// Runs 7 (g++) and 6 (gcc) both appeared above the floor, and
+			// both hold the code we submitted.
+			serveFixture(w, fixture(t, "submit_run_slow_response_mixed_lang.html"))
+			return
+		}
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "139" || r.FormValue("action") == "139" {
+			serveFixture(w, fixture(t, "statement_prob_a.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_client_ok.html"))
+	})
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		if r.URL.Query().Get("action") == "36" {
+			switch r.URL.Query().Get("run_id") {
+			case "7", "6":
+				serveFixture(w, fixture(t, "view_source_wa.html"))
+			default:
+				http.Error(w, "unhandled run_id", http.StatusNotFound)
+			}
+			return
+		}
+		http.Error(w, "unhandled new-master action", http.StatusNotFound)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newClient(t, srv)
+	got, err := c.SubmitAsSystem(context.Background(), "1", waSource, "gcc")
+	if err != nil {
+		t.Fatalf("SubmitAsSystem: %v", err)
+	}
+	if got.ID != "6" {
+		t.Errorf("ID = %q, want %q — run 7 carries the same source but was compiled as g++", got.ID, "6")
+	}
+}
+
+// newNoLanguageColumnSubmitServer answers the submit POST with a "Previous
+// submissions" table that renders no Language column at all — a contest
+// configuration parseSubmitRunRows explicitly tolerates — with runs 7 and 6
+// above the pre-submit floor, and serves each run's source per sourceFor.
+func newNoLanguageColumnSubmitServer(t *testing.T, sourceFor map[string]string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			serveFixture(w, fixture(t, "submit_run_response_no_lang_column.html"))
+			return
+		}
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "139" || r.FormValue("action") == "139" {
+			serveFixture(w, fixture(t, "statement_prob_a.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_client_ok.html"))
+	})
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		if r.URL.Query().Get("action") == "36" {
+			name, ok := sourceFor[r.URL.Query().Get("run_id")]
+			if !ok {
+				http.Error(w, "unhandled run_id", http.StatusNotFound)
+				return
+			}
+			serveFixture(w, fixture(t, name))
+			return
+		}
+		http.Error(w, "unhandled new-master action", http.StatusNotFound)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// With no Language column the source is all there is to go on, and one run
+// carrying our code is still an identification — discarding it because the
+// table said nothing about compilers would fail a submit that is not ambiguous
+// at all.
+func TestSubmitAsSystem_NoLanguageColumn_SingleSourceMatchIsIdentified(t *testing.T) {
+	srv := newNoLanguageColumnSubmitServer(t, map[string]string{
+		"7": "view_source_ok.html",
+		"6": "view_source_wa.html",
+		"5": "view_source_ok.html",
+	})
+	c := newClient(t, srv)
+
+	got, err := c.SubmitAsSystem(context.Background(), "1", waSource, "gcc")
+	if err != nil {
+		t.Fatalf("SubmitAsSystem: %v", err)
+	}
+	if got.ID != "6" {
+		t.Errorf("ID = %q, want %q — only run 6 carries the submitted code", got.ID, "6")
+	}
+}
+
+// ...but two of them carrying it reproduces exactly the gcc/g++ collision the
+// language check exists to break, with no language reported to break it. The
+// runs differ by compiler by construction (ignore_duplicated_runs rejects a
+// same-source, same-language repeat), so "newest source match" would be a coin
+// flip on whose verdict this request verifies. Fail closed instead.
+func TestSubmitAsSystem_NoLanguageColumn_AmbiguousSourceMatchIsRejected(t *testing.T) {
+	srv := newNoLanguageColumnSubmitServer(t, map[string]string{
+		"7": "view_source_wa.html",
+		"6": "view_source_wa.html",
+		"5": "view_source_ok.html",
+	})
+	c := newClient(t, srv)
+
+	_, err := c.SubmitAsSystem(context.Background(), "1", waSource, "gcc")
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Errorf("err = %v, want ErrMalformedResponse when two language-unknown runs both carry the submitted code", err)
+	}
+}
+
+// The other direction: if none of the runs that appeared carries our code, the
+// submit cannot be identified at all. Reporting one anyway would verify a run
+// that never held this code, which is worse than failing loudly.
+func TestSubmitAsSystem_NoCandidateCarriesOurCode_IsRejected(t *testing.T) {
+	srv := newAmbiguousSubmitServer(t)
+	c := newClient(t, srv)
+
+	_, err := c.SubmitAsSystem(context.Background(), "1", "int main(void){return 0;}", "gcc")
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Errorf("err = %v, want ErrMalformedResponse when no candidate run carries the submitted code", err)
 	}
 }
 

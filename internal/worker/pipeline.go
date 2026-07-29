@@ -168,18 +168,25 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 	}
 
 	// The problem statement is never persisted (only the repair loop needs
-	// it), so it's re-fetched on every run regardless of resume — a cheap,
-	// idempotent read with no store side effect to duplicate.
-	statement, err := pl.Platform.ProblemStatement(ctx, hr.ProblemID)
-	if err != nil {
-		return pl.infraFail(ctx, requestID, fmt.Errorf("fetching problem statement: %w", err))
-	}
-	if resumeIdx < stepOrder[StepStatement] {
-		if err := pl.event(ctx, requestID, "problem_statement", map[string]any{"problem_id": statement.ProblemID}); err != nil {
-			return err
+	// it), so it's re-fetched rather than reloaded — a cheap, idempotent read
+	// with no store side effect to duplicate. It is fetched only while some
+	// step still needs it: a request resumed past the repair checkpoint has
+	// its verified code on the row and nothing left to do but write the hint
+	// and deliver, so a statement endpoint that happens to be down must not
+	// turn that request into status=failed.
+	var statement platform.Statement
+	if resumeIdx < stepOrder[StepRepair] {
+		statement, err = pl.Platform.ProblemStatement(ctx, hr.ProblemID)
+		if err != nil {
+			return pl.infraFail(ctx, requestID, fmt.Errorf("fetching problem statement: %w", err))
 		}
-		if err := pl.checkpoint(ctx, requestID, StepStatement); err != nil {
-			return err
+		if resumeIdx < stepOrder[StepStatement] {
+			if err := pl.event(ctx, requestID, "problem_statement", map[string]any{"problem_id": statement.ProblemID}); err != nil {
+				return err
+			}
+			if err := pl.checkpoint(ctx, requestID, StepStatement); err != nil {
+				return err
+			}
 		}
 	}
 

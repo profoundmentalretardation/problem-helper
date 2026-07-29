@@ -256,22 +256,113 @@ func (c *Client) SubmitAsSystem(ctx context.Context, problemID, code, lang strin
 		return platform.RunResult{}, ErrAuthFailed
 	}
 
-	runID, err := parseNewestRunID(body)
+	// The run ids come from a table the whole service shares, since every
+	// verification submits under one system login. Anything not newer than the
+	// pre-submit page's top row belongs to some earlier submission, and polling
+	// it would "verify" a run that never contained this code.
+	fresh, err := parseRunRowsNewerThan(body, page.newestRunID)
 	if err != nil {
 		return platform.RunResult{}, err
 	}
-	// The run id comes from the newest row of a table the whole service
-	// shares, since every verification submits under one system login. If
-	// that row is not newer than the one on the pre-submit page it belongs
-	// to some other submission (a concurrent repair of the same problem, or
-	// a submit ejudge silently dropped), and polling it would "verify" a run
-	// that never contained this code.
-	if !isNewerRunID(runID, page.newestRunID) {
+	switch len(fresh) {
+	case 0:
+		newest, _ := parseNewestRunID(body)
 		return platform.RunResult{}, fmt.Errorf(
 			"ejudge: submit returned run %s, not newer than pre-submit run %s: %w",
-			runID, page.newestRunID, ErrMalformedResponse)
+			newest, page.newestRunID, ErrMalformedResponse)
+	case 1:
+		// Exactly one run appeared while we were posting: it is ours, and no
+		// extra request is needed to say so.
+		return platform.RunResult{ID: fresh[0].id, Done: false}, nil
+	}
+
+	// More than one appeared, so "newest above the floor" is no longer an
+	// identification: another instance (or another goroutine of this one)
+	// submitted its own repair for the same problem under the same login in
+	// the same window, and its run can perfectly well be on top. Taking it
+	// would poll somebody else's code for this request's verdict, which is the
+	// one guarantee loop 1 exists to provide — so the tie is broken on the
+	// only thing that actually distinguishes the runs: their source.
+	runID, err := c.pickRunBySource(ctx, fresh, code, lang)
+	if err != nil {
+		return platform.RunResult{}, err
 	}
 	return platform.RunResult{ID: runID, Done: false}, nil
+}
+
+// pickRunBySource returns the run among candidates that carries the code we
+// just submitted, compiled with the language we submitted it under.
+//
+// The language is checked, not assumed: a run's verification identity is
+// (source, compiler), and the one case where two concurrent runs can hold
+// byte-identical source is precisely a differing language — ejudge's
+// ignore_duplicated_runs rejects a repeat of the same source under the same
+// login *and* language, so the surviving collision is `gcc` vs `g++` on the
+// same file. Taking the newest matching source there would poll another
+// request's run, under another compiler, for this one's verdict.
+//
+// Source comparison is whitespace-tolerant because the source page is markup,
+// not the original bytes: it is rendered line by line, so trailing whitespace
+// and the final newline do not survive the round trip.
+//
+// A row whose language the table did not report — parseSubmitRunRows leaves it
+// empty when the contest's configuration renders no Language column — is still
+// considered, because discarding it would throw away the only candidates there
+// are. But source alone is not an identification in that case: the collision
+// this function exists to break is by construction a same-source, differing-
+// language one, so if two or more language-unknown runs carry the submitted
+// code we have reproduced the original ambiguity and must fail closed rather
+// than take the newest. A run whose language the table *did* report as ours is
+// unambiguous and wins immediately.
+func (c *Client) pickRunBySource(ctx context.Context, candidates []submitRunRow, code, lang string) (string, error) {
+	want := normalizeSource(code)
+	ids := make([]string, 0, len(candidates))
+	for _, r := range candidates {
+		ids = append(ids, r.id)
+	}
+	var unknownLang []string
+	for _, r := range candidates {
+		if r.language != "" && r.language != lang {
+			continue
+		}
+		src, err := c.fetchViewSource(ctx, r.id)
+		if err != nil {
+			return "", fmt.Errorf("ejudge: identifying our run among %v: %w", ids, err)
+		}
+		if normalizeSource(src.code) != want {
+			continue
+		}
+		if r.language == lang {
+			return r.id, nil
+		}
+		unknownLang = append(unknownLang, r.id)
+	}
+	switch len(unknownLang) {
+	case 0:
+		return "", fmt.Errorf(
+			"ejudge: submit produced runs %v under the shared system login and none carries the submitted code in %s: %w",
+			ids, lang, ErrMalformedResponse)
+	case 1:
+		return unknownLang[0], nil
+	default:
+		return "", fmt.Errorf(
+			"ejudge: submit produced runs %v under the shared system login carrying the submitted code, and the table reports no language to tell them apart: %w",
+			unknownLang, ErrMalformedResponse)
+	}
+}
+
+// normalizeSource strips the differences ejudge's own rendering introduces —
+// CRLFs, trailing whitespace on a line, and trailing blank lines — so two
+// spellings of the same submission compare equal.
+func normalizeSource(code string) string {
+	lines := strings.Split(strings.ReplaceAll(code, "\r\n", "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t\r")
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // submitWithSession POSTs the solution, transparently re-logging in and
@@ -780,18 +871,99 @@ func htmlToText(fragment string) string {
 
 // parseNewestRunID reads the first (newest) row of the per-problem
 // "Previous submissions" table rendered after a successful submit.
-var submitRunRowRe = regexp.MustCompile(`<td class="b1">(\d+)</td>`)
+//
+// The regex is anchored on the row opener rather than matching any numeric
+// cell: Size and Failed test are numbers too, so an unanchored scan reads the
+// first row's size as the second row's run id — harmless while only the first
+// match was ever used, wrong the moment a caller wants the whole column.
+var (
+	submitRunRowRe  = regexp.MustCompile(`(?s)<tr>\s*(<td class="b1">.*?)</tr>`)
+	submitRunCellRe = regexp.MustCompile(`(?s)<td class="b1">(.*?)</td>`)
+	submitRunHeadRe = regexp.MustCompile(`(?s)<th class="b1">(.*?)</th>`)
+	runIDRe         = regexp.MustCompile(`^\d+$`)
+)
 
-func parseNewestRunID(body string) (string, error) {
+// submitRunRow is one row of the post-submit "Previous submissions" table:
+// the run id and the language ejudge reports for it. The language is part of
+// a run's identity, not decoration — see pickRunBySource.
+type submitRunRow struct {
+	id       string
+	language string
+}
+
+// parseSubmitRunRows reads the per-problem "Previous submissions" table
+// rendered after a successful submit, newest row first.
+//
+// Rows are matched from the row opener rather than by scanning for any
+// numeric cell: Size and Failed test are numbers too, so an unanchored scan
+// reads the first row's size as the second row's run id. The Language column
+// is located by its header rather than by a fixed index, because the columns
+// this table renders depend on the contest's configuration; if there is no
+// such header the language is simply left empty and callers fall back to
+// identifying a run by its source alone.
+func parseSubmitRunRows(body string) ([]submitRunRow, error) {
 	i := strings.Index(body, "Previous submissions of this problem")
 	if i < 0 {
-		return "", fmt.Errorf("ejudge: submit response: %w", ErrMalformedResponse)
+		return nil, fmt.Errorf("ejudge: submit response: %w", ErrMalformedResponse)
 	}
-	m := submitRunRowRe.FindStringSubmatch(body[i:])
-	if m == nil {
-		return "", fmt.Errorf("ejudge: submit response: %w", ErrMalformedResponse)
+	section := body[i:]
+	if end := strings.Index(section, "</table>"); end >= 0 {
+		section = section[:end]
 	}
-	return m[1], nil
+
+	langCol := -1
+	for k, m := range submitRunHeadRe.FindAllStringSubmatch(section, -1) {
+		if strings.EqualFold(strings.TrimSpace(htmlToText(m[1])), "Language") {
+			langCol = k
+			break
+		}
+	}
+
+	var rows []submitRunRow
+	for _, m := range submitRunRowRe.FindAllStringSubmatch(section, -1) {
+		cells := submitRunCellRe.FindAllStringSubmatch(m[1], -1)
+		if len(cells) == 0 {
+			continue
+		}
+		id := strings.TrimSpace(cells[0][1])
+		if !runIDRe.MatchString(id) {
+			continue
+		}
+		row := submitRunRow{id: id}
+		if langCol >= 0 && langCol < len(cells) {
+			row.language = strings.TrimSpace(htmlToText(cells[langCol][1]))
+		}
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("ejudge: submit response: %w", ErrMalformedResponse)
+	}
+	return rows, nil
+}
+
+func parseNewestRunID(body string) (string, error) {
+	rows, err := parseSubmitRunRows(body)
+	if err != nil {
+		return "", err
+	}
+	return rows[0].id, nil
+}
+
+// parseRunRowsNewerThan returns every run in the post-submit table that is
+// newer than floor, newest first — the candidates for "the run this submit
+// created" — each with the language ejudge reports for it.
+func parseRunRowsNewerThan(body, floor string) ([]submitRunRow, error) {
+	rows, err := parseSubmitRunRows(body)
+	if err != nil {
+		return nil, err
+	}
+	var fresh []submitRunRow
+	for _, r := range rows {
+		if isNewerRunID(r.id, floor) {
+			fresh = append(fresh, r)
+		}
+	}
+	return fresh, nil
 }
 
 // masterSubmissionRow is one row of new-master's filterable submissions
@@ -917,16 +1089,28 @@ func (c *Client) fetchViewSource(ctx context.Context, runID string) (viewSourceI
 		return viewSourceInfo{}, fmt.Errorf("ejudge: run %s submission time: %w", runID, err)
 	}
 
-	code := ""
-	if sm := sourceTableRe.FindStringSubmatch(body); sm != nil {
-		var lines []string
-		for _, lm := range sourceLineRe.FindAllStringSubmatch(sm[1], -1) {
-			lines = append(lines, decodeSourceLine(lm[1]))
-		}
-		code = strings.Join(lines, "\n")
+	// A source page whose code table we cannot parse is a malformed response,
+	// not an empty submission. Returning code="" successfully sent the repair
+	// model, the hint model and the judge a program the student never wrote —
+	// silently, because the timestamp above still parsed, so nothing else on
+	// the pipeline had any reason to doubt the submission. ejudge renders even
+	// a zero-byte source as the table with no <tt> lines in it, so "the table
+	// is missing" and "the table is empty" are both markup we no longer
+	// recognise.
+	sm := sourceTableRe.FindStringSubmatch(body)
+	if sm == nil {
+		return viewSourceInfo{}, fmt.Errorf("ejudge: run %s source table: %w", runID, ErrMalformedResponse)
+	}
+	lineMatches := sourceLineRe.FindAllStringSubmatch(sm[1], -1)
+	if len(lineMatches) == 0 {
+		return viewSourceInfo{}, fmt.Errorf("ejudge: run %s source is empty: %w", runID, ErrMalformedResponse)
+	}
+	lines := make([]string, 0, len(lineMatches))
+	for _, lm := range lineMatches {
+		lines = append(lines, decodeSourceLine(lm[1]))
 	}
 
-	return viewSourceInfo{code: code, submittedAt: submittedAt}, nil
+	return viewSourceInfo{code: strings.Join(lines, "\n"), submittedAt: submittedAt}, nil
 }
 
 func decodeSourceLine(line string) string {

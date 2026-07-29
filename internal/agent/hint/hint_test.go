@@ -285,6 +285,11 @@ func TestRun_GuardrailUnreadable(t *testing.T) {
 		{"prose instead of JSON", llm.ScriptedResponse{JSON: `Looks great to me!`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
 		{"wrong schema", llm.ScriptedResponse{JSON: `{"looks_good": true}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
 		{"approved as a string, not a bool", llm.ScriptedResponse{JSON: `{"approved": "yes", "reason": "fine"}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
+		// llm.Chat only checks that the schema's keys are *present*, so a
+		// mistyped "reason" arrives here with "approved" intact. Half a
+		// well-formed answer is still not an answer: a reply that does not
+		// match the schema must never approve a hint.
+		{"reason is not a string", llm.ScriptedResponse{JSON: `{"approved": true, "reason": 42}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
 	}
 
 	for _, tt := range tests {

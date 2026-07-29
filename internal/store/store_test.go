@@ -1396,3 +1396,40 @@ func TestTransitionStatus_RejectsAWriteFromAWorkerThatLostTheClaim(t *testing.T)
 		t.Fatalf("the current claimant must still be able to finish: %v", err)
 	}
 }
+
+// The reclaim window has two halves, and the second one — reclaimed back to
+// pending but not yet claimed by anybody — used to be wide open: the claim
+// predicate accepted a NULL claimed_by for any worker id, so the stale worker
+// that is still executing steps could walk the checkpoint backwards, stamp its
+// own repair code, or fail a request that is queued for a healthy retry.
+func TestClaimScoping_RejectsAStaleWorkerOnAReclaimedRow(t *testing.T) {
+	lockQueueTable(t)
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if _, err := s.ClaimNext(ctx, "worker-old"); err != nil {
+		t.Fatalf("ClaimNext: %v", err)
+	}
+	// Reclaim it: status=pending, claimed_by=NULL, nobody claiming yet.
+	if _, err := s.ReclaimStale(ctx, -time.Second); err != nil {
+		t.Fatalf("ReclaimStale: %v", err)
+	}
+
+	if err := s.SetResumeStep(ctx, id, "worker-old", "shield"); !errors.Is(err, store.ErrClaimLost) {
+		t.Errorf("SetResumeStep on a reclaimed row: err = %v, want wrapping ErrClaimLost", err)
+	}
+	if err := s.SetRepairResult(ctx, id, "worker-old", "code", "run-1"); !errors.Is(err, store.ErrClaimLost) {
+		t.Errorf("SetRepairResult on a reclaimed row: err = %v, want wrapping ErrClaimLost", err)
+	}
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning, "worker-old"); !errors.Is(err, store.ErrClaimLost) {
+		t.Errorf("TransitionStatus on a reclaimed row: err = %v, want wrapping ErrClaimLost", err)
+	}
+
+	// The next claimant owns it and writes normally.
+	if _, err := s.ClaimNext(ctx, "worker-new"); err != nil {
+		t.Fatalf("ClaimNext by the new worker: %v", err)
+	}
+	if err := s.SetResumeStep(ctx, id, "worker-new", "shield"); err != nil {
+		t.Errorf("SetResumeStep by the new claimant: %v, want success", err)
+	}
+}

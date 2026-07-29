@@ -95,6 +95,14 @@ func (r *Runner) checkGuardrail(ctx context.Context, requestID uuid.UUID, attemp
 	if !ok {
 		return verdict{OK: false, By: "model", Cost: parseCost(resp.Cost)}, nil
 	}
-	reason, _ := raw["reason"].(string)
+	// "reason" is required by the schema too, and llm.Chat's validation only
+	// asserts that the key is *present* — {"approved":true,"reason":42}
+	// reaches here intact. A reply that does not match the schema is not a
+	// readable verdict, so it fails closed like a missing "approved" rather
+	// than approving a hint on the strength of half a well-formed answer.
+	reason, ok := raw["reason"].(string)
+	if !ok {
+		return verdict{OK: false, By: "model", Cost: parseCost(resp.Cost)}, nil
+	}
 	return verdict{OK: true, By: "model", Approved: approved, Reason: reason, Cost: parseCost(resp.Cost)}, nil
 }

@@ -23,10 +23,31 @@ func stripPythonComments(code string) (string, []string) {
 	var comments []string
 	n := len(code)
 	i := 0
+	// depth tracks open (), [] and {}. Inside them a physical line break is
+	// not a logical one, so a triple-quoted literal that happens to sit alone
+	// on its own physical line is still an ordinary expression operand — see
+	// isDocstringPosition.
+	depth := 0
+	// continued is set while the previous physical line ended in a backslash
+	// outside any literal or comment — Python's other line join, and the other
+	// way a literal can look alone on its line without being a statement.
+	continued := false
 
 	for i < n {
 		c := code[i]
 		switch {
+		case c == '(' || c == '[' || c == '{':
+			depth++
+			out.WriteByte(c)
+			i++
+
+		case c == ')' || c == ']' || c == '}':
+			if depth > 0 {
+				depth--
+			}
+			out.WriteByte(c)
+			i++
+
 		case c == '#':
 			start := i
 			for i < n && code[i] != '\n' {
@@ -42,13 +63,48 @@ func stripPythonComments(code string) (string, []string) {
 				continue
 			}
 			end := pythonStringEnd(code, quoteStart, quote, triple)
-			if triple && isDocstringPosition(code, i, end) {
+			if triple && depth == 0 && !continued && isDocstringPosition(code, i, end) {
 				comments = append(comments, code[quoteStart:end])
+				// A docstring is an expression *statement*, and it may be the
+				// only statement in its suite: `def f():` followed by nothing
+				// but a docstring is valid Python that deleting the literal
+				// turns into an IndentationError. So a replacement statement
+				// is emitted unconditionally rather than only when the suite
+				// would otherwise be empty — deciding that needs the
+				// indentation stack the scanner does not keep. The leading
+				// whitespace of the line has already been written verbatim,
+				// so the replacement lands at the docstring's own indentation.
+				//
+				// The replacement is an empty string literal, not `pass`: a
+				// *module* docstring may be followed by `from __future__
+				// import ...`, which must be the first statement of the file
+				// bar comments and the docstring itself. `pass` there is a
+				// SyntaxError in a program that compiled before the shield
+				// touched it — the same mangled-input failure the
+				// docstring-position rule exists to prevent. An empty string
+				// literal is still a docstring to CPython's future-statement
+				// scanner, and is legal in every other position `pass` is.
+				out.WriteString(`""`)
 				out.WriteString(strings.Repeat("\n", strings.Count(code[quoteStart:end], "\n")))
 			} else {
 				out.WriteString(code[i:end])
 			}
 			i = end
+
+		case c == '\\' && lineBreakAt(code, i+1):
+			continued = true
+			end := i + 1
+			if code[end] == '\r' {
+				end++
+			}
+			end++ // the newline itself, so it does not reset continued below
+			out.WriteString(code[i:end])
+			i = end
+
+		case c == '\n':
+			continued = false
+			out.WriteByte(c)
+			i++
 
 		default:
 			out.WriteByte(c)
@@ -64,6 +120,22 @@ func stripPythonComments(code string) (string, []string) {
 // is alone on its logical line: only whitespace before it, only whitespace
 // or a # comment after it. See stripPythonComments for why the distinction
 // is load-bearing.
+//
+// "Logical" is the operative word, and the physical line is not enough on its
+// own. Both of Python's line-joining rules put a literal alone on a physical
+// line that is still the middle of an expression —
+//
+//	value = (
+//	    """text"""
+//	)
+//	value = \
+//	    """text"""
+//
+// — and deleting the literal there leaves `value = (` / `value = `, a
+// SyntaxError in code that the repair model then has to explain and the judge
+// has to compile. Both joins are tracked by the caller as it scans (depth and
+// continued), because only the scanner knows whether a bracket or a trailing
+// backslash was real or merely text inside a string or a comment.
 func isDocstringPosition(code string, start, end int) bool {
 	for i := start - 1; i >= 0 && code[i] != '\n'; i-- {
 		if code[i] != ' ' && code[i] != '\t' && code[i] != '\r' {
@@ -79,6 +151,17 @@ func isDocstringPosition(code string, start, end int) bool {
 		}
 	}
 	return true
+}
+
+// lineBreakAt reports whether a physical line break starts at i, LF or CRLF.
+func lineBreakAt(code string, i int) bool {
+	if i >= len(code) {
+		return false
+	}
+	if code[i] == '\n' {
+		return true
+	}
+	return code[i] == '\r' && i+1 < len(code) && code[i+1] == '\n'
 }
 
 func isPythonStringPrefixLetter(c byte) bool {

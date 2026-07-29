@@ -206,6 +206,29 @@ research/              frozen Python prototypes (reference only, see research/RE
   the other side (`textBlockEnd` in `clike.go`) — without them, `//` *inside* a text block was
   deleted from the code that reaches the judge. It is language-gated because in C a bare `"""`
   is the adjacency of an empty string and an opening quote.
+- **A stripped docstring leaves `""` behind** (`stripPythonComments`): a docstring is an
+  expression *statement* and may be the only one in its suite, so deleting
+  `def f():` + `"""doc"""` left `def f():` with an empty body — an `IndentationError` in code
+  the student wrote validly, i.e. the same mangled-input failure the docstring-position rule
+  exists to prevent, from the other side. The replacement is emitted unconditionally rather
+  than only when the suite would otherwise be empty — knowing that needs an indentation stack
+  the scanner does not keep. It is an empty *string literal*, not `pass`: `from __future__
+  import ...` must be the first statement of a module bar comments and the module docstring,
+  so `pass` in a module docstring's place is a `SyntaxError` in a program that compiled before
+  the shield ran, while an empty literal is still a docstring to CPython's future-statement
+  scanner and is legal everywhere else `pass` is.
+- **A removed comment's newlines are re-emitted as line splices inside a directive**
+  (`directiveTracker` in `internal/shield/clike.go`): the whole comment becomes one space in
+  translation phase 2/3, before phase 4 reads the directive, so `#define X /\`+newline+`* c */ 1`
+  and `#define Y 1 /* a`+newline+`b */ + 2` are `#define X 1` and `#define Y 1 + 2` to the
+  compiler. Padding the removal with bare newlines — what keeps line numbers and the line-based
+  diff aligned everywhere else — cut both macros short and left their tails as new logical
+  lines. The padding is `\`+newline per line inside a directive, which the compiler removes
+  again and which still costs one line each; it is gated on `splices` because only C/C++ has
+  directives. Whether a `#` opens a directive is a question about the *logical* line for the same
+  reason: a line holding nothing but `\`+newline is deleted in phase 2, so the `#` that follows it
+  still starts a logical line and its comment needs the splice padding
+  (`spliceAtLineStart` — a backslash after real code keeps the continuation line non-initial).
 - **Fail-open config keys are startup errors** (`validateCaps`): every enforcement point reads a
   zero cost cap as "unlimited" and `MaxRetries` is compared as `attempts >= MaxRetries`, so
   `max_cost_per_retry`/`max_cost_per_loop`/`max_retries` at zero mean respectively no ceiling on
@@ -371,6 +394,17 @@ research/              frozen Python prototypes (reference only, see research/RE
   never held. `TransitionStatus` catches none of that; it fires only after it has all
   committed. A new pipeline-called writer needs the same predicate and the same
   `worker.Pipeline.WorkerID` / `repair.Runner.WorkerID` threading.
+- **The verification submit is fenced by the claim, not merely followed by a claim-scoped
+  write** (`repair.Runner.assertClaim`, `repair.ClaimGuard`): every other write loop 1 makes is
+  refused in SQL when the row has been reclaimed, but `SubmitAsSystem` spends the shared
+  `EJUDGE_SYSTEM_LOGIN`'s quota on a judge that has no fence token of ours, so by the time
+  `SetRepairResult` refuses, the run already exists — and it is a run the *new* claimant's
+  run-id floor then has to disambiguate. `worker.heartbeatUntil` aborting an expired lease is
+  not enough on its own: a process that missed its lease is by definition one that was not
+  running (a stopped container, a paused VM, a long stall), so it resumes wherever it was,
+  including the statement before the submit. Re-asserting the claim immediately before the POST
+  narrows the window to one round trip. A guard error aborts too — it is not evidence the claim
+  is intact, and the row stays reclaimable.
 - **A model formatting mistake is never `status=failed`, and `llm.Chat` does not check types**
   (`validateJSON` only asserts required keys are *present*): `{"hint": 42}` satisfies `Chat` and
   fails at the loop's `json.Unmarshal`. Returning that error hard-failed the request and
@@ -399,6 +433,56 @@ research/              frozen Python prototypes (reference only, see research/RE
   `pool` for them deadlocks any deployment whose `DATABASE_URL` caps the pool at one
   connection — `conn` is checked out for the whole call, so `pool.Exec` waits for a connection
   that frees only when `Migrate` returns. Startup hangs with no error at all.
+- **An unclaimed row is not writable either** (`claimScopedUpdate`, `TransitionStatus`): the
+  claim predicate used to accept `claimed_by IS NULL` for any worker id, which is exactly the
+  post-reclaim, pre-claim window — the window in which the stale worker is *most* likely still
+  executing steps. Only the current claimant may write; `ErrClaimLost` now covers "nobody owns
+  it" too.
+- **A heartbeat that errors is not a heartbeat** (`heartbeatUntil`): `heartbeat_at` stops
+  advancing the moment the store call starts failing, so after `StaleAfter` another instance may
+  legitimately reclaim the row while this worker — which only logged the error — keeps running
+  the same pipeline. The run is abandoned once the lease it could not refresh has expired, but
+  not on the first failed tick.
+- **"Newest run above the floor" only identifies our submit while nothing else is submitting**
+  (`SubmitAsSystem`, `pickRunBySource`): with the shared system login a concurrent repair of the
+  same problem can land on top of ours between the POST and its response. One new run is ours by
+  construction; more than one is broken on the stored source *and* the reported language, and no
+  match at all is `ErrMalformedResponse` rather than a guess. Source alone is not an
+  identification: `ignore_duplicated_runs` rejects a same-source repeat under the same login and
+  language, so the collision that survives is by construction `gcc` vs `g++` on the same file.
+  Contests whose submit table renders no Language column therefore get the same treatment from the
+  other side — one source match is still ours, two are the original ambiguity restored and fail
+  closed instead of taking the newest.
+- **An unparseable source page is not an empty submission** (`fetchViewSource`): the timestamp and
+  the code table parse independently, so markup drift on the table alone yielded a *successful*
+  submission with `code=""` — a blank program for repair to diagnose, hint to explain, and the
+  judge to compile. Both a missing table and a table with no `<tt>` lines are malformed now.
+- **Pre-lexical translation is part of the C-family scanner's job** (`clikeSyntax` in
+  `internal/shield/clike.go`): C/C++ delete backslash-newline in phase 2 *before* comments are
+  recognized (so `/\`+newline+`/` opens a line comment and `*\`+newline+`/` closes a block one),
+  and Java translates `\uXXXX` in phase 1 (so an escaped `//` is a line comment to javac). Both
+  were bypasses. The rules are language-gated because applying C's splice to Java or Go deletes
+  the next line of real code, and Java's escape rule needs the even-preceding-backslash test.
+- **Python's docstring rule is about the *logical* line** (`stripPythonComments`): a triple-quoted
+  value alone on its physical line inside brackets, or after a backslash continuation, is an
+  expression operand — deleting it produces the same `SyntaxError` the docstring-position rule was
+  introduced to prevent. Both joins are tracked by the scanner (`depth`, `continued`), not
+  re-derived from the text, because only the scanner knows whether a bracket or trailing backslash
+  was real or just characters inside a string or comment.
+- **The problem statement is fetched only while a step still needs it** (`RunPipeline`): a request
+  resumed past the repair checkpoint has its verified code on the row and nothing left but writing
+  and delivering the hint, so a statement endpoint that happens to be down must not turn it into
+  `status=failed`.
+- **Every `llm_calls` row is written on a detached, bounded context** (`Client.record`, mirrored
+  by `Scripted`): by the time recording is reached the provider has answered and the tokens are
+  paid for, so a `ctx` dying in the window before the insert — the worker losing its claim, a
+  shutdown, a request deadline — drops the row for a call that definitely happened. This is most
+  likely on the error path (the likeliest way to reach it is `ctx` itself dying) but is not
+  exclusive to it: successful and schema-invalid replies take the same detour, bounded by
+  `recordTimeout` since the parent's deadline no longer applies.
+- **A guardrail reply that half-matches the schema is not a verdict** (`checkGuardrail`):
+  `llm.Chat` only asserts the schema's keys are *present*, so `{"approved":true,"reason":42}`
+  reached the parser intact. Every field is type-checked, and any mismatch fails closed.
 
 ## Reference material
 

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -54,16 +55,37 @@ func (s *Scripted) Chat(ctx context.Context, req Request) (Response, error) {
 	s.next++
 	s.calls = append(s.calls, req)
 
+	cost := Cost(r.Usage, s.pricing[req.Model])
+
 	if r.Err != nil {
+		// A scripted failure is a call that happened, exactly like the real
+		// Client's error path: the row carries the error text in place of a
+		// response, so a test built on Scripted still sees the "every model
+		// call writes an llm_calls row" invariant it is meant to model. It is
+		// written on a context detached from ctx for the Client's reason too —
+		// the failure being scripted is most often a cancellation, and
+		// recording on the dying context would drop the row precisely on the
+		// path worth recording.
+		if s.rec != nil {
+			recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+			defer cancel()
+			if err := s.rec.InsertLLMCall(recCtx, callRow(req, "error: "+r.Err.Error(), r.Usage, cost)); err != nil {
+				return Response{Usage: r.Usage, Cost: cost}, errors.Join(r.Err, fmt.Errorf("llm: recording scripted call: %w", err))
+			}
+		}
 		// Usage rides along with the error, like the real Client's spent():
 		// callers charge their cost caps from the returned Response on both
 		// paths, so a Scripted that dropped it would hide a cap regression.
-		return Response{Usage: r.Usage, Cost: Cost(r.Usage, s.pricing[req.Model])}, r.Err
+		return Response{Usage: r.Usage, Cost: cost}, r.Err
 	}
 
-	cost := Cost(r.Usage, s.pricing[req.Model])
+	// Detached for the same reason the real Client's record is: the call has
+	// "happened" by the time we get here, so a ctx canceled in the window
+	// before the insert must not lose the row.
 	if s.rec != nil {
-		if err := s.rec.InsertLLMCall(ctx, callRow(req, r.JSON, r.Usage, cost)); err != nil {
+		recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+		defer cancel()
+		if err := s.rec.InsertLLMCall(recCtx, callRow(req, r.JSON, r.Usage, cost)); err != nil {
 			return Response{}, fmt.Errorf("llm: recording scripted call: %w", err)
 		}
 	}
