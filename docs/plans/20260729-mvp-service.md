@@ -370,16 +370,16 @@ against `platform/mock`).
 **Files:**
 - Create: `internal/llm/client.go`, `internal/llm/cost.go`, `internal/llm/client_test.go`, `internal/llm/scripted.go` (scripted model for tests)
 
-- [ ] write failing tests: chat call with JSON-schema response (parse + validate + one retry
+- [x] write failing tests: chat call with JSON-schema response (parse + validate + one retry
       on invalid JSON), usage extraction (input / cached-subset-of-input / output)
-- [ ] write failing table-driven tests for the cost formula from Technical Details, including
+- [x] write failing table-driven tests for the cost formula from Technical Details, including
       the cached-tokens-are-a-subset case (the double-counting trap)
-- [ ] implement OpenAI-compatible client (base URL + key from config; per-agent
+- [x] implement OpenAI-compatible client (base URL + key from config; per-agent
       model/temperature/effort); every call writes an `llm_calls` row (agent, model, tokens,
       cost as numeric, attempt)
-- [ ] implement `scripted.go`: deterministic fake fulfilling the same interface — replays
+- [x] implement `scripted.go`: deterministic fake fulfilling the same interface — replays
       canned responses, fails the test if consulted when it shouldn't be
-- [ ] run tests + lint - must pass before task 7
+- [x] run tests + lint - must pass before task 7
 
 ### Task 7: Prompt loading and rendering
 
