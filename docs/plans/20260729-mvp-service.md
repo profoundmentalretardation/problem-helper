@@ -443,19 +443,19 @@ repair-agent output and everything downstream.
 **Files:**
 - Create: `internal/agent/hint/hint.go`, `internal/agent/hint/rules.go`, `internal/agent/hint/guardrail.go`, `internal/agent/hint/hint_test.go`
 
-- [ ] write failing table-driven tests for **deterministic pre-checks** (ported from
+- [x] write failing table-driven tests for **deterministic pre-checks** (ported from
       `research/02_hint_loop`): quoted repaired code, line numbers, "change X to Y", call
       expressions lifted from changed lines — four must-catch AND two must-pass cases
       (a checker rejecting everything is useless)
-- [ ] write failing tests (scripted models): hint agent gets diff + working code → {hint};
+- [x] write failing tests (scripted models): hint agent gets diff + working code → {hint};
       guardrail gets diff + code + hint → {approved, reason}; rejection reason fed to next
       attempt; **same hint proposed twice → stop, don't burn retries**
-- [ ] write both-directions gate tests: explicit approved=true → hint stored approved;
+- [x] write both-directions gate tests: explicit approved=true → hint stored approved;
       approved=false → retry; **prose / wrong schema / connection error → NOT approved**
-- [ ] write bounds tests: max_retries / cost caps per the Cost caps section; exhausted → `no_hint`
-- [ ] implement diff computation, pre-checks, both agents (guardrail on its own `agents.yaml`
+- [x] write bounds tests: max_retries / cost caps per the Cost caps section; exhausted → `no_hint`
+- [x] implement diff computation, pre-checks, both agents (guardrail on its own `agents.yaml`
       entry), until green
-- [ ] run tests + lint - must pass before task 11
+- [x] run tests + lint - must pass before task 11
 
 ### Task 11: Hint cache lookup
 
