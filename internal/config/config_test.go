@@ -81,21 +81,26 @@ repair:
   temperature: 0.2
   reasoning_effort: ""
   max_retries: 3
-  max_cost_per_retry: 0
-  max_cost_per_loop: 0
+  max_cost_per_retry: 0.05
+  max_cost_per_loop: 0.25
   top_n_mistakes: 5
   n_tests_shown: 10
 hint:
   model: "hint-model"
   temperature: 0.7
   max_retries: 3
-  max_cost_per_retry: 0
-  max_cost_per_loop: 0
+  max_cost_per_retry: 0.05
+  max_cost_per_loop: 0.20
 guardrail:
   model: "guardrail-model"
+  max_retries: 1
+  max_cost_per_retry: 0.05
+  max_cost_per_loop: 0.10
 curator:
   model: "curator-model"
   max_retries: 2
+  max_cost_per_retry: 0.05
+  max_cost_per_loop: 0.30
 pricing:
   repair-model: {input: 1.0, cached_input: 0.5, output: 2.0}
   hint-model: {input: 1.0, cached_input: 0.5, output: 2.0}
@@ -117,8 +122,8 @@ func TestParseAgents_Valid(t *testing.T) {
 	if cfg.Defaults.NSubmissions != 25 {
 		t.Errorf("Defaults.NSubmissions = %d", cfg.Defaults.NSubmissions)
 	}
-	if cfg.Guardrail.MaxRetries != 0 {
-		t.Errorf("Guardrail.MaxRetries default = %d, want 0", cfg.Guardrail.MaxRetries)
+	if cfg.Guardrail.MaxRetries != 1 {
+		t.Errorf("Guardrail.MaxRetries = %d, want 1", cfg.Guardrail.MaxRetries)
 	}
 }
 
@@ -225,14 +230,55 @@ formatter: {enabled: false, command: ""}
 	}
 }
 
-func TestParseAgents_ZeroCapsAreUnlimited(t *testing.T) {
-	cfg, err := ParseAgents([]byte(validAgentsYAML))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// max_retries and the two cost caps all fail *open* at zero: every
+// enforcement point reads a zero cost cap as "unlimited", and MaxRetries is
+// compared as `attempts >= MaxRetries`, so zero makes the loop return
+// no_fix/no_hint without ever calling a model. A missing or mistyped key
+// therefore has to be a startup error, for the same reason the defaults
+// block is validated. The shipped agents.yaml had all three at zero, i.e.
+// no ceiling on model spend at all.
+func TestParseAgents_FailOpenCapsMustBePositive(t *testing.T) {
+	for _, agent := range []string{"repair", "hint", "guardrail", "curator"} {
+		for _, field := range []string{"max_retries", "max_cost_per_retry", "max_cost_per_loop"} {
+			for _, value := range []string{"0", ""} {
+				name := agent + "/" + field
+				if value == "" {
+					name += "/missing"
+				} else {
+					name += "/zero"
+				}
+				t.Run(name, func(t *testing.T) {
+					doc := setAgentField(t, validAgentsYAML, agent, field, value)
+					if _, err := ParseAgents([]byte(doc)); err == nil {
+						t.Fatalf("expected error for %s %s = %q", agent, field, value)
+					}
+				})
+			}
+		}
 	}
-	if cfg.Repair.MaxCostPerRetry != 0 || cfg.Repair.MaxCostPerLoop != 0 {
-		t.Fatalf("expected zero caps to parse as 0 (unlimited), got %+v", cfg.Repair)
+}
+
+// setAgentField rewrites one field of one agent block, or removes it
+// entirely when value is empty.
+func setAgentField(t *testing.T, doc, agent, field, value string) string {
+	t.Helper()
+	lines := strings.Split(doc, "\n")
+	inAgent := false
+	var out []string
+	for _, line := range lines {
+		if !strings.HasPrefix(line, " ") && strings.HasSuffix(strings.TrimSpace(line), ":") {
+			inAgent = strings.TrimSuffix(strings.TrimSpace(line), ":") == agent
+		}
+		if inAgent && strings.HasPrefix(strings.TrimSpace(line), field+":") {
+			if value == "" {
+				continue
+			}
+			out = append(out, "  "+field+": "+value)
+			continue
+		}
+		out = append(out, line)
 	}
+	return strings.Join(out, "\n")
 }
 
 func TestParseAgents_NegativeCapsRejected(t *testing.T) {

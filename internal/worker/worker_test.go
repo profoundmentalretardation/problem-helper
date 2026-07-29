@@ -100,7 +100,7 @@ func (f *fakeQueueStore) heartbeatCount() int {
 	return len(f.heartbeats)
 }
 
-func (f *fakeQueueStore) ReclaimStale(_ context.Context, _ time.Time) ([]uuid.UUID, error) {
+func (f *fakeQueueStore) ReclaimStale(_ context.Context, _ time.Duration) ([]uuid.UUID, error) {
 	return nil, nil
 }
 
@@ -187,7 +187,7 @@ func TestWorker_ReclaimedRequest_IsReClaimedAndRun(t *testing.T) {
 	// Simulate the claimant crashing well past staleness: reclaim with a
 	// cutoff safely in the future so the freshly-set heartbeat still
 	// counts as stale.
-	reclaimed, err := s.ReclaimStale(ctx, time.Now().Add(time.Hour))
+	reclaimed, err := s.ReclaimStale(ctx, -time.Hour)
 	if err != nil {
 		t.Fatalf("reclaim stale: %v", err)
 	}

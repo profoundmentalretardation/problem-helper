@@ -21,7 +21,15 @@ import "strings"
 // directive text itself is untouched: `#` has no special meaning to this
 // scanner, and an unbalanced quote in `#error don't` cannot swallow the rest
 // of the file because skipEscaped stops at the newline.
-func stripCLikeComments(code string) (string, []string) {
+//
+// textBlocks enables Java's """...""" text blocks. It is language-gated
+// rather than always on because in C and C++ a bare """ is the adjacency of
+// an empty string and an opening quote (`"" "abc"`), not a block opener.
+// Without it a Java text block was scanned as an empty string followed by a
+// literal terminated at the newline, so the block's body was treated as code
+// — meaning // and /* */ *inside* the text block were deleted from CodeAfter,
+// the very text handed to the repair model and submitted to the judge.
+func stripCLikeComments(code string, textBlocks bool) (string, []string) {
 	var out strings.Builder
 	var comments []string
 	n := len(code)
@@ -61,10 +69,15 @@ func stripCLikeComments(code string) (string, []string) {
 
 		case c == '"':
 			var end int
-			if raw, ok := rawStringEnd(code, i); ok {
-				end = raw
-			} else {
-				end = skipEscaped(code, i, '"')
+			switch {
+			case textBlocks && strings.HasPrefix(code[i:], `"""`):
+				end = textBlockEnd(code, i)
+			default:
+				if raw, ok := rawStringEnd(code, i); ok {
+					end = raw
+				} else {
+					end = skipEscaped(code, i, '"')
+				}
 			}
 			out.WriteString(code[i:end])
 			i = end
@@ -244,4 +257,23 @@ func skipRaw(code string, i int, quote byte) int {
 		j++
 	}
 	return j
+}
+
+// textBlockEnd returns the index just past the closing """ of the Java text
+// block opening at i, or len(code) if it is unterminated. A backslash
+// escapes the next character, so \""" does not close the block.
+func textBlockEnd(code string, i int) int {
+	n := len(code)
+	j := i + 3
+	for j < n {
+		if code[j] == '\\' && j+1 < n {
+			j += 2
+			continue
+		}
+		if code[j] == '"' && j+2 < n && code[j+1] == '"' && code[j+2] == '"' {
+			return j + 3
+		}
+		j++
+	}
+	return n
 }

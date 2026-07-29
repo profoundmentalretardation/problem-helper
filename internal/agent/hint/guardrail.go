@@ -3,6 +3,7 @@ package hint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -68,7 +69,18 @@ func (r *Runner) checkGuardrail(ctx context.Context, requestID uuid.UUID, attemp
 		Schema:          guardrailSchema,
 	})
 	if err != nil {
-		return verdict{OK: false, By: "model"}, nil
+		// An unreadable *answer* is OK=false — never approval. An
+		// interruption is not an answer at all: a cancelled context (a
+		// worker shutting down) or a transport failure used to be reported
+		// as a completed no_hint/guardrail_failed outcome, so the request
+		// terminated instead of staying reclaimable and the remaining
+		// retry budget was thrown away. Only llm.ErrInvalidResponse — the
+		// model genuinely failed to produce the schema — is a verdict.
+		// Either way the partial spend is carried, as on every other path.
+		if !errors.Is(err, llm.ErrInvalidResponse) {
+			return verdict{Cost: parseCost(resp.Cost)}, fmt.Errorf("hint: guardrail call: %w", err)
+		}
+		return verdict{OK: false, By: "model", Cost: parseCost(resp.Cost)}, nil
 	}
 
 	// Parsed as a generic map, not a struct: a struct decode would silently

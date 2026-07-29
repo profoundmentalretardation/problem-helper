@@ -2,11 +2,22 @@ package shield
 
 import "strings"
 
-// stripPythonComments removes # comments and all triple-quoted string
-// literals (treated uniformly as docstrings — telling a real docstring
-// apart from an ordinary triple-quoted string value needs a parser, out of
-// MVP scope) from Python source. Single/double-quoted string literals are
-// skipped over untouched, including any comment-like text inside them.
+// stripPythonComments removes # comments and docstring-position
+// triple-quoted string literals from Python source. Single/double-quoted
+// string literals are skipped over untouched, including any comment-like
+// text inside them.
+//
+// "Docstring position" means the literal is the entire logical line —
+// nothing but whitespace before its opening quotes, nothing but whitespace
+// or a # comment after its closing quotes. That covers module/def/class
+// docstrings and the free-floating triple-quoted block used to comment code
+// out, which is the injection surface this exists for. Stripping *every*
+// triple-quoted literal instead (the original behaviour) rewrote
+// `msg = """a\nb"""` to `msg = `, a SyntaxError: that mangled text is what
+// pipeline.go hands the repair model as UserCode and what it diffs for the
+// hint, so the model diagnosed code the student never wrote and the "fix"
+// went on to the judge. textwrap.dedent("""...""") and multi-line format
+// strings hit the same path.
 func stripPythonComments(code string) (string, []string) {
 	var out strings.Builder
 	var comments []string
@@ -30,13 +41,12 @@ func stripPythonComments(code string) (string, []string) {
 				i++
 				continue
 			}
-			out.WriteString(code[i:quoteStart])
 			end := pythonStringEnd(code, quoteStart, quote, triple)
-			if triple {
+			if triple && isDocstringPosition(code, i, end) {
 				comments = append(comments, code[quoteStart:end])
 				out.WriteString(strings.Repeat("\n", strings.Count(code[quoteStart:end], "\n")))
 			} else {
-				out.WriteString(code[quoteStart:end])
+				out.WriteString(code[i:end])
 			}
 			i = end
 
@@ -47,6 +57,28 @@ func stripPythonComments(code string) (string, []string) {
 	}
 
 	return out.String(), comments
+}
+
+// isDocstringPosition reports whether the literal spanning code[start:end]
+// (start being the first character of the literal, prefix letters included)
+// is alone on its logical line: only whitespace before it, only whitespace
+// or a # comment after it. See stripPythonComments for why the distinction
+// is load-bearing.
+func isDocstringPosition(code string, start, end int) bool {
+	for i := start - 1; i >= 0 && code[i] != '\n'; i-- {
+		if code[i] != ' ' && code[i] != '\t' && code[i] != '\r' {
+			return false
+		}
+	}
+	for i := end; i < len(code) && code[i] != '\n'; i++ {
+		if code[i] == '#' {
+			return true
+		}
+		if code[i] != ' ' && code[i] != '\t' && code[i] != '\r' {
+			return false
+		}
+	}
+	return true
 }
 
 func isPythonStringPrefixLetter(c byte) bool {

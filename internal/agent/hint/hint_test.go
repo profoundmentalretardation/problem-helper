@@ -2,6 +2,7 @@ package hint_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -225,7 +226,6 @@ func TestRun_GuardrailUnreadable(t *testing.T) {
 		{"prose instead of JSON", llm.ScriptedResponse{JSON: `Looks great to me!`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
 		{"wrong schema", llm.ScriptedResponse{JSON: `{"looks_good": true}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
 		{"approved as a string, not a bool", llm.ScriptedResponse{JSON: `{"approved": "yes", "reason": "fine"}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}}},
-		{"connection error", llm.ScriptedResponse{Err: context.DeadlineExceeded}},
 	}
 
 	for _, tt := range tests {
@@ -247,6 +247,28 @@ func TestRun_GuardrailUnreadable(t *testing.T) {
 				t.Errorf("rejected = %+v, a fail-closed guardrail is not an ordinary rejection", got.Rejected)
 			}
 		})
+	}
+}
+
+// The other half of TestRun_GuardrailUnreadable: an unreadable *answer* is
+// a fail-closed verdict, but an interruption is not an answer at all. A dead
+// connection or a cancelled context used to be reported as a completed
+// no_hint/guardrail_failed, so the request terminated instead of staying
+// reclaimable and the rest of the retry budget was thrown away. It has to
+// propagate as infrastructure failure instead.
+func TestRun_GuardrailTransportErrorIsInfraFailure(t *testing.T) {
+	writer := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: hintJSON("Which window never gets scored?"), Usage: llm.Usage{InputTokens: 50, OutputTokens: 10}},
+	)
+	guardrail := llm.NewScripted(nil, testPricing(), llm.ScriptedResponse{Err: context.DeadlineExceeded})
+
+	runner := newRunner(writer, guardrail, t)
+	got, err := runner.Run(context.Background(), baseParams())
+	if err == nil {
+		t.Fatalf("Run: want an error, got status/reason %q/%q", got.Status, got.Reason)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want it to wrap the transport failure", err)
 	}
 }
 

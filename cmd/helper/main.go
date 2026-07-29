@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -40,7 +41,7 @@ func main() {
 	agentsPath := flag.String("agents", "agents.yaml", "path to agents.yaml")
 	promptsDir := flag.String("prompts", "prompts", "path to the prompts directory")
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	shutdownTimeout := flag.Duration("shutdown-timeout", 30*time.Second, "grace period for in-flight HTTP requests on shutdown")
+	shutdownTimeout := flag.Duration("shutdown-timeout", 30*time.Second, "grace period on shutdown for in-flight HTTP requests and worker pipelines")
 	flag.Parse()
 
 	if err := run(*agentsPath, *promptsDir, *addr, *shutdownTimeout); err != nil {
@@ -163,7 +164,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	go func() {
 		defer wg.Done()
 		log.Printf("problem-helper: HTTP listening on %s", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
 	}()
@@ -191,8 +192,26 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		log.Printf("problem-helper: HTTP shutdown: %v", err)
 	}
 
-	wg.Wait()
-	log.Print("problem-helper: shutdown complete")
+	// Bound the worker drain too, not just the HTTP server. RunOnce
+	// deliberately detaches a claimed pipeline from the signal context, so
+	// claimLoop cannot return until an in-flight repair loop and its judge
+	// polling finish — minutes, well past any orchestrator's SIGTERM grace
+	// period, which then SIGKILLs us mid-run anyway. Returning here instead
+	// leaves the request's heartbeat to lapse and the reclaim sweep to hand
+	// it to another worker, which is the path already designed for a
+	// worker that dies mid-pipeline.
+	drained := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		log.Print("problem-helper: shutdown complete")
+	case <-shutdownCtx.Done():
+		log.Printf("problem-helper: workers still running after %s, exiting anyway; "+
+			"their requests will be reclaimed once their heartbeats lapse", shutdownTimeout)
+	}
 	return runErr
 }
 

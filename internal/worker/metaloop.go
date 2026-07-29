@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/profoundmentalretardation/problem-helper/internal/agent/curator"
 )
@@ -39,12 +40,28 @@ type Metaloop struct {
 	Store   MistakeUserLister
 	Curator CuratorRunner
 	Logger  *log.Logger
+
+	// mu serializes sweeps. ListUsersWithUnprocessedMistakes neither claims
+	// nor locks the batch it reports, and MergeMistake/CreateMistake commit
+	// as they go, so two overlapping sweeps read the same raw mistakes and
+	// both merge them — inflating mistakes.count, which drives the repair
+	// prompt's top-N, without bound. The nightly cron and
+	// POST /admin/metaloop/run share one *Metaloop, and the admin route is
+	// exactly the thing an operator fires while the cron is mid-sweep.
+	//
+	// This does not serialize *instances*; that needs the batch claimed in
+	// SQL and is out of MVP scope. It closes the in-process overlap, which
+	// is the reachable one for a single-instance deployment.
+	mu sync.Mutex
 }
 
 // Run walks every user with unprocessed raw mistakes and runs the curator
 // for each. A single user's curator error is logged and skipped rather than
 // aborting the sweep — one bad batch must not block every other user's.
 func (m *Metaloop) Run(ctx context.Context) (MetaloopSummary, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	users, err := m.Store.ListUsersWithUnprocessedMistakes(ctx)
 	if err != nil {
 		return MetaloopSummary{}, fmt.Errorf("worker: listing users with unprocessed mistakes: %w", err)

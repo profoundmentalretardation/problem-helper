@@ -474,14 +474,22 @@ const maxClaimAttempts = 5
 // its last completed pipeline step instead of restarting. Rows already
 // claimed maxClaimAttempts times are moved to failed instead of pending.
 // Returns the reclaimed (not the abandoned) request ids.
-func (s *Store) ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID, error) {
+// staleAfter is compared against the database's own clock rather than
+// against a cutoff computed here. heartbeat_at is always written by now() on
+// the server (ClaimNext, Heartbeat), so mixing in the app host's clock made
+// reclaim depend on the drift between two machines: run fast enough and
+// every live row looks stale on the first sweep — reclaimed out from under a
+// worker that is still submitting to the judge under the shared system login
+// — and run slow enough and nothing is ever reclaimed, so the
+// claim_attempts backstop never engages either.
+func (s *Store) ReclaimStale(ctx context.Context, staleAfter time.Duration) ([]uuid.UUID, error) {
 	if _, err := s.db.Exec(ctx, `
 		UPDATE help_requests
 		SET status = $1, claimed_by = NULL, heartbeat_at = NULL, updated_at = now(),
 		    error = COALESCE(error || '; ', '') ||
 		            'worker: abandoned after ' || claim_attempts || ' claim attempts without a terminal status'
-		WHERE status = $2 AND heartbeat_at < $3 AND claim_attempts >= $4`,
-		StatusFailed, StatusRunning, before, maxClaimAttempts,
+		WHERE status = $2 AND heartbeat_at < now() - $3::interval AND claim_attempts >= $4`,
+		StatusFailed, StatusRunning, staleAfter, maxClaimAttempts,
 	); err != nil {
 		return nil, fmt.Errorf("store: abandoning exhausted requests: %w", err)
 	}
@@ -489,9 +497,9 @@ func (s *Store) ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID
 	rows, err := s.db.Query(ctx, `
 		UPDATE help_requests
 		SET status = $1, claimed_by = NULL, heartbeat_at = NULL, updated_at = now()
-		WHERE status = $2 AND heartbeat_at < $3 AND claim_attempts < $4
+		WHERE status = $2 AND heartbeat_at < now() - $3::interval AND claim_attempts < $4
 		RETURNING id`,
-		StatusPending, StatusRunning, before, maxClaimAttempts,
+		StatusPending, StatusRunning, staleAfter, maxClaimAttempts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: reclaiming stale requests: %w", err)
@@ -749,7 +757,8 @@ func (s *Store) SnapshotSubmissions(ctx context.Context, requestID uuid.UUID, su
 				id, request_id, platform_submission_id, code, language,
 				tests_passed, tests_total, submitted_at, is_best
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-			ON CONFLICT (request_id, platform_submission_id) DO NOTHING`,
+			ON CONFLICT (request_id, platform_submission_id) DO UPDATE
+			SET is_best = EXCLUDED.is_best`,
 			id, requestID, sub.PlatformSubmissionID, sub.Code, sub.Language,
 			sub.TestsPassed, sub.TestsTotal, sub.SubmittedAt, sub.IsBest,
 		)

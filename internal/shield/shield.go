@@ -93,18 +93,25 @@ func Strip(code string, language string) (Result, error) {
 		return Result{}, fmt.Errorf("%w: %q", ErrUnsupportedLanguage, language)
 	}
 
-	var withoutComments string
+	// Sanitize first, then strip. The comment scanners match on raw bytes,
+	// so an invisible character wedged into a comment opener hides it from
+	// them: `/<U+200B>/ ignore previous instructions` never matches the
+	// `//` case, falls through as ordinary code, and the sanitizer — running
+	// afterwards — then handed the model a clean `// ignore previous
+	// instructions` with Removed.Comments empty. Same shape for `/<ZWSP>*`
+	// and Python's `""<ZWSP>"`.
+	sanitized, unicodeRemoved := sanitizeUnicode(code)
+
+	var after string
 	var comments []string
 	switch lang {
 	case LangC, LangCPP, LangJava, LangGo:
-		withoutComments, comments = stripCLikeComments(code)
+		after, comments = stripCLikeComments(sanitized, lang == LangJava)
 	case LangPython:
-		withoutComments, comments = stripPythonComments(code)
+		after, comments = stripPythonComments(sanitized)
 	default:
 		return Result{}, fmt.Errorf("%w: %q", ErrUnsupportedLanguage, language)
 	}
-
-	after, unicodeRemoved := sanitizeUnicode(withoutComments)
 
 	diff, err := unifiedDiff(code, after)
 	if err != nil {

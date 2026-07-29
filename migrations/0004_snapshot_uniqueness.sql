@@ -15,6 +15,26 @@
 --    help_requests_status_idx to work with, i.e. a sequential scan that
 --    grows with the whole table.
 
+-- The duplicates described above are, by construction, already present on
+-- any database that ran the old code — so creating the unique index first
+-- would raise 23505, Migrate would return it, and main.go would abort at
+-- startup on every boot with no way forward. Clear them first, keeping the
+-- oldest row of each group (the one the first, uninterrupted pass wrote).
+DELETE FROM submissions a
+      USING submissions b
+      WHERE a.request_id = b.request_id
+        AND a.platform_submission_id = b.platform_submission_id
+        AND a.ctid > b.ctid;
+
+-- best_submission_id has no foreign key, so a row abandoned by the delete
+-- above (or by the pre-fix random-id resume) can point at nothing. Null
+-- those out rather than leaving GetSubmission to error the pipeline: the
+-- submissions rows are still there, and re-picking is cheap.
+UPDATE help_requests
+   SET best_submission_id = NULL
+ WHERE best_submission_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.id = help_requests.best_submission_id);
+
 CREATE UNIQUE INDEX submissions_request_platform_id_idx
     ON submissions (request_id, platform_submission_id);
 

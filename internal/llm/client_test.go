@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -288,7 +289,12 @@ func TestChat_DoesNotRequestStrictSchemaMode(t *testing.T) {
 	}
 }
 
-func TestChat_HTTPErrorNotRecorded(t *testing.T) {
+// A failed call is still a call. The prompt was burned on the provider's
+// side, so skipping the llm_calls row left a repeatedly-erroring provider
+// invisible to cost analytics — and to anyone asking "what did this request
+// actually do?". Usage is genuinely unknown here, so the row carries zeroes
+// and the error text in place of a response.
+func TestChat_HTTPErrorIsRecorded(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"boom"}`))
@@ -308,8 +314,14 @@ func TestChat_HTTPErrorNotRecorded(t *testing.T) {
 	if err == nil {
 		t.Fatal("Chat: want error on HTTP 500, got nil")
 	}
-	if len(recorder.calls) != 0 {
-		t.Fatalf("llm_calls rows recorded = %d, want 0 (no usage was ever returned)", len(recorder.calls))
+	if len(recorder.calls) != 1 {
+		t.Fatalf("llm_calls rows recorded = %d, want 1 (a failed call still happened)", len(recorder.calls))
+	}
+	if got := recorder.calls[0]; got.InputTokens != 0 || got.OutputTokens != 0 {
+		t.Errorf("usage = %d/%d, want 0/0 — it is not known on this path", got.InputTokens, got.OutputTokens)
+	}
+	if !strings.Contains(recorder.calls[0].Response, "500") {
+		t.Errorf("response = %q, want it to carry the failure", recorder.calls[0].Response)
 	}
 }
 

@@ -252,15 +252,30 @@ func validateCaps(name string, agent AgentConfig) error {
 		value float64
 	}
 	caps := []namedCap{
-		{"max_retries", float64(agent.MaxRetries)},
-		{"max_cost_per_retry", agent.MaxCostPerRetry},
-		{"max_cost_per_loop", agent.MaxCostPerLoop},
 		{"top_n_mistakes", float64(agent.TopNMistakes)},
 		{"n_tests_shown", float64(agent.NTestsShown)},
 	}
 	for _, c := range caps {
 		if c.value < 0 {
 			return fmt.Errorf("config: agents.yaml: agent %q field %q must not be negative, got %v", name, c.field, c.value)
+		}
+	}
+
+	// These three fail *open* at zero, so a missing or mistyped key has to
+	// be a startup error rather than a surprise in production — the same
+	// reason the defaults block is validated. Every enforcement point reads
+	// a zero cost cap as "unlimited" (repair.go, hint.go, curator.go), so
+	// the shipped config was running with no ceiling on model spend at all;
+	// and MaxRetries is compared as `attempts >= MaxRetries`, so zero makes
+	// the loop return no_fix/no_hint without ever calling a model.
+	required := []namedCap{
+		{"max_retries", float64(agent.MaxRetries)},
+		{"max_cost_per_retry", agent.MaxCostPerRetry},
+		{"max_cost_per_loop", agent.MaxCostPerLoop},
+	}
+	for _, c := range required {
+		if c.value <= 0 {
+			return fmt.Errorf("config: agents.yaml: agent %q field %q must be positive, got %v", name, c.field, c.value)
 		}
 	}
 	return nil

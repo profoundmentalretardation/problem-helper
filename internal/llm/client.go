@@ -110,6 +110,14 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 		start := time.Now()
 		content, usage, err := c.rawChat(ctx, req, messages)
 		if err != nil {
+			// Record the failure too. A transport error, a non-200 or an
+			// undecodable body all burned the prompt on the provider's side,
+			// and returning before the record left no llm_calls row at all —
+			// so a repeatedly-erroring provider was invisible to cost
+			// analytics and, since usage is unknown here, charged 0. The row
+			// carries the error text in place of a response, with zero usage,
+			// which is at least an honest "this call happened".
+			_ = c.record(ctx, req, messages, "error: "+err.Error(), Usage{}, Cost(Usage{}, c.pricing[req.Model]), time.Since(start))
 			return c.spent(req, total), err
 		}
 		latency := time.Since(start)

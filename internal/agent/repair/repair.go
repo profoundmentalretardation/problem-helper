@@ -245,21 +245,28 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 	// resolved by polling, never by submitting again: the judge has the code
 	// and the system login's quota was already spent on it.
 	if p.PendingRunID != "" {
-		verified, testsTotal, err := r.resumePendingRun(ctx, p, baseline, pollInterval, maxPollWait)
+		found, verified, testsTotal, err := r.resumePendingRun(ctx, p, baseline, pollInterval, maxPollWait)
 		if err != nil {
 			return Result{}, err
 		}
-		if verified {
+		switch {
+		case verified:
 			return Result{
 				Status: StatusFixed, Code: p.PendingCode,
 				RunID: p.PendingRunID, Attempts: attempts,
 			}, nil
+		case found:
+			// It was judged and it wasn't a fix — carry it as the run the
+			// tools read from, exactly like any other failed attempt.
+			currentRunID = p.PendingRunID
+			currentTestsTotal = testsTotal
+			previousCode = p.PendingCode
 		}
-		// It was judged and it wasn't a fix — carry it as the run the tools
-		// read from, exactly like any other failed attempt.
-		currentRunID = p.PendingRunID
-		currentTestsTotal = testsTotal
-		previousCode = p.PendingCode
+		// Not found: the judge does not know this run id, so there is
+		// nothing to carry. Keep the baseline run — adopting the unknown id
+		// with testsTotal 0 made list_test_results answer {"ok":true,
+		// "total":0,"tests":[]} and get_test always answer out-of-range, so
+		// the model repaired blind against a baseline that was still there.
 	}
 
 	for {
@@ -350,25 +357,25 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 // resume, and the caller falls through to a normal first attempt.
 func (r *Runner) resumePendingRun(
 	ctx context.Context, p Params, baseline map[int]platform.TestCase, pollInterval, maxWait time.Duration,
-) (verified bool, testsTotal int, err error) {
+) (found, verified bool, testsTotal int, err error) {
 	result, err := r.Platform.RunResult(ctx, p.PendingRunID)
 	if err != nil {
 		if errors.Is(err, platform.ErrRunNotFound) {
-			return false, 0, nil
+			return false, false, 0, nil
 		}
-		return false, 0, fmt.Errorf("repair: reading pending verification run: %w", err)
+		return false, false, 0, fmt.Errorf("repair: reading pending verification run: %w", err)
 	}
 
 	result, err = r.pollUntilDone(ctx, result, pollInterval, maxWait)
 	if err != nil {
-		return false, 0, err
+		return false, false, 0, err
 	}
 
 	current, err := r.fetchTestCases(ctx, p.PendingRunID, result.TestsTotal)
 	if err != nil {
-		return false, 0, fmt.Errorf("repair: fetching pending run test results: %w", err)
+		return false, false, 0, fmt.Errorf("repair: fetching pending run test results: %w", err)
 	}
-	return success(result, baseline, current), result.TestsTotal, nil
+	return true, success(result, baseline, current), result.TestsTotal, nil
 }
 
 // runAttempt runs the tool sub-loop for one attempt: repeated Chat calls

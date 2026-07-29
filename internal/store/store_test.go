@@ -1068,7 +1068,7 @@ func TestHeartbeat_RejectedAfterAnotherWorkerReclaims(t *testing.T) {
 	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
 		t.Fatalf("claim next: %v", err)
 	}
-	if _, err := s.ReclaimStale(ctx, time.Now().Add(time.Hour)); err != nil {
+	if _, err := s.ReclaimStale(ctx, -time.Hour); err != nil {
 		t.Fatalf("reclaim stale: %v", err)
 	}
 	if _, err := s.ClaimNext(ctx, "worker-2"); err != nil {
@@ -1101,7 +1101,7 @@ func TestReclaimStale_AbandonsRequestAfterTooManyClaims(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	stale := time.Now().Add(time.Hour)
+	stale := -time.Hour
 	// Each cycle claims the row and then finds it stale again, exactly as a
 	// request that keeps crashing the pipeline would.
 	for i := 0; i < 20; i++ {
@@ -1136,7 +1136,7 @@ func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testi
 		t.Fatalf("set resume step: %v", err)
 	}
 
-	reclaimed, err := s.ReclaimStale(ctx, time.Now().Add(time.Hour))
+	reclaimed, err := s.ReclaimStale(ctx, -time.Hour)
 	if err != nil {
 		t.Fatalf("reclaim stale: %v", err)
 	}
@@ -1170,7 +1170,7 @@ func TestReclaimStale_LeavesFreshHeartbeatAlone(t *testing.T) {
 		t.Fatalf("claim next: %v", err)
 	}
 
-	reclaimed, err := s.ReclaimStale(ctx, time.Now().Add(-time.Hour))
+	reclaimed, err := s.ReclaimStale(ctx, time.Hour)
 	if err != nil {
 		t.Fatalf("reclaim stale: %v", err)
 	}

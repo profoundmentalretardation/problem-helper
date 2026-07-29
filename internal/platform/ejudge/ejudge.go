@@ -242,10 +242,17 @@ func (c *Client) SubmitAsSystem(ctx context.Context, problemID, code, lang strin
 		return platform.RunResult{}, err
 	}
 
-	if strings.Contains(body, "duplicate of another run") {
+	// Read off the <title>, not the whole document: the submit response
+	// renders the problem statement and its samples, so a statement (or a
+	// sample) carrying either phrase would turn a submit that actually
+	// succeeded into ErrDuplicateSubmission — abandoning a real run and
+	// burning a repair retry — or into ErrAuthFailed, failing the request.
+	// Same reasoning as hasErrorTitle, which submitWithSession already
+	// applies to this very response.
+	if hasErrorTitle(body, "duplicate of another run") {
 		return platform.RunResult{}, ErrDuplicateSubmission
 	}
-	if strings.Contains(body, "Permission denied") {
+	if hasErrorTitle(body, "Permission denied") {
 		return platform.RunResult{}, ErrAuthFailed
 	}
 
@@ -327,7 +334,11 @@ func (c *Client) RunResult(ctx context.Context, runID string) (platform.RunResul
 		return platform.RunResult{ID: runID, Done: false}, nil
 	}
 	if hasErrorDetail(body, "is out of range") {
-		return platform.RunResult{}, fmt.Errorf("%w: run %s: %w", ErrRunNotFound, runID, ErrMalformedResponse)
+		// ErrRunNotFound only — wrapping ErrMalformedResponse alongside it
+		// made one error satisfy both errors.Is checks, collapsing the
+		// outcome-vs-infrastructure-fault split the failed/no_fix
+		// distinction rests on.
+		return platform.RunResult{}, fmt.Errorf("%w: run %s", ErrRunNotFound, runID)
 	}
 
 	verdict, err := parseReportVerdict(body)
@@ -522,7 +533,7 @@ func (c *Client) get(ctx context.Context, endpoint, sid string, action int, para
 	if err != nil {
 		return "", fmt.Errorf("ejudge: building request: %w", err)
 	}
-	return c.doWithRetry(req)
+	return c.doWithRetry(req, true)
 }
 
 func (c *Client) postForm(ctx context.Context, endpoint string, form url.Values) (string, error) {
@@ -531,7 +542,7 @@ func (c *Client) postForm(ctx context.Context, endpoint string, form url.Values)
 		return "", fmt.Errorf("ejudge: building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c.doWithRetry(req)
+	return c.doWithRetry(req, true)
 }
 
 // submitMultipart POSTs a solution the same way the browser's "Submit a
@@ -567,19 +578,30 @@ func (c *Client) submitMultipart(ctx context.Context, sid, probID, langID, code 
 		return "", fmt.Errorf("ejudge: building request: %w", err)
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	return c.doWithRetry(req)
+	// A submit is the one request in this package that must never be sent
+	// twice: a replay creates a second run under the shared system login.
+	return c.doWithRetry(req, false)
 }
 
-// doWithRetry retries transient (network-level) failures a couple of
-// times with a short backoff; it never retries once the server has
-// responded, successfully or not — those are ejudge's real answer.
+// doWithRetry retries a couple of times with a short backoff.
+//
+// replayable says whether sending this request twice is safe. It is a
+// property of the *request*, not of the failure: a submit POST creates a
+// run under the shared system login, and c.httpClient.Timeout firing while
+// awaiting response headers — the normal case for a judge that has already
+// queued the run — is indistinguishable from a request that never arrived.
+// Classifying retryability per-failure therefore replayed exactly the case
+// it was written to prevent, so submits pass replayable=false and are never
+// resent. Idempotent GETs pass true and do retry a 5xx/short read: ejudge
+// answers its own errors with a 200, so those come from a proxy or CGI in
+// front of it and are the transient failures that actually occur.
 //
 // A POST body is a one-shot reader: after the first attempt it is drained
 // and closed, so every retry rebuilds the body from req.GetBody (which
 // http.NewRequest populates for the in-memory body types this package
 // uses). A request whose body cannot be replayed is not retried — resending
 // it would silently submit an empty form.
-func (c *Client) doWithRetry(req *http.Request) (string, error) {
+func (c *Client) doWithRetry(req *http.Request, replayable bool) (string, error) {
 	const maxAttempts = 3
 	backoff := 100 * time.Millisecond
 
@@ -611,17 +633,12 @@ func (c *Client) doWithRetry(req *http.Request) (string, error) {
 			if errors.Is(req.Context().Err(), context.DeadlineExceeded) || errors.Is(req.Context().Err(), context.Canceled) {
 				return "", fmt.Errorf("ejudge: request to %s: %w", req.URL.Path, err)
 			}
-			// The server already received and acted on this request; the
-			// failure was in reading or in its status code, not in delivery.
-			// Retrying would re-POST a submission ejudge has already queued —
-			// either creating a second run under the shared system login (so
-			// the run-id floor now has two candidates) or drawing
-			// ErrDuplicateSubmission for an attempt that actually succeeded.
-			var responded *respondedError
-			if errors.As(err, &responded) {
+			// Not safe to send twice — see the doc comment. One attempt is
+			// all this request gets, whatever the failure looked like.
+			if !replayable {
 				return "", fmt.Errorf("ejudge: request to %s: %w", req.URL.Path, err)
 			}
-			continue // transient network error, retry
+			continue // retry
 		}
 		return body, nil
 	}
@@ -634,13 +651,13 @@ func (c *Client) doWithRetry(req *http.Request) (string, error) {
 func (c *Client) doOnce(req *http.Request) (string, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redactURLError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", &respondedError{err}
+		return "", err
 	}
 	// ejudge signals all of its own error conditions with a 200 and an error
 	// page, so a 4xx/5xx here is something in front of it — an nginx 502, a
@@ -649,18 +666,30 @@ func (c *Client) doOnce(req *http.Request) (string, error) {
 	// rows and reports (0, 0) with no error, every submission looks like a
 	// compile error, and pick.Best chooses on garbage.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", &respondedError{fmt.Errorf("%w: %s returned %s", ErrMalformedResponse, req.URL.Path, resp.Status)}
+		return "", fmt.Errorf("%w: %s returned %s", ErrMalformedResponse, req.URL.Path, resp.Status)
 	}
 	return string(data), nil
 }
 
-// respondedError marks a failure that happened after the server had already
-// received the request, so doWithRetry knows the request must not be
-// replayed. See the retry loop above for why that matters for submits.
-type respondedError struct{ err error }
-
-func (e *respondedError) Error() string { return e.err.Error() }
-func (e *respondedError) Unwrap() error { return e.err }
+// redactURLError strips the query string from a transport error.
+//
+// Every request carries SID — an Administrator session token — and the
+// master queries carry a filter_expr naming a student's login. net/http
+// returns transport failures as *url.Error, whose Error() embeds the full
+// URL, and that string is persisted verbatim on help_requests.error and
+// served by GET /admin/requests. Only the path is ever useful for
+// diagnosis, so the query never leaves this function.
+func redactURLError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	path := ue.URL
+	if u, parseErr := url.Parse(ue.URL); parseErr == nil {
+		path = u.Path
+	}
+	return fmt.Errorf("ejudge: %s %s: %w", ue.Op, path, ue.Err)
+}
 
 // ---------------------------------------------------------------------
 // Page parsing
@@ -694,7 +723,7 @@ func (c *Client) fetchSubmitPage(ctx context.Context, problemID string) (submitP
 	if err != nil {
 		return submitPage{}, err
 	}
-	if strings.Contains(body, "Invalid contest") || strings.Contains(body, "Invalid problem") {
+	if hasErrorTitle(body, "Invalid contest") || hasErrorTitle(body, "Invalid problem") {
 		return submitPage{}, fmt.Errorf("ejudge: problem %q: %w", problemID, ErrMalformedResponse)
 	}
 
@@ -929,8 +958,14 @@ var (
 // judged failing run — and the repair loop burns a retry on it instead of
 // the request surfacing as infrastructure failure.
 func isErrorPage(body string) bool {
-	return strings.Contains(body, "Operation completed with errors") ||
-		strings.Contains(body, "<h2><font color=\"red\">Error:") ||
+	// The first two predicates key on ejudge's own generated markup. A bare
+	// substring test for the plain phrase "Operation completed with errors"
+	// used to lead this chain, but report pages embed each test's stdout and
+	// stderr and source pages embed the whole submission — so a student
+	// could print that phrase and, since hasErrorDetail gates on this
+	// function, forge ErrRunNotFound/ErrMalformedResponse out of an ordinary
+	// failing run. Both real error fixtures match on the markup instead.
+	return strings.Contains(body, "<h2><font color=\"red\">Error:") ||
 		strings.Contains(body, "<h2><font color=\"red\">Permission denied</font></h2>")
 }
 

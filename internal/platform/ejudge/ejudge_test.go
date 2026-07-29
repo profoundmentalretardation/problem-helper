@@ -940,3 +940,73 @@ func TestSubmitAsSystem_NotRetriedAfterTheServerResponded(t *testing.T) {
 		t.Errorf("submit POSTs = %d, want 1 (the request must not be replayed once ejudge has it)", n)
 	}
 }
+
+// The submit response embeds the problem statement and its samples, so
+// matching ejudge's error phrases against the whole document let a
+// *statement* decide the outcome of a submit that actually succeeded:
+// "duplicate of another run" abandons a real run and burns a repair retry,
+// "Permission denied" fails the request outright. Both are read off the
+// <title>, which ejudge generates from its own message catalogue.
+func TestSubmitAsSystem_ErrorPhrasesInPageBodyAreNotSentinels(t *testing.T) {
+	for _, phrase := range []string{"duplicate of another run", "Permission denied"} {
+		t.Run(phrase, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+					body := fixture(t, "submit_run_response.html")
+					// Plant the phrase where a statement or a sample would put it.
+					body = strings.Replace(body, "<body>", "<body><p>Note: "+phrase+"</p>", 1)
+					serveFixture(w, body)
+					return
+				}
+				_ = r.ParseForm()
+				if r.URL.Query().Get("action") == "139" || r.FormValue("action") == "139" {
+					serveFixture(w, fixture(t, "statement_prob_a.html"))
+					return
+				}
+				serveFixture(w, fixture(t, "login_client_ok.html"))
+			})
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+			c := newClient(t, srv)
+
+			got, err := c.SubmitAsSystem(context.Background(), "1", "int main(){return 0;}", "gcc")
+			if err != nil {
+				t.Fatalf("SubmitAsSystem: %v, want the submit to succeed — the phrase was page content, not ejudge's verdict", err)
+			}
+			if got.ID != "5" {
+				t.Errorf("ID = %q, want %q", got.ID, "5")
+			}
+		})
+	}
+}
+
+// The same forgery, one layer down: report pages embed each test's stdout
+// and stderr, so a submission that merely prints ejudge's "Operation
+// completed with errors" banner used to make isErrorPage — which gates
+// every report parser and hasErrorDetail — report a legitimately judged run
+// as infrastructure failure.
+func TestRunResult_ErrorBannerInProgramOutputIsNotAnErrorPage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "37" {
+			body := fixture(t, "run_report_wa.html")
+			body = strings.Replace(body, "<body>", "<body><pre>Operation completed with errors</pre>", 1)
+			serveFixture(w, body)
+			return
+		}
+		serveFixture(w, fixture(t, "login_master_ok.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	got, err := c.RunResult(context.Background(), "5")
+	if err != nil {
+		t.Fatalf("RunResult: %v, want the run's real verdict — the banner was program output", err)
+	}
+	if !got.Done {
+		t.Error("Done = false, want true (the run was judged)")
+	}
+}

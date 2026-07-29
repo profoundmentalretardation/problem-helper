@@ -34,7 +34,7 @@ const (
 type QueueStore interface {
 	ClaimNext(ctx context.Context, workerID string) (*store.HelpRequest, error)
 	Heartbeat(ctx context.Context, id uuid.UUID, workerID string) (bool, error)
-	ReclaimStale(ctx context.Context, before time.Time) ([]uuid.UUID, error)
+	ReclaimStale(ctx context.Context, staleAfter time.Duration) ([]uuid.UUID, error)
 	GetHelpRequest(ctx context.Context, id uuid.UUID) (*store.HelpRequest, error)
 }
 
@@ -85,9 +85,6 @@ type Worker struct {
 	// Logger receives non-fatal operational messages (claim/heartbeat/
 	// reclaim errors); defaults to log.Default().
 	Logger *log.Logger
-
-	// now is overridable for tests; defaults to time.Now.
-	now func() time.Time
 }
 
 // Run claims and runs requests until ctx is canceled. On cancellation, Run
@@ -303,8 +300,7 @@ func (w *Worker) metaloopLoop(ctx context.Context, interval time.Duration) {
 // reclaimSweep moves running rows whose heartbeat is older than StaleAfter
 // back to pending.
 func (w *Worker) reclaimSweep(ctx context.Context) ([]uuid.UUID, error) {
-	before := w.nowFunc().Add(-w.staleAfter())
-	ids, err := w.Store.ReclaimStale(ctx, before)
+	ids, err := w.Store.ReclaimStale(ctx, w.staleAfter())
 	if err != nil {
 		return nil, fmt.Errorf("worker: reclaiming stale requests: %w", err)
 	}
@@ -352,13 +348,6 @@ func (w *Worker) metaloopInterval() time.Duration {
 	default:
 		return w.MetaloopInterval
 	}
-}
-
-func (w *Worker) nowFunc() time.Time {
-	if w.now != nil {
-		return w.now()
-	}
-	return time.Now()
 }
 
 func (w *Worker) logf(format string, args ...any) {

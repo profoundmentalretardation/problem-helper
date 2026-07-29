@@ -175,10 +175,64 @@ research/              frozen Python prototypes (reference only, see research/RE
   `Report is not available` let a student's text — which they author, hence can forge —
   masquerade as a judge error and push a normal failing verification into `status=failed`. The
   `<title>` is generated from ejudge's message catalogue and never carries submission text.
-  Relatedly, a non-2xx is *never* ejudge (it answers its own errors with a 200 + error page),
-  so `doOnce` treats it as `ErrMalformedResponse`, and any failure after the server responded
-  is a `respondedError` that `doWithRetry` must not replay — replaying a submit POST creates a
-  second run under the shared system login.
+  That rule covers every sentinel, including the ones on the *submit* response
+  (`duplicate of another run`, `Permission denied`) and on `isErrorPage` itself: the submit
+  response renders the problem statement and its samples, and `isErrorPage` gates
+  `hasErrorDetail` and every report parser, so a bare `strings.Contains` in either place hands
+  a student (or a statement author) control of the outcome. Relatedly, a non-2xx is *never*
+  ejudge (it answers its own errors with a 200 + error page), so `doOnce` treats it as
+  `ErrMalformedResponse`.
+- **Retryability is a property of the request, not of the failure**
+  (`doWithRetry`'s `replayable` argument): `http.Client.Timeout` firing while awaiting response
+  headers — the normal case for a judge that has already queued the run — is indistinguishable
+  from a request that never arrived, so classifying per-failure replayed exactly the submit it
+  was written to protect. Submits pass `false` and are never resent; idempotent GETs pass
+  `true` and do retry a 5xx or a short read, which is what a proxy or CGI in front of ejudge
+  actually returns. Transport errors are also run through `redactURLError` first: every request
+  carries `SID` (an Administrator session token) and the master queries carry a student login in
+  `filter_expr`, and `*url.Error` embeds the whole URL — which lands verbatim on
+  `help_requests.error` and on `GET /admin/requests`.
+- **Sanitize Unicode before stripping comments** (`shield.Strip`): the comment scanners match
+  raw bytes, so an invisible character wedged into an opener (`/<U+200B>/ payload`) is not a
+  comment to them — it fell through as ordinary code and the *later* unicode pass then handed
+  the model a clean `// payload` with `Removed.Comments` empty. Order is the fix; the
+  invisible-character table (`internal/shield/unicode.go`) is the other half, and it has to
+  cover more than the zero-width block — word joiners, soft hyphen, variation selectors.
+- **Only a triple-quoted literal alone on its logical line is a docstring**
+  (`isDocstringPosition` in `internal/shield/python.go`): stripping every one of them rewrote
+  `msg = """a\nb"""` to `msg = `, a `SyntaxError`. That mangled text is what the repair model
+  diagnoses and what the hint's diff is taken from, so the model explained code the student
+  never wrote and the "fix" went to the judge. Java text blocks are the same class of bug from
+  the other side (`textBlockEnd` in `clike.go`) — without them, `//` *inside* a text block was
+  deleted from the code that reaches the judge. It is language-gated because in C a bare `"""`
+  is the adjacency of an empty string and an opening quote.
+- **Fail-open config keys are startup errors** (`validateCaps`): every enforcement point reads a
+  zero cost cap as "unlimited" and `MaxRetries` is compared as `attempts >= MaxRetries`, so
+  `max_cost_per_retry`/`max_cost_per_loop`/`max_retries` at zero mean respectively no ceiling on
+  model spend at all and a loop that returns `no_fix`/`no_hint` without calling a model. The
+  shipped `agents.yaml` had all three at zero. Same rationale as the `defaults` block: a missing
+  or mistyped key must fail before serving traffic, not silently at first call.
+- **Snapshot submission ids are derived, not random** (`snapshotSubmissions` in
+  `internal/worker/pipeline.go`): `SnapshotSubmissions` is idempotent via `ON CONFLICT` on
+  `(request_id, platform_submission_id)`, so minting fresh random ids on a resume made every
+  insert a no-op against the rows already committed — and `SetBestSubmission` then recorded an
+  id present in no row, which commits silently because `best_submission_id` has no FK. The next
+  resume past that checkpoint hit `GetSubmission` "no row" and errored the pipeline every cycle
+  until `claim_attempts` ran out. A migration that adds a uniqueness constraint also has to
+  clear the duplicates it describes first (`0004`), or it raises `23505` at startup forever.
+- **Reclaim compares against the database's clock, not the app's**
+  (`ReclaimStale(ctx, staleAfter)`): `heartbeat_at` is always written by `now()` on the server,
+  so a cutoff computed in Go made reclaim depend on drift between two machines — fast enough and
+  every live row looks stale on the first sweep, reclaimed out from under a worker still
+  submitting to the judge under the shared system login; slow enough and nothing is ever
+  reclaimed, so the `claim_attempts` backstop never engages either.
+- **An interruption is not a verdict** (`checkGuardrail`): an unreadable guardrail *answer*
+  (prose, wrong schema) is fail-closed `OK=false`, but a cancelled context or a transport
+  failure is not an answer — reporting it as `no_hint`/`guardrail_failed` terminated a request
+  that should have stayed reclaimable and threw away the remaining retry budget. Only
+  `llm.ErrInvalidResponse` is a verdict. `llm.Chat` writes an `llm_calls` row on that path too:
+  a failed call still burned the prompt, and skipping the row made a repeatedly-erroring
+  provider invisible to cost analytics.
 - **The curator marks its batch processed whenever it wrote something**, even on
   `StatusGaveUp` (`giveUp` in `internal/agent/curator/curator.go`): `MergeMistake` and
   `CreateMistake` commit as they go, so leaving the batch unprocessed made every later sweep

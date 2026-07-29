@@ -439,7 +439,17 @@ func (pl *Pipeline) snapshotSubmissions(ctx context.Context, requestID uuid.UUID
 	rows := make([]store.Submission, len(subs))
 	var bestStoreID uuid.UUID
 	for i, sub := range subs {
-		id := uuid.New()
+		// Derived from (request_id, platform_submission_id), not random.
+		// SnapshotSubmissions is idempotent via ON CONFLICT on exactly that
+		// pair, so a crash between the committed insert batch and the
+		// StepSubmissions checkpoint used to be resumed with a fresh set of
+		// random ids: every insert became a no-op against the rows already
+		// there, and SetBestSubmission then recorded an id present in no
+		// row (best_submission_id has no FK, so it committed silently). The
+		// next resume past that checkpoint hit GetSubmission "no row",
+		// erroring the pipeline every time until claim_attempts ran out.
+		// Deterministic ids make the retry name the rows that actually exist.
+		id := uuid.NewSHA1(submissionIDNamespace, []byte(requestID.String()+"\x00"+sub.ID))
 		isBest := bestPlatformID != "" && sub.ID == bestPlatformID
 		if isBest {
 			bestStoreID = id
@@ -460,6 +470,11 @@ func (pl *Pipeline) snapshotSubmissions(ctx context.Context, requestID uuid.UUID
 	}
 	return bestStoreID, nil
 }
+
+// submissionIDNamespace seeds the deterministic submission ids minted in
+// snapshotSubmissions. Arbitrary but fixed — changing it would make an
+// in-flight request's resume mint different ids than its first pass.
+var submissionIDNamespace = uuid.MustParse("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
 // checkpoint records the resume_step for requestID after a step completes.
 func (pl *Pipeline) checkpoint(ctx context.Context, requestID uuid.UUID, step string) error {
