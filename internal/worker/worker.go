@@ -251,7 +251,26 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 			// has reached a terminal status but hasn't returned yet, so
 			// confirm the claim was actually taken from us before killing
 			// the run.
-			if w.claimLost(ctx, id) {
+			lost, known := w.claimLost(ctx, id)
+			if !known {
+				// The probe itself failed, so we cannot tell a finished run
+				// from a reclaimed one. Returning here retired the heartbeat
+				// goroutine for good: if the row really had been reclaimed,
+				// lostClaim was never called, the pipeline kept running on the
+				// detached run context, and heartbeat_at stopped advancing —
+				// two workers on one request, submitting to the judge under the
+				// shared system login and spending both model budgets. Keep
+				// ticking and fall back on the same lease-expiry backstop the
+				// error path above uses.
+				if time.Since(lastOK) >= w.staleAfter() {
+					w.logf("worker: request %s claim could not be confirmed for %s, lease expired, aborting run",
+						id, w.staleAfter())
+					lostClaim()
+					return
+				}
+				continue
+			}
+			if lost {
 				w.logf("worker: request %s reclaimed by another worker, aborting run", id)
 				lostClaim()
 			}
@@ -261,9 +280,11 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 }
 
 // claimLost reports whether this worker no longer owns id — i.e. a reclaim
-// sweep took the row away from us. A store error is not treated as a lost
-// claim: killing a run that is merely finishing would be worse than the
-// extra tick.
+// sweep took the row away from us — and whether that answer is known at all.
+// A store error is not treated as a lost claim: killing a run that is merely
+// finishing would be worse than the extra tick. It is reported as unknown
+// rather than as "still ours", because the caller must not retire the
+// heartbeat on an answer it never got.
 //
 // Ownership is decided by claimed_by, not by the status, because ReclaimStale
 // has *two* exits for a stale row and both clear claimed_by: back to pending,
@@ -274,16 +295,16 @@ func (w *Worker) heartbeatUntil(ctx context.Context, id uuid.UUID, stop <-chan s
 // row — spending both model budgets before the next claim-scoped write
 // finally refused. A run that finished normally still has claimed_by = w.ID
 // (TransitionStatus never clears it), so it is correctly not a lost claim.
-func (w *Worker) claimLost(ctx context.Context, id uuid.UUID) bool {
+func (w *Worker) claimLost(ctx context.Context, id uuid.UUID) (lost, known bool) {
 	hr, err := w.Store.GetHelpRequest(ctx, id)
 	if err != nil {
 		w.logf("worker: checking claim for request %s: %v", id, err)
-		return false
+		return false, false
 	}
 	if hr == nil {
-		return false
+		return false, false
 	}
-	return hr.ClaimedBy == nil || *hr.ClaimedBy != w.ID
+	return hr.ClaimedBy == nil || *hr.ClaimedBy != w.ID, true
 }
 
 // reclaimLoop runs a reclaim sweep on a fixed interval until ctx is

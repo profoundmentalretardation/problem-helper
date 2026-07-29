@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -41,11 +42,25 @@ type Env struct {
 	// failed *silently* — the client logged into contest 1, found no runs and
 	// answered no_submissions for every student.
 	EjudgeContestID string
+
+	// WorkerConcurrency is how many help requests one instance runs at once.
+	// Optional, defaulting to defaultWorkerConcurrency. Without it the pool
+	// was permanently a pool of one: a single request holds the slot for the
+	// whole repair loop — max_retries verification runs, each polled against
+	// the judge — while every other student waits, against a service whose
+	// premise is helping a whole course. The pipeline is already written for
+	// more than one (see ejudge.SubmitAsSystem's run-id disambiguation); only
+	// the wiring was missing.
+	WorkerConcurrency int
 }
 
 // defaultEjudgeContestID matches ejudge's own first contest, and the default
 // the platform client has always used.
 const defaultEjudgeContestID = "1"
+
+// defaultWorkerConcurrency matches worker.defaultConcurrency — the value the
+// pool used when there was no way to configure it at all.
+const defaultWorkerConcurrency = 1
 
 // MissingEnvError reports a required environment variable that was absent
 // or empty.
@@ -72,6 +87,14 @@ func LoadEnv(lookup func(string) (string, bool)) (Env, error) {
 	if !ok || contestID == "" {
 		contestID = defaultEjudgeContestID
 	}
+	concurrency := defaultWorkerConcurrency
+	if v, ok := lookup("WORKER_CONCURRENCY"); ok && v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return Env{}, fmt.Errorf("config: WORKER_CONCURRENCY must be a positive integer, got %q", v)
+		}
+		concurrency = n
+	}
 	return Env{
 		DatabaseURL:          values["DATABASE_URL"],
 		LLMBaseURL:           values["LLM_BASE_URL"],
@@ -83,6 +106,7 @@ func LoadEnv(lookup func(string) (string, bool)) (Env, error) {
 		EjudgeSystemLogin:    values["EJUDGE_SYSTEM_LOGIN"],
 		EjudgeSystemPassword: values["EJUDGE_SYSTEM_PASSWORD"],
 		EjudgeContestID:      contestID,
+		WorkerConcurrency:    concurrency,
 	}, nil
 }
 

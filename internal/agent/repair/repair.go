@@ -596,14 +596,25 @@ type testSummary struct {
 
 // listTestResults returns up to Agent.NTestsShown test summaries for runID
 // (0 or unset NTestsShown means show every test).
+//
+// The window is the *last* NTestsShown tests, not the first. This course's
+// ejudge runs acm scoring, which halts judging at the first failure, so the
+// only test that failed is always the last one the run has results for — a
+// window taken from the front therefore showed the model NTestsShown verdicts
+// of "OK" and hid the single test that explains the failure. With the shipped
+// n_tests_shown of 10 and a submission failing on test 23, every attempt on
+// every problem with more than ten judged tests was diagnosed blind.
+//
+// Truncation is reported rather than left implicit, because the prompt tells
+// the model this tool returns the verdict of every test in the run.
 func (r *Runner) listTestResults(ctx context.Context, runID string, total int) (string, error) {
-	limit := total
-	if r.Agent.NTestsShown > 0 && r.Agent.NTestsShown < limit {
-		limit = r.Agent.NTestsShown
+	first := 1
+	if r.Agent.NTestsShown > 0 && r.Agent.NTestsShown < total {
+		first = total - r.Agent.NTestsShown + 1
 	}
 
-	tests := make([]testSummary, 0, limit)
-	for i := 1; i <= limit; i++ {
+	tests := make([]testSummary, 0, total-first+1)
+	for i := first; i <= total; i++ {
 		tc, err := r.Platform.TestResult(ctx, runID, i)
 		if err != nil {
 			return "", err
@@ -612,10 +623,11 @@ func (r *Runner) listTestResults(ctx context.Context, runID string, total int) (
 	}
 
 	out, err := json.Marshal(struct {
-		OK    bool          `json:"ok"`
-		Total int           `json:"total"`
-		Tests []testSummary `json:"tests"`
-	}{true, total, tests})
+		OK        bool          `json:"ok"`
+		Total     int           `json:"total"`
+		Truncated bool          `json:"truncated"`
+		Tests     []testSummary `json:"tests"`
+	}{true, total, first > 1, tests})
 	if err != nil {
 		return "", err
 	}

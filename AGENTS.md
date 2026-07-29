@@ -579,6 +579,76 @@ research/              frozen Python prototypes (reference only, see research/RE
   (no statement, unsolved, no submissions), so the documented local/dev backend terminates
   cleanly at `no_submissions`. `New` keeps panicking, because in a test an unscripted call is a
   test bug that must fail loudly.
+- **Phase 2 splices every backslash-newline, with no parity rule** (`skipLineComment` in
+  `internal/shield/clike.go`): parity belongs to phase 5 and escape *sequences*, so counting it
+  made `// note \\` + newline end the comment at the newline while the compiler spliced on —
+  the next line reached the model as ordinary code with `Removed.Comments` showing nothing
+  missed. `effChar` and `directiveTracker.code` already spliced unconditionally; the file
+  disagreed with itself, and only the single-backslash case was covered by a test.
+- **The C-family scan advances by the *effective* width, not one raw byte**
+  (`stripCLikeComments`'s default branch, `maxTokenScan`): the bytes `effChar` skipped were
+  re-scanned from every offset, so a submission of backslash-newline pairs — legal C that
+  splices away to nothing — was quadratic, and the same held for `isDigitSeparator` walking back
+  to its token start and `javaUnicodeEscape` counting preceding backslashes. `shield.Strip` has
+  no timeout and neither does the pipeline step calling it, so the worker stalls with the
+  heartbeat still ticking and the request is never even reclaimed.
+  `TestStrip_PathologicalInputTerminatesQuickly` is what keeps the scan linear.
+- **The unicode sanitizer decodes rune by rune and passes invalid bytes through**
+  (`sanitizeUnicode`): `for _, r := range s` yields `utf8.RuneError` for each invalid byte and
+  writing it back replaced it with U+FFFD. ejudge stores whatever bytes the student uploaded and
+  CP1251 sources with Cyrillic literals are ordinary there, so every non-ASCII byte of such a
+  submission was rewritten — in the code the repair model diagnoses *and* the code submitted to
+  the judge — with nothing in `Removed` to signal it.
+- **ejudge sentinels are read off *every* `<title>`, not the first** (`hasErrorTitle`):
+  master-wrapped error pages carry two — the outer master document's ("Operation completed with
+  errors") and the embedded client document's ("Error: …"), as `run_report_out_of_range.html`
+  and `run_report_server_error.html` both show. Matching only the first missed the specific
+  sentinel and let the page fall through to `isErrorPage`, so a run merely sitting in the judge
+  queue came back as `ErrMalformedResponse` and failed the request — exactly the outcome
+  `RunResult`'s "Report is not available" branch exists to prevent.
+- **A submit refusal is a verdict, not a malformed response** (`ErrSubmitRejected`): "The
+  contest is over", a submission limit, a disabled language and an oversized source all render
+  an error page with no "Previous submissions" section, so they reached `parseSubmitRunRows` and
+  came back as a bare `ErrMalformedResponse` with ejudge's stated reason discarded. The reason
+  is read off the `<title>`s only, for the reason `hasErrorTitle` documents — the rest of that
+  response renders the problem statement and its samples.
+- **Every response body read is bounded** (`maxResponseBytes` in `doOnce`): the read happens
+  before the status check, so even a proxy error page is buffered in full, and report/source
+  pages are legitimately large. Over the limit is an error, never a truncation — a truncated
+  report under-counts `TestsPassed` and `pick.Best` then chooses on it. The formatter has the
+  same rule from the other side (`limitedBuffer` in `internal/format/format.go`): the timeout
+  and `WaitDelay` bound how long the command runs, not how much it writes.
+- **A missing row on the resume path is a corrupt checkpoint, not a transient error**
+  (`store.ErrNoRow`, checked in `RunPipeline`): `GetShieldRecordByRequest` and `GetSubmission`
+  report "no row" as an error, and returning it bare left the request `running` with a dead
+  heartbeat — every reclaim sweep re-hit it deterministically until `claim_attempts` ran out and
+  the real cause was overwritten by "abandoned after N claim attempts". The `ErrNoRow` sentinel
+  is what separates it from "the database is unreachable", which must stay reclaimable. Same
+  rule the `best_submission_id == nil` guard already followed; a dangling id now takes it too.
+- **The heartbeat never retires on an answer it did not get** (`heartbeatUntil`, `claimLost`):
+  `claimLost` deliberately reports a failed probe as "not lost", so returning unconditionally
+  after it retired the goroutine for good — if the row really had been reclaimed, `lostClaim`
+  was never called, the pipeline kept running on the detached run context, and `heartbeat_at`
+  stopped advancing. It now reports whether the answer is *known* and the caller keeps ticking
+  when it is not, falling back on the same lease-expiry backstop the error path uses.
+- **`list_test_results` windows the *tail*, and says when it truncated**
+  (`internal/agent/repair/repair.go`): this course's ejudge runs `acm` scoring, which halts at
+  the first failure, so the failing test is always the last one with a result. A window taken
+  from the front handed the model `n_tests_shown` verdicts of "OK" and hid the only test that
+  explains the failure — with the shipped `n_tests_shown: 10`, every attempt on every problem
+  with more than ten judged tests was diagnosed blind. `prompts/repair.md` states the tail rule
+  and that `get_test` may still ask for any index up to `total`.
+- **Fail-open config keys are startup errors, and the plan says so too**: `validateCaps`
+  requires `max_retries`/`max_cost_per_retry`/`max_cost_per_loop` to be positive, which reverses
+  the plan's original "`0` disables the check". That reversal is recorded in the plan's
+  Changelog section — a divergence a reader of the plan cannot see is the same class of problem
+  as the fail-open key itself.
+- **`WORKER_CONCURRENCY` exists because `Worker.Concurrency` had no wiring** (`config.LoadEnv`,
+  `cmd/helper/main.go`): the field was there and the pipeline is written for more than one
+  claimant — `SubmitAsSystem`'s run-id disambiguation exists for exactly that — but nothing set
+  it, so an instance permanently ran one help request at a time, each holding its slot for the
+  whole repair loop including judge polling. Optional, defaults to 1, and a value that would
+  disable the pool is a startup error.
 
 ## Reference material
 

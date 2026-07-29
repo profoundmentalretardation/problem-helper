@@ -45,6 +45,7 @@ The binary takes flags for non-default paths/address:
 | `ADMIN_TOKEN` | bearer token for `/admin/*` |
 | `EJUDGE_URL`, `EJUDGE_SYSTEM_LOGIN`, `EJUDGE_SYSTEM_PASSWORD` | ejudge system-user credentials (required even when `PLATFORM=mock`; see `internal/config`) |
 | `EJUDGE_CONTEST_ID` | ejudge contest the sessions are scoped to; optional, defaults to `1`. Both ejudge sessions are per-contest, so a course on any other contest id needs this set — otherwise the client finds no runs and every request answers `no_submissions`. |
+| `WORKER_CONCURRENCY` | how many help requests this instance runs at once; optional, defaults to `1`. One request holds its slot for the whole repair loop — every verification submit and the judge polling that follows it — so a course-sized queue wants more than one. |
 
 ### `agents.yaml` (checked in, validated at startup)
 

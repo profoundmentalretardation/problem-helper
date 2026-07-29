@@ -242,6 +242,16 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 				"resume checkpoint is past the %s step but no best_submission_id was persisted", StepSubmissions))
 		}
 		saved, err := pl.Store.GetSubmission(ctx, *hr.BestSubmissionID)
+		if errors.Is(err, store.ErrNoRow) {
+			// A dangling best_submission_id is the same corrupt row as a NULL
+			// one — the guard above only catches the NULL. Bubbling it out as a
+			// bare error left the request running with a dead heartbeat and
+			// every reclaim sweep hit it again, burning claim_attempts until
+			// the real cause was overwritten by "abandoned after N attempts".
+			return pl.infraFail(ctx, requestID, fmt.Errorf(
+				"resume checkpoint is past the %s step but best_submission_id %s has no row",
+				StepSubmissions, *hr.BestSubmissionID))
+		}
 		if err != nil {
 			return fmt.Errorf("pipeline: reloading best submission on resume: %w", err)
 		}
@@ -287,6 +297,14 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		// Already shielded and recorded before the last checkpoint; reload
 		// instead of re-stripping (which would insert a duplicate record).
 		rec, err := pl.Store.GetShieldRecordByRequest(ctx, requestID)
+		if errors.Is(err, store.ErrNoRow) {
+			// Checkpointed past the shield step with no shield_records row:
+			// corrupt, and deterministically so. Same rule as the missing
+			// best_submission_id above — fail it once with the real reason
+			// rather than letting every reclaim sweep re-hit it.
+			return pl.infraFail(ctx, requestID, fmt.Errorf(
+				"resume checkpoint is past the %s step but no shield record was persisted", StepShield))
+		}
 		if err != nil {
 			return fmt.Errorf("pipeline: reloading shield record on resume: %w", err)
 		}

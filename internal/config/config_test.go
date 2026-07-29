@@ -514,3 +514,38 @@ func TestLoadEnv_ContestIDDefaultsButIsOverridable(t *testing.T) {
 		t.Errorf("EjudgeContestID = %q, want %q", env.EjudgeContestID, "42")
 	}
 }
+
+// WORKER_CONCURRENCY is optional and defaults to the one-at-a-time pool the
+// worker has always used, but it has to be reachable: Worker.Concurrency
+// existed with no wiring at all, so an instance ran exactly one help request at
+// a time — one request holding the slot for the whole repair loop, judge
+// polling included — and turning it up needed a recompile. A value that would
+// silently disable the pool (zero, negative, non-numeric) is a startup error
+// for the same reason the zero cost caps are.
+func TestLoadEnv_WorkerConcurrencyDefaultsButIsOverridable(t *testing.T) {
+	env, err := LoadEnv(lookupFrom(fullEnv()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.WorkerConcurrency != 1 {
+		t.Errorf("WorkerConcurrency = %d, want the default 1", env.WorkerConcurrency)
+	}
+
+	withN := fullEnv()
+	withN["WORKER_CONCURRENCY"] = "8"
+	env, err = LoadEnv(lookupFrom(withN))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.WorkerConcurrency != 8 {
+		t.Errorf("WorkerConcurrency = %d, want 8", env.WorkerConcurrency)
+	}
+
+	for _, bad := range []string{"0", "-1", "many"} {
+		withBad := fullEnv()
+		withBad["WORKER_CONCURRENCY"] = bad
+		if _, err := LoadEnv(lookupFrom(withBad)); err == nil {
+			t.Errorf("WORKER_CONCURRENCY=%q was accepted, want a startup error", bad)
+		}
+	}
+}

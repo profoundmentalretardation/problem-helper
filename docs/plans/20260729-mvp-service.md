@@ -179,12 +179,13 @@ Terminal statuses and their meaning in `GET /requests/{id}`:
     temperature: 0.2         # optional
     reasoning_effort: ""     # optional
     max_retries: 3
-    max_cost_per_retry: 0    # 0 = unlimited; see Cost caps for enforcement points
-    max_cost_per_loop: 0
+    max_cost_per_retry: 0.05 # must be > 0; see Cost caps for enforcement points
+    max_cost_per_loop: 0.25
     top_n_mistakes: 5        # how many user mistakes into the prompt
     n_tests_shown: 10        # list_test_results cut-off
-  hint:      { model: "...", temperature: 0.7, max_retries: 3, max_cost_per_retry: 0, max_cost_per_loop: 0 }
-  guardrail: { model: "..." }                # heavier model, different family recommended
+  hint:      { model: "...", temperature: 0.7, max_retries: 3, max_cost_per_retry: 0.05, max_cost_per_loop: 0.20 }
+  guardrail: { model: "...", max_retries: 1, max_cost_per_retry: 0.05, max_cost_per_loop: 0.10 }
+                             # heavier model; a different family is enforced, not merely advised
   curator:   { model: "...", max_retries: 2 }
   pricing:                   # per 1M tokens, per model; startup FAILS if any configured
     "model-name": {input: 0, cached_input: 0, output: 0}   # agent model has no pricing entry
@@ -204,8 +205,14 @@ Cost of a call is known only after it returns, so:
   cost ≥ cap, stop with reason `cost_cap` (→ `no_fix`/`no_hint`).
 - **`max_cost_per_retry`**: checked **between tool-loop calls within one attempt** — if the
   attempt's accumulated cost ≥ cap, abort the attempt (counts as a used retry).
-- `0` disables the check. Both caps can therefore overshoot by at most one call — documented,
-  accepted for MVP.
+- `max_retries`, `max_cost_per_retry` and `max_cost_per_loop` must all be **> 0**; `config.Load`
+  fails at startup otherwise. Zero fails *open* at every enforcement point — a zero cost cap
+  reads as "unlimited", and `attempts >= MaxRetries` makes zero retries return
+  `no_fix`/`no_hint` without ever calling a model — so it is a startup error rather than a
+  surprise in production, the same rule the `defaults` and `pricing` blocks follow. (This
+  reverses the original "0 disables the check"; see Changelog.)
+- Both caps can still overshoot by at most one call, because a call's cost is only known after
+  it returns — documented, accepted for MVP.
 - Cost formula (cached tokens are a **subset** of input tokens in OpenAI-compatible usage):
   `cost = (input_tokens − cached_tokens)·p_in + cached_tokens·p_cached + output_tokens·p_out`.
   Stored as `numeric`, never float.
@@ -309,7 +316,7 @@ against `platform/mock`).
 
 - [x] write failing tests: env parsing (each required var missing → named error), `agents.yaml`
       parsing (all four agent keys required, model required per agent, unknown agent key →
-      error, 0 = unlimited caps, negative caps → error, defaults block, formatter block)
+      error, zero or negative caps → error, defaults block, formatter block)
 - [x] write failing test: startup fails if any configured agent model lacks a `pricing` entry
 - [x] write failing test: the checked-in `agents.yaml` itself parses and validates
 - [x] `go mod init`, minimal `main.go` (config load + log + exit), Makefile targets:
@@ -404,7 +411,7 @@ against `platform/mock`).
       previously-passing test regresses → NOT success**, retry continues
 - [x] write failing tests for bounds per the Cost caps section: max_retries exhausted →
       `no_fix`; per-loop cap checked before an attempt; per-retry cap checked between
-      tool-loop calls; 0 = unlimited
+      tool-loop calls; must be > 0 (validated at startup)
 - [x] write failing tests for tools: `list_test_results` truncated to n_tests_shown,
       `get_test` returns the current run's {input, expected, actual}, run/problem ids injected
       programmatically (model never chooses them)
@@ -722,6 +729,28 @@ Found during code review of the completed implementation. Every item ships with 
       binaries concurrently against one database). Both sides now take a Postgres advisory
       lock; the suite was run repeatedly to confirm the flake is gone.
 - [x] `go test ./...` and `golangci-lint run` clean
+
+## Changelog
+
+*Decisions reversed or tightened during implementation. The sections above are already updated;
+this records what changed and why, so a reader of an older copy is not misled.*
+
+- **Cost/retry caps of `0` are now a startup error, not "unlimited"** (Configuration, Cost caps,
+  Task 2). Every enforcement point reads a zero cost cap as no ceiling at all, and `max_retries`
+  is compared as `attempts >= MaxRetries`, so zero returns `no_fix`/`no_hint` without ever
+  calling a model. All three shipped as `0`, i.e. the service ran with no ceiling on model spend
+  whatsoever. `config.validateCaps` now requires all three to be positive, on the same rationale
+  as the `defaults` and `pricing` blocks: a fail-open key must fail before serving traffic.
+- **The guardrail's different-family rule is enforced, not recommended** (Configuration,
+  Conventions). `config.modelFamily` compares the two model ids at startup and `config.Load`
+  fails if the hint writer and the guardrail share a family.
+- **`WORKER_CONCURRENCY` added** (Configuration). `Worker.Concurrency` existed but had no
+  wiring, so an instance permanently ran one help request at a time — one request holding the
+  slot for the whole repair loop, verification runs and judge polling included. Optional,
+  defaults to 1.
+- **`EJUDGE_CONTEST_ID` added** (Configuration). ejudge scopes both sessions to one contest and
+  the client hardcoded contest 1, so any other course failed silently: it logged in, found no
+  runs, and answered `no_submissions` for every student. Optional, defaults to `1`.
 
 ## Post-Completion
 

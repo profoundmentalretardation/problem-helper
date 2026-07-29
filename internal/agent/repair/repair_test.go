@@ -189,8 +189,9 @@ func TestRun_ToolLoop_ListTestResultsTruncated_AndGetTest(t *testing.T) {
 	// run has more tests.
 	lastMsg := calls[1].Messages[len(calls[1].Messages)-1]
 	var listReply struct {
-		Total int `json:"total"`
-		Tests []struct {
+		Total     int  `json:"total"`
+		Truncated bool `json:"truncated"`
+		Tests     []struct {
 			Index   int    `json:"index"`
 			Verdict string `json:"verdict"`
 		} `json:"tests"`
@@ -203,6 +204,19 @@ func TestRun_ToolLoop_ListTestResultsTruncated_AndGetTest(t *testing.T) {
 	}
 	if len(listReply.Tests) != 2 {
 		t.Fatalf("tests listed = %d, want 2 (truncated to n_tests_shown)", len(listReply.Tests))
+	}
+	if !listReply.Truncated {
+		t.Error("truncated = false, want true — the prompt promises every test, so an omission must be stated")
+	}
+	// The window is the *tail*, not the head. acm scoring halts at the first
+	// failure, so the failing test is always the last one with a result: a
+	// window taken from the front showed the model n_tests_shown verdicts of
+	// "OK" and hid the only test that explains the failure.
+	if listReply.Tests[0].Index != 2 || listReply.Tests[1].Index != 3 {
+		t.Errorf("listed tests = %d,%d, want the last two (2,3)", listReply.Tests[0].Index, listReply.Tests[1].Index)
+	}
+	if listReply.Tests[len(listReply.Tests)-1].Verdict != "WA" {
+		t.Errorf("last listed verdict = %q, want the failing test's WA", listReply.Tests[len(listReply.Tests)-1].Verdict)
 	}
 
 	// The third call's history carries get_test's reply with full detail.

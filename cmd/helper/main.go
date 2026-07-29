@@ -146,10 +146,11 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	}
 
 	w := &worker.Worker{
-		ID:       workerID,
-		Store:    st,
-		Pipeline: pipeline,
-		Metaloop: metaloop,
+		ID:          workerID,
+		Store:       st,
+		Pipeline:    pipeline,
+		Metaloop:    metaloop,
+		Concurrency: cfg.Env.WorkerConcurrency,
 	}
 
 	srv := api.NewServer(st, cfg, metaloop)

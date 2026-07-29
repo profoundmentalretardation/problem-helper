@@ -428,6 +428,27 @@ func TestSubmitAsSystem_Duplicate(t *testing.T) {
 // repair of the same problem, or a submit ejudge quietly dropped — polling
 // it would "verify" a run that never contained this code, which is the one
 // guarantee the repair loop exists to provide.
+// A refusal that is neither a duplicate nor a permission problem — the contest
+// being over, a submission limit, a disabled language — renders an error page
+// with no "Previous submissions" section, so it used to reach the run-table
+// parser and come back as a bare ErrMalformedResponse with ejudge's own stated
+// reason discarded. That reports an internal fault for a judge that answered
+// perfectly clearly.
+func TestSubmitAsSystem_RejectedWithReason(t *testing.T) {
+	srv := newSubmitServer(t, func(_ int) string {
+		return fixture(t, "submit_contest_over_error.html")
+	})
+	c := newClient(t, srv)
+
+	_, err := c.SubmitAsSystem(context.Background(), "1", "int main(){return 0;}", "gcc")
+	if !errors.Is(err, ejudge.ErrSubmitRejected) {
+		t.Fatalf("err = %v, want ErrSubmitRejected", err)
+	}
+	if !strings.Contains(err.Error(), "The contest is over") {
+		t.Errorf("err = %v, want it to carry ejudge's stated reason", err)
+	}
+}
+
 func TestSubmitAsSystem_RunIDNotNewerThanPreSubmit_IsRejected(t *testing.T) {
 	srv := newSubmitServer(t, func(_ int) string {
 		// The post-submit page still shows run 4 on top — the same run the
@@ -766,6 +787,36 @@ func TestRunResult_WrongAnswer(t *testing.T) {
 // must NOT surface as an error; the worker polls again later.
 func TestRunResult_StuckInQueue(t *testing.T) {
 	srv := newFixtureServer(t)
+	c := newClient(t, srv)
+
+	got, err := c.RunResult(context.Background(), "7")
+	if err != nil {
+		t.Fatalf("RunResult: unexpected error for an in-progress run: %v", err)
+	}
+	if got.Done {
+		t.Errorf("Done = true, want false for a run still being judged")
+	}
+}
+
+// The same run, still queued, but served through ejudge's master wrapper —
+// which puts its own <title> ("Operation completed with errors") ahead of the
+// embedded client document's ("Error: Report is not available"), exactly as
+// run_report_out_of_range.html and run_report_server_error.html already do.
+// Reading only the first <title> missed the specific sentinel and let the page
+// fall through to isErrorPage, so a run merely sitting in the judge queue came
+// back as ErrMalformedResponse and failed the whole request.
+func TestRunResult_StuckInQueue_MasterWrapped(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "37" {
+			serveFixture(w, fixture(t, "run_report_not_available_master_wrapped.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_master_ok.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
 	c := newClient(t, srv)
 
 	got, err := c.RunResult(context.Background(), "7")

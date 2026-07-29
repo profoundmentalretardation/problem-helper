@@ -57,6 +57,17 @@ var ErrDuplicateRequest = errors.New("store: help request already exists")
 // that has no help_requests row.
 var ErrUnknownRequest = errors.New("store: unknown request")
 
+// ErrNoRow is wrapped by the getters that report a missing row as an error
+// rather than as a nil result. The pipeline's resume path needs to tell "this
+// row does not exist" apart from "the database is unreachable": the first is a
+// corrupt checkpoint, which must be failed once with the real reason, while the
+// second is transient and must stay reclaimable. Without the distinction a
+// missing shield_records or submissions row left the request running with a
+// dead heartbeat, and every reclaim sweep re-hit it deterministically until
+// claim_attempts ran out and the real cause was overwritten with "abandoned
+// after N claim attempts".
+var ErrNoRow = errors.New("store: no such row")
+
 // ErrClaimLost is returned when a worker tries to write a terminal status
 // onto a request that has since been reclaimed by another worker. It is
 // deliberately distinct from ErrIllegalTransition: the transition was legal,
@@ -847,7 +858,7 @@ func (s *Store) GetSubmission(ctx context.Context, id uuid.UUID) (*Submission, e
 		&sub.TestsPassed, &sub.TestsTotal, &sub.SubmittedAt, &sub.IsBest,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("store: getting submission: no row with id %s", id)
+			return nil, fmt.Errorf("store: getting submission %s: %w", id, ErrNoRow)
 		}
 		return nil, fmt.Errorf("store: getting submission: %w", err)
 	}
@@ -918,7 +929,7 @@ func (s *Store) GetShieldRecordByRequest(ctx context.Context, requestID uuid.UUI
 	var r ShieldRecord
 	if err := row.Scan(&r.ID, &r.RequestID, &r.CodeBefore, &r.CodeAfter, &r.Diff, &r.Removed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("store: getting shield record: no row for request %s", requestID)
+			return nil, fmt.Errorf("store: getting shield record for request %s: %w", requestID, ErrNoRow)
 		}
 		return nil, fmt.Errorf("store: getting shield record: %w", err)
 	}

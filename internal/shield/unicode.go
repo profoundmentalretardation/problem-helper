@@ -2,6 +2,8 @@ package shield
 
 import (
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -46,17 +48,33 @@ func invisibleName(r rune) (string, bool) {
 func sanitizeUnicode(code string) (string, []UnicodeRemoval) {
 	normalized := norm.NFC.String(code)
 
-	var out []rune
+	var out strings.Builder
+	out.Grow(len(normalized))
 	var removed []UnicodeRemoval
-	for _, r := range normalized {
+	for i := 0; i < len(normalized); {
+		r, w := utf8.DecodeRuneInString(normalized[i:])
+		// An invalid byte decodes as (RuneError, 1). Writing the decoded rune
+		// back would replace it with U+FFFD: ejudge accepts raw bytes and
+		// CP1251-encoded sources with Cyrillic literals are common there, so
+		// every non-ASCII byte of such a submission would be rewritten — in the
+		// code the model diagnoses *and* the code submitted to the judge — with
+		// nothing recorded in Removed to show it happened. Pass the byte
+		// through untouched instead.
+		if r == utf8.RuneError && w <= 1 {
+			out.WriteByte(normalized[i])
+			i++
+			continue
+		}
 		if name, bad := invisibleName(r); bad {
 			removed = append(removed, UnicodeRemoval{
 				Name:      name,
 				Codepoint: fmt.Sprintf("U+%04X", r),
 			})
+			i += w
 			continue
 		}
-		out = append(out, r)
+		out.WriteString(normalized[i : i+w])
+		i += w
 	}
-	return string(out), removed
+	return out.String(), removed
 }

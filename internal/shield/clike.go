@@ -33,6 +33,12 @@ import "strings"
 // was treated as code — meaning // and /* */ *inside* the text block were
 // deleted from CodeAfter, the very text handed to the repair model and
 // submitted to the judge.
+// maxTokenScan bounds the backward walks in isDigitSeparator and
+// javaUnicodeEscape. Both are called at offsets the main scan visits one after
+// another, so an unbounded walk makes a crafted submission quadratic; no real
+// token is anywhere near this long.
+const maxTokenScan = 256
+
 func stripCLikeComments(code string, lang Language) (string, []string) {
 	syn := syntaxFor(lang)
 	textBlocks := syn.textBlocks
@@ -122,9 +128,25 @@ func stripCLikeComments(code string, lang Language) (string, []string) {
 			i = end
 
 		default:
-			out.WriteByte(c)
-			dir.code(code[i : i+1])
-			i++
+			// Advance by the *effective* width, not one raw byte. The bytes
+			// skipped over are the line splices and unicode-escape digits
+			// effChar already consumed, and none of them can open a comment or
+			// a literal on their own, so the emitted text is byte-identical to
+			// walking them one at a time. Walking them one at a time made every
+			// byte of a splice run re-scan the rest of that run: a submission
+			// of backslash-newline pairs (legal C, splices to nothing) is
+			// quadratic, and shield.Strip has no timeout — the pipeline stalls
+			// with the heartbeat still ticking, so the request is never even
+			// reclaimed.
+			step := w
+			if step <= 0 {
+				// A splice run that reaches EOF: nothing effective is left, so
+				// emit the remainder verbatim and stop.
+				step = n - i
+			}
+			out.WriteString(code[i : i+step])
+			dir.code(code[i : i+step])
+			i += step
 		}
 	}
 
@@ -300,11 +322,15 @@ func javaUnicodeEscape(code string, i int) (byte, int, bool) {
 	if i >= len(code) || code[i] != '\\' {
 		return 0, 0, false
 	}
+	// Bounded for the same reason isDigitSeparator's walk is: effChar is called
+	// at every offset, so an unbounded count over a long backslash run is
+	// quadratic. A run at the cap has no parity we can trust, so the escape is
+	// not decoded — the same answer an odd count gives.
 	preceding := 0
-	for k := i - 1; k >= 0 && code[k] == '\\'; k-- {
+	for k := i - 1; k >= 0 && preceding < maxTokenScan && code[k] == '\\'; k-- {
 		preceding++
 	}
-	if preceding%2 != 0 {
+	if preceding%2 != 0 || preceding >= maxTokenScan {
 		return 0, 0, false
 	}
 	j := i + 1
@@ -389,9 +415,18 @@ func isDigitSeparator(code string, i int) bool {
 	if !isHexDigit(code[i-1]) || !isHexDigit(code[i+1]) {
 		return false
 	}
+	// The backward walk is bounded so that a line of nothing but apostrophes
+	// (1'1'1'…'1) cannot make the scan quadratic — every quote would otherwise
+	// re-walk the whole run back to its start. No real numeric literal or
+	// char-literal prefix comes close to maxTokenScan; a token that does is
+	// treated as not-a-separator, which is the fail-closed direction (skipEscaped
+	// then stops at the end of the line rather than swallowing the file).
 	start := i
-	for start > 0 && (isIdentChar(code[start-1]) || code[start-1] == '\'') {
+	for start > 0 && i-start < maxTokenScan && (isIdentChar(code[start-1]) || code[start-1] == '\'') {
 		start--
+	}
+	if i-start >= maxTokenScan {
+		return false
 	}
 	return start < len(code) && code[start] >= '0' && code[start] <= '9'
 }
@@ -502,11 +537,14 @@ func skipLineComment(code string, i int, syn clikeSyntax) int {
 			j++
 		}
 		line := strings.TrimSuffix(code[i:j], "\r")
-		trailing := 0
-		for trailing < len(line) && line[len(line)-1-trailing] == '\\' {
-			trailing++
-		}
-		if j >= n || trailing%2 == 0 {
+		// Phase 2 deletes *every* backslash immediately followed by a newline,
+		// unconditionally — parity is a phase-5 escape-sequence rule and has no
+		// bearing here. Counting it made `// note \\` + newline end the comment
+		// at the newline while the compiler spliced on, so the next line reached
+		// the model as ordinary code with Removed.Comments showing nothing
+		// missed. effChar and directiveTracker.code already splice
+		// unconditionally; this is the same rule.
+		if j >= n || len(line) == 0 || line[len(line)-1] != '\\' {
 			return j
 		}
 		j++ // splice: the next line is still comment
