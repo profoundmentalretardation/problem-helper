@@ -19,6 +19,31 @@ import "strings"
 // went on to the judge. textwrap.dedent("""...""") and multi-line format
 // strings hit the same path.
 func stripPythonComments(code string) (string, []string) {
+	stripped, comments, depth := stripPythonPass(code, false)
+	if depth == 0 {
+		return stripped, comments
+	}
+	// depth is only ever decremented and is clamped at zero, so the *safe*
+	// direction (a stray closing bracket) is guarded but the unsafe one is
+	// not: one unmatched opener — the single most common Python syntax error,
+	// and trivially craftable on purpose — leaves depth > 0 for the rest of
+	// the file, so every later triple-quoted literal is read as an expression
+	// operand and preserved. A payload in one then reaches the model as
+	// ordinary code with Removed.Comments empty: a bypass with no signal.
+	//
+	// A file whose brackets do not balance cannot compile, so the mangling
+	// risk the depth rule exists to prevent does not apply to it — there is no
+	// valid program to mangle. Re-run with the join tracking disabled and fail
+	// closed instead, stripping every triple-quoted literal alone on its line.
+	stripped, comments, _ = stripPythonPass(code, true)
+	return stripped, comments
+}
+
+// stripPythonPass is one scan of stripPythonComments. ignoreJoins forces the
+// bracket/continuation tracking off, so a literal alone on its *physical*
+// line counts as a docstring; it also returns the bracket depth left at EOF
+// so the caller can tell a balanced file from an uncompilable one.
+func stripPythonPass(code string, ignoreJoins bool) (string, []string, int) {
 	var out strings.Builder
 	var comments []string
 	n := len(code)
@@ -63,7 +88,8 @@ func stripPythonComments(code string) (string, []string) {
 				continue
 			}
 			end := pythonStringEnd(code, quoteStart, quote, triple)
-			if triple && depth == 0 && !continued && isDocstringPosition(code, i, end) {
+			joined := !ignoreJoins && (depth > 0 || continued)
+			if triple && !joined && isDocstringPosition(code, i, end) {
 				comments = append(comments, code[quoteStart:end])
 				// A docstring is an expression *statement*, and it may be the
 				// only statement in its suite: `def f():` followed by nothing
@@ -112,7 +138,7 @@ func stripPythonComments(code string) (string, []string) {
 		}
 	}
 
-	return out.String(), comments
+	return out.String(), comments, depth
 }
 
 // isDocstringPosition reports whether the literal spanning code[start:end]

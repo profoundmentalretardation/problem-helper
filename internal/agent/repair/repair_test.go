@@ -366,6 +366,40 @@ func TestRun_DuplicateSubmissionBurnsRetryInsteadOfFailingTheRun(t *testing.T) {
 	}
 }
 
+// A judge refusing the submission on its own terms — contest over, submission
+// limit, disabled language, source too large — is the same side of the
+// failed/no_fix line as a duplicate: the request was processed exactly as
+// designed, so it must not be reported to the caller as an internal fault.
+func TestRun_SubmitRejectedBurnsRetryInsteadOfFailingTheRun(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+
+	plat.ScriptSubmitError("problem-1", fmt.Errorf("judge: %w", platform.ErrSubmitRejected))
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-2", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"first try","mistakes":[]}`},
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"second try","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v (a rejected submission must not fail the whole run)", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if got.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2 (the rejection must consume a retry)", got.Attempts)
+	}
+}
+
 // The counterpart: a real platform outage must still fail the run rather
 // than being swallowed as just another failed attempt.
 func TestRun_NonDuplicateSubmitErrorStillFailsTheRun(t *testing.T) {

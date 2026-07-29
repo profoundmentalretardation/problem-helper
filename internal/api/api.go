@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -38,6 +39,11 @@ type Server struct {
 	store    Store
 	metaloop worker.MetaloopRunner
 
+	// sweepCtx parents the admin-triggered metaloop sweep, which is detached
+	// from its request but not from the process. StopSweeps cancels it.
+	sweepCtx   context.Context
+	stopSweeps context.CancelFunc
+
 	apiToken             string
 	adminToken           string
 	platform             string
@@ -50,9 +56,19 @@ type Server struct {
 // NewServer builds a Server from the loaded config. metaloop drives
 // POST /admin/metaloop/run — *worker.Metaloop in production.
 func NewServer(st Store, cfg *config.Config, metaloop worker.MetaloopRunner) *Server {
+	// The metaloop sweep must outlive its request (see handleMetaloopRun) but
+	// not the process. Owning the parent here gives StopSweeps something to
+	// cancel: a sweep detached with nothing but context.WithoutCancel is
+	// invisible to shutdown, so an ordinary deploy could cut it at an
+	// arbitrary point with merges already committed and the batch unsealed —
+	// and the next instance's startup sweep then re-sends and re-merges it,
+	// the unbounded mistakes.count inflation sealBatch exists to prevent.
+	sweepCtx, stopSweeps := context.WithCancel(context.Background())
 	return &Server{
 		store:                st,
 		metaloop:             metaloop,
+		sweepCtx:             sweepCtx,
+		stopSweeps:           stopSweeps,
 		apiToken:             cfg.Env.APIToken,
 		adminToken:           cfg.Env.AdminToken,
 		platform:             cfg.Env.Platform,
@@ -61,6 +77,12 @@ func NewServer(st Store, cfg *config.Config, metaloop worker.MetaloopRunner) *Se
 		now:                  time.Now,
 	}
 }
+
+// StopSweeps cancels any admin-triggered metaloop sweep still running. Call it
+// before http.Server.Shutdown so the sweep stops between users and its handler
+// returns inside the shutdown budget, rather than being cut mid-batch when the
+// process exits.
+func (s *Server) StopSweeps() { s.stopSweeps() }
 
 // Handler builds the routed, auth-wrapped http.Handler.
 func (s *Server) Handler() http.Handler {
@@ -109,8 +131,22 @@ const maxHelpBodyBytes = 8 << 10
 
 // maxIdentifierLen bounds user_id and problem_id. Both are forwarded to the
 // judging platform (ejudge interpolates user_id into a server-side filter
-// expression) and stored in unbounded TEXT columns.
-const maxIdentifierLen = 128
+// expression) and stored in unbounded TEXT columns. 64 is ejudge's own login
+// limit — see identifierRe.
+const maxIdentifierLen = 64
+
+// identifierRe is the character set user_id and problem_id may use. It is
+// deliberately the same rule the ejudge client enforces on a login
+// (loginRe), applied here instead of only there, for two reasons.
+//
+// The rate limiter keys on the exact string, so without a canonical form
+// `alice`, `alice ` and `alice\n` are three separate daily quota buckets —
+// anything that can influence the field resets the per-user LLM budget at
+// will. And an identifier the platform will refuse is an input-validation
+// error: accepting it with 202 and discovering it several steps into the
+// pipeline reports it to the caller as `status=failed`, an internal fault,
+// after spending a queue slot and a claim cycle on it.
+var identifierRe = regexp.MustCompile(`^[A-Za-z0-9._@-]+$`)
 
 // maxNSubmissions caps how many submissions one request may pull, so a
 // caller can't turn a single /help into an unbounded platform scrape.
@@ -139,12 +175,20 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is too long"})
 		return
 	}
+	if !identifierRe.MatchString(body.UserID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id contains unsupported characters"})
+		return
+	}
 	if body.ProblemID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "problem_id is required"})
 		return
 	}
 	if len(body.ProblemID) > maxIdentifierLen {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "problem_id is too long"})
+		return
+	}
+	if !identifierRe.MatchString(body.ProblemID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "problem_id contains unsupported characters"})
 		return
 	}
 	nSubmissions := s.defaultNSubmissions
@@ -255,7 +299,14 @@ func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
 	// timeout) mid-sweep would abort it with writes already committed. The
 	// curator seals its batch on that path, but the remaining users would be
 	// skipped for no reason a caller cares about.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), metaloopRunTimeout)
+	//
+	// The parent is the server's own sweep context, not context.Background():
+	// a sweep nothing can cancel is one shutdown cannot wait for or stop, so
+	// the process would exit through the middle of it. StopSweeps makes it
+	// stop at the next user boundary instead, and the curator's sealing write
+	// runs on context.WithoutCancel so the batch it already touched is still
+	// sealed.
+	ctx, cancel := context.WithTimeout(s.sweepCtx, metaloopRunTimeout)
 	defer cancel()
 
 	// The server's WriteTimeout is far shorter than metaloopRunTimeout, so
@@ -271,9 +322,16 @@ func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
 	// error is deliberately ignored.
 	_ = http.NewResponseController(w).SetWriteDeadline(s.now().Add(metaloopRunTimeout + writeDeadlineSlack))
 
-	summary, err := s.metaloop.Run(ctx)
+	summary, ran, err := s.metaloop.TryRun(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !ran {
+		// A sweep is already running — the nightly cron, or an earlier
+		// trigger. Queueing behind it would block this handler for up to a
+		// full sweep and then run against the same batches it just processed.
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a metaloop sweep is already running"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{

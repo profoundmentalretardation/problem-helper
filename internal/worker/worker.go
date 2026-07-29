@@ -50,6 +50,11 @@ type PipelineRunner interface {
 // Worker's cron tests independent of the curator/store stack.
 type MetaloopRunner interface {
 	Run(ctx context.Context) (MetaloopSummary, error)
+	// TryRun does nothing and reports busy=false when a sweep is already in
+	// progress, so the admin trigger can answer 409 instead of queueing an
+	// unkillable goroutine behind a sweep that is already processing the same
+	// batches. See Metaloop.TryRun.
+	TryRun(ctx context.Context) (MetaloopSummary, bool, error)
 }
 
 // Worker claims and runs help_requests rows until its context is canceled.

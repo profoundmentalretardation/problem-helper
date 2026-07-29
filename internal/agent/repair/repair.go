@@ -92,6 +92,8 @@ const (
 	costCapNote         = `{"ok":false,"error":"your previous attempt exceeded its cost budget before it submitted a fix; investigate with fewer tool calls and submit sooner"}`
 	invalidResponseNote = `{"ok":false,"error":"your previous attempt did not return JSON matching the required schema; reply with a single JSON object in the documented shape"}`
 	toolBackstopNote    = `{"ok":false,"error":"your previous attempt used every allowed tool call without submitting a fix; investigate less and submit a fix"}`
+	duplicateNote       = `{"ok":false,"error":"the judge refused your previous fix as byte-identical to a run it already has; that code has already been tried, so change your diagnosis and propose a different fix"}`
+	submitRejectedNote  = `{"ok":false,"error":"the judge refused to accept your previous fix (contest closed, submission limit, disabled language, or source too large); it was never run"}`
 )
 
 // Mistake is one habit the model flagged as worth remembering about the
@@ -380,11 +382,33 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			// let the loop terminate as no_fix rather than failing the whole
 			// request (which would report an internal error to the caller
 			// and pollute the failed/no_fix analytics split).
+			// The note is the point, not just the `continue`: runAttempt
+			// rebuilds its conversation from the template out of inputs that
+			// do not change here — previousCode already held this code in the
+			// common case — so without one the next attempt sends a
+			// byte-identical message list, the model repeats itself, and the
+			// whole max_retries budget burns on the same exchange with the
+			// model never told its submission was refused at all. Same rule
+			// every other abandonment path in this loop follows.
 			if errors.Is(err, platform.ErrDuplicateSubmission) {
 				if evErr := r.recordDuplicateSubmission(ctx, p.RequestID, attempts); evErr != nil {
 					return Result{}, evErr
 				}
 				previousCode = code
+				priorNote = duplicateNote
+				continue
+			}
+			// A judge refusing the submission on its own terms — contest over,
+			// submission limit, disabled language, source too large — is the
+			// same side of the line: the request was processed as designed, so
+			// burn the attempt and let the loop terminate as no_fix rather
+			// than reporting an internal fault. See platform.ErrSubmitRejected.
+			if errors.Is(err, platform.ErrSubmitRejected) {
+				if evErr := r.recordSubmitRejected(ctx, p.RequestID, attempts, err); evErr != nil {
+					return Result{}, evErr
+				}
+				previousCode = code
+				priorNote = submitRejectedNote
 				continue
 			}
 			return Result{}, fmt.Errorf("repair: submitting for verification: %w", err)
@@ -768,6 +792,26 @@ func (r *Runner) recordDuplicateSubmission(ctx context.Context, requestID uuid.U
 	}
 	if err := r.Events.AppendEvent(ctx, requestID, "repair_duplicate_submission", payload); err != nil {
 		return fmt.Errorf("repair: recording duplicate submission: %w", err)
+	}
+	return nil
+}
+
+// recordSubmitRejected logs the judge's own stated reason for refusing the
+// submission. It is the only place that reason survives: the loop terminates
+// as no_fix, whose failure reason says nothing about the judge.
+func (r *Runner) recordSubmitRejected(ctx context.Context, requestID uuid.UUID, attempt int, cause error) error {
+	if r.Events == nil {
+		return nil
+	}
+	payload, err := json.Marshal(struct {
+		Attempt int    `json:"attempt"`
+		Reason  string `json:"reason"`
+	}{attempt, cause.Error()})
+	if err != nil {
+		return fmt.Errorf("repair: encoding submit-rejected event: %w", err)
+	}
+	if err := r.Events.AppendEvent(ctx, requestID, "repair_submit_rejected", payload); err != nil {
+		return fmt.Errorf("repair: recording submit rejection: %w", err)
 	}
 	return nil
 }

@@ -19,6 +19,16 @@ import (
 // Backends wrap their own sentinel around this one.
 var ErrDuplicateSubmission = errors.New("platform: duplicate submission")
 
+// ErrSubmitRejected is the backend-independent signal that a judge refused a
+// submission on its own terms — the contest being over, a per-user submission
+// limit, a disabled language, a source over the size cap. Like
+// ErrDuplicateSubmission it is the judge saying no, not our infrastructure
+// breaking, so the repair loop burns the attempt and terminates as `no_fix`
+// rather than reporting an internal fault to a caller whose request was
+// processed exactly as designed — and rather than polluting the failed/no_fix
+// analytics split. Backends wrap their own sentinel around this one.
+var ErrSubmitRejected = errors.New("platform: submission rejected")
+
 // ErrRunNotFound is the backend-independent signal that a judge does not
 // recognise a run id. Like ErrDuplicateSubmission it is an outcome rather
 // than a fault: the repair loop uses it to tell "the run I persisted before

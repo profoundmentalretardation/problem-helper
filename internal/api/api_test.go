@@ -122,11 +122,22 @@ type fakeMetaloopRunner struct {
 	summary worker.MetaloopSummary
 	err     error
 	calls   int
+	// busy makes TryRun report a sweep already in progress, the case the
+	// admin route answers with 409 instead of queueing behind it.
+	busy bool
 }
 
 func (f *fakeMetaloopRunner) Run(_ context.Context) (worker.MetaloopSummary, error) {
 	f.calls++
 	return f.summary, f.err
+}
+
+func (f *fakeMetaloopRunner) TryRun(_ context.Context) (worker.MetaloopSummary, bool, error) {
+	if f.busy {
+		return worker.MetaloopSummary{}, false, nil
+	}
+	f.calls++
+	return f.summary, true, f.err
 }
 
 func newTestServer(t *testing.T, fs *fakeStore) http.Handler {
@@ -224,8 +235,15 @@ func TestHandleHelp_Validation(t *testing.T) {
 		{"zero n_submissions", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 0}},
 		{"negative n_submissions", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": -1}},
 		{"n_submissions over cap", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 201}},
-		{"user_id too long", map[string]any{"user_id": strings.Repeat("a", 129), "problem_id": "p1"}},
-		{"problem_id too long", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 129)}},
+		{"user_id too long", map[string]any{"user_id": strings.Repeat("a", 65), "problem_id": "p1"}},
+		{"problem_id too long", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 65)}},
+		// The rate limiter keys on the exact string, so each of these would
+		// otherwise be its own daily quota bucket for the same student — and
+		// none of them is an identifier the platform would accept anyway.
+		{"user_id with trailing space", map[string]any{"user_id": "alice ", "problem_id": "p1"}},
+		{"user_id with newline", map[string]any{"user_id": "alice\n", "problem_id": "p1"}},
+		{"user_id with a quote", map[string]any{"user_id": `alice"`, "problem_id": "p1"}},
+		{"problem_id with a space", map[string]any{"user_id": "alice", "problem_id": "p 1"}},
 		{"body over cap", map[string]any{"user_id": "alice", "problem_id": "p1", "padding": strings.Repeat("x", 9<<10)}},
 	}
 	for _, tc := range cases {
@@ -251,8 +269,9 @@ func TestHandleHelp_LimitBoundariesAreAccepted(t *testing.T) {
 		name string
 		body map[string]any
 	}{
-		{"user_id at max length", map[string]any{"user_id": strings.Repeat("a", 128), "problem_id": "p1"}},
-		{"problem_id at max length", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 128)}},
+		{"user_id at max length", map[string]any{"user_id": strings.Repeat("a", 64), "problem_id": "p1"}},
+		{"problem_id at max length", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 64)}},
+		{"identifier punctuation ejudge allows", map[string]any{"user_id": "a.b-c@e", "problem_id": "prob-1.a"}},
 		{"n_submissions at cap", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 200}},
 	}
 	for _, tc := range cases {
@@ -537,6 +556,24 @@ func TestHandleMetaloopRun_Error(t *testing.T) {
 	w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "admin-secret", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500, body = %s", w.Code, w.Body.String())
+	}
+}
+
+// A sweep already in progress must be answered, not queued behind: the mutex
+// ignores the context, so the handler would block for up to a full sweep and
+// then run against the same batches the sweep ahead of it just processed —
+// with its extended write deadline expiring in the meantime.
+func TestHandleMetaloopRun_ConcurrentSweepIsRejected(t *testing.T) {
+	fs := newFakeStore()
+	ml := &fakeMetaloopRunner{busy: true}
+	h := newTestServerWithMetaloop(t, fs, ml)
+
+	w := doRequest(h, http.MethodPost, "/admin/metaloop/run", "admin-secret", nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", w.Code, w.Body.String())
+	}
+	if ml.calls != 0 {
+		t.Errorf("calls = %d, want 0 (no sweep should have started)", ml.calls)
 	}
 }
 

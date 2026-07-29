@@ -6,7 +6,11 @@ services:
       POSTGRES_PASSWORD: helper
       POSTGRES_DB: helper
     ports:
-      - "5432:5432"
+      # Loopback only. A bare "5432:5432" binds 0.0.0.0, so on any dev box that
+      # isn't firewalled this database — student code, hints, and
+      # help_requests.error, which carries ejudge URLs with an Administrator
+      # SID — is reachable from the LAN with credentials published in this file.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U helper"]
       interval: 2s

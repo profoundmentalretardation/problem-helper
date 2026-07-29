@@ -34,19 +34,30 @@ func Cost(u Usage, pricing config.PricingConfig) string {
 	// an understated — possibly negative — cost, silently disabling both cost
 	// caps against exactly the provider whose accounting differs. Clamp
 	// rather than trust.
+	// All three counts are clamped, not just the cached one: with a negative
+	// InputTokens the clamp below drags cachedInput negative with it, and
+	// OutputTokens was never checked at all — so one garbled usage block
+	// produced a negative cost that *subtracts* from the running retryCost and
+	// loopCost the agents accumulate, letting a loop run to max_retries with
+	// neither cap ever binding. Same reasoning as the cached-count clamp: an
+	// understated cost silently disables both caps against exactly the
+	// provider whose accounting is wrong.
+	inputTokens := max(u.InputTokens, 0)
+	outputTokens := max(u.OutputTokens, 0)
+
 	cachedInput := u.CachedInputTokens
 	if cachedInput < 0 {
 		cachedInput = 0
 	}
-	if cachedInput > u.InputTokens {
-		cachedInput = u.InputTokens
+	if cachedInput > inputTokens {
+		cachedInput = inputTokens
 	}
-	uncachedInput := u.InputTokens - cachedInput
+	uncachedInput := inputTokens - cachedInput
 
 	total := new(big.Rat)
 	total.Add(total, tokenCost(uncachedInput, pricing.Input, million))
 	total.Add(total, tokenCost(cachedInput, pricing.CachedInput, million))
-	total.Add(total, tokenCost(u.OutputTokens, pricing.Output, million))
+	total.Add(total, tokenCost(outputTokens, pricing.Output, million))
 
 	return total.FloatString(6)
 }

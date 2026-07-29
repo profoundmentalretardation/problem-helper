@@ -92,7 +92,11 @@ var (
 	// language, a source file over the contest's size cap. Those render an
 	// error page with no run table, so without this they came back as a bare
 	// ErrMalformedResponse and the judge's stated reason was thrown away.
-	ErrSubmitRejected = errors.New("ejudge: submission rejected")
+	//
+	// Wrapped around platform.ErrSubmitRejected for the reason that sentinel
+	// documents: this is the judge saying no, so the repair loop burns the
+	// attempt rather than failing the whole request.
+	ErrSubmitRejected = fmt.Errorf("ejudge: submission rejected: %w", platform.ErrSubmitRejected)
 )
 
 const (
@@ -216,14 +220,33 @@ func (c *Client) Submissions(ctx context.Context, userID, problemID string, limi
 	}
 
 	subs := make([]platform.Submission, 0, len(rows))
+	// A row that cannot be enriched is skipped, not fatal. Both enrichment
+	// calls fail *deterministically* per run id — a purged or rejudged run
+	// whose source ejudge no longer serves, an unparseable timestamp, a
+	// language whose source page renders differently — so aborting the whole
+	// call meant one odd run anywhere in a student's history made step 3 fail
+	// forever: the request never reaches a terminal status, ReclaimStale hands
+	// it out again, and it burns all of store.maxClaimAttempts before landing
+	// on `failed`, for a student with perfectly good other submissions sitting
+	// right there. pick.Best already tolerates a short list. A context error is
+	// not a property of the run, so it still aborts.
+	var lastErr error
 	for _, r := range rows {
 		src, err := c.fetchViewSource(ctx, r.runID)
 		if err != nil {
-			return nil, err
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			lastErr = err
+			continue
 		}
 		passed, total, err := c.fetchTestCounts(ctx, r.runID)
 		if err != nil {
-			return nil, err
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			lastErr = err
+			continue
 		}
 		subs = append(subs, platform.Submission{
 			ID:          r.runID,
@@ -233,6 +256,11 @@ func (c *Client) Submissions(ctx context.Context, userID, problemID string, limi
 			TestsTotal:  total,
 			SubmittedAt: src.submittedAt,
 		})
+	}
+	// Every row failing is the outage case, not the odd-run case: report it
+	// rather than passing an empty list off as `no_submissions`.
+	if len(subs) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
 	return subs, nil
 }
@@ -410,14 +438,39 @@ func (c *Client) submitWithSession(ctx context.Context, problemID, langID, code 
 		return body, nil
 	}
 
-	c.mu.Lock()
-	c.clientSID = ""
-	c.mu.Unlock()
+	c.invalidateClientSID(sid)
 	sid, err = c.loginClient(ctx)
 	if err != nil {
 		return "", err
 	}
 	return c.submitMultipart(ctx, sid, problemID, langID, code)
+}
+
+// invalidateMasterSID and invalidateClientSID clear the cached session only
+// if it is still the one that failed.
+//
+// Clearing unconditionally discarded a session a *different* goroutine had
+// just established: with WORKER_CONCURRENCY above 1, every goroutine holding
+// the same expired SID detects the expiry, and each one's fresh login is then
+// thrown away by the next one's clear. That is a login storm against a judge
+// that caps concurrent sessions per user, and it re-surfaces "Error: Invalid
+// session" on requests whose session was fine — which lands as
+// ErrMalformedResponse and status=failed. The follow-up in submitWithSession
+// is a *submit*, so the same window costs a run under the shared system login.
+func (c *Client) invalidateMasterSID(failed string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.masterSID == failed {
+		c.masterSID = ""
+	}
+}
+
+func (c *Client) invalidateClientSID(failed string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.clientSID == failed {
+		c.clientSID = ""
+	}
 }
 
 // isNewerRunID reports whether runID is a later run than floor. An empty
@@ -615,9 +668,7 @@ func (c *Client) masterGet(ctx context.Context, action int, params url.Values) (
 		return "", err
 	}
 	if hasErrorTitle(body, "Error: Invalid session") {
-		c.mu.Lock()
-		c.masterSID = ""
-		c.mu.Unlock()
+		c.invalidateMasterSID(sid)
 		sid, err = c.loginMaster(ctx)
 		if err != nil {
 			return "", err
@@ -640,9 +691,7 @@ func (c *Client) clientGet(ctx context.Context, action int, params url.Values) (
 		return "", err
 	}
 	if hasErrorTitle(body, "Error: Invalid session") {
-		c.mu.Lock()
-		c.clientSID = ""
-		c.mu.Unlock()
+		c.invalidateClientSID(sid)
 		sid, err = c.loginClient(ctx)
 		if err != nil {
 			return "", err
@@ -877,9 +926,19 @@ func (c *Client) fetchSubmitPage(ctx context.Context, problemID string) (submitP
 		return submitPage{}, fmt.Errorf("ejudge: problem %q statement: %w", problemID, ErrMalformedResponse)
 	}
 
-	text := ""
-	if sm := statementRe.FindStringSubmatch(body); sm != nil {
-		text = htmlToText(sm[1])
+	// A failed statement parse is an error, not an empty statement. statementRe
+	// is a positional heuristic over markup that can differ per problem, and
+	// prompt.Render turns an empty value into the literal "none" — so drift on
+	// this one regex silently had the repair model diagnose with no problem
+	// statement at all, with nothing anywhere to signal it. Same rule
+	// fetchViewSource follows in refusing to return empty code.
+	sm := statementRe.FindStringSubmatch(body)
+	if sm == nil {
+		return submitPage{}, fmt.Errorf("ejudge: problem %q statement body: %w", problemID, ErrMalformedResponse)
+	}
+	text := htmlToText(sm[1])
+	if strings.TrimSpace(text) == "" {
+		return submitPage{}, fmt.Errorf("ejudge: problem %q statement is empty: %w", problemID, ErrMalformedResponse)
 	}
 
 	langIDs := map[string]string{}
@@ -1086,12 +1145,37 @@ func (c *Client) listMasterSubmissions(ctx context.Context, userID, problemID st
 		return nil, err
 	}
 
+	// Same gate every other parser in this file sits behind, and for a sharper
+	// reason: ejudge compiles filter_expr server-side, and when it cannot — an
+	// unknown login after a roster change, a filter-compiler error, a
+	// master-side fault — it renders the main page with an error banner and
+	// the *default, unfiltered* run list. Parsing that hands ProblemStatus
+	// another student's `OK` run (the request stops as already_solved) and
+	// Submissions another student's source code, which then goes to the repair
+	// model, the hint model, and back to the caller in the hint.
+	if isErrorPage(body) {
+		return nil, fmt.Errorf("ejudge: submissions list: %w", ErrMalformedResponse)
+	}
 	i := strings.Index(body, "<h2>Submissions</h2>")
 	if i < 0 {
 		return nil, fmt.Errorf("ejudge: submissions list: %w", ErrMalformedResponse)
 	}
+	// Bound the scan to the submissions table rather than the rest of the
+	// document, so a later table on the page cannot contribute rows.
+	section := body[i:]
+	if end := strings.Index(section, "</table>"); end >= 0 {
+		section = section[:end]
+	}
 	var rows []masterSubmissionRow
-	for _, m := range masterRowRe.FindAllStringSubmatch(body[i:], -1) {
+	for _, m := range masterRowRe.FindAllStringSubmatch(section, -1) {
+		// The filter is the judge's to honour; whether it did is ours to
+		// check. The row carries the problem it belongs to, so verify rather
+		// than trust — a row for another problem means the filter was not
+		// applied, and the same response's rows are then not this student's
+		// either.
+		if strings.TrimSpace(m[2]) != short {
+			return nil, fmt.Errorf("ejudge: submissions list: filter not honoured: %w", ErrMalformedResponse)
+		}
 		rows = append(rows, masterSubmissionRow{
 			runID:    m[1],
 			language: strings.TrimSpace(m[3]),
@@ -1348,6 +1432,21 @@ func reportTestDetail(body string, testID int) (input, output, correct string, o
 
 var sizedFieldRe = regexp.MustCompile(`--- (\w+): size (\d+) ---</u>\n?`)
 
+// fieldMarkerRe is the markup ejudge wraps each field header in. Like every
+// other sentinel in this file it is matched on generated markup rather than on
+// bare text: the field content is the submission's own stdout, escaped, so an
+// anchor a program can print verbatim is an anchor a student controls.
+var fieldMarkerRe = regexp.MustCompile(`<a name="[^"]*"></a>|<u>--- \w+: size \d+ ---</u>`)
+
+// nextFieldMarker returns the offset of the next field header in s, or -1.
+func nextFieldMarker(s string) int {
+	loc := fieldMarkerRe.FindStringIndex(s)
+	if loc == nil {
+		return -1
+	}
+	return loc[0]
+}
+
 // readSizedField finds "--- label: size N ---</u>" in section and returns
 // the field's N bytes of content.
 //
@@ -1367,7 +1466,21 @@ func readSizedField(section, label string) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		decoded := html.UnescapeString(section[m[1]:])
+		// The section runs to the next test marker, so it still contains every
+		// *following* field of this test. The declared size counts the raw
+		// file, but ejudge caps what it renders at the contest's
+		// max_file_length and prints the true size anyway — so on a truncated
+		// field the size overshoots what was rendered and the slice walks
+		// straight through `<a name="1O"></a><u>--- Output: size N ---</u>`
+		// and into the next block. Cut at the next field marker first: the
+		// repair model would otherwise be handed a test whose "Input" is the
+		// real input plus markup plus the program's own output — the corrupted
+		// test data this function exists to prevent, from the other side.
+		rest := section[m[1]:]
+		if next := nextFieldMarker(rest); next >= 0 {
+			rest = rest[:next]
+		}
+		decoded := html.UnescapeString(rest)
 		if size > len(decoded) {
 			size = len(decoded)
 		}

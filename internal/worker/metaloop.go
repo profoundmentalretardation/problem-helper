@@ -61,7 +61,28 @@ type Metaloop struct {
 func (m *Metaloop) Run(ctx context.Context) (MetaloopSummary, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.sweep(ctx)
+}
 
+// TryRun is Run for callers that must not block on a sweep already in
+// progress. It reports busy=false and does nothing when the lock is held.
+//
+// sync.Mutex.Lock ignores the context, so the admin handler queueing on it
+// was an unkillable goroutine waiting up to a full sweep before starting its
+// own — and its write deadline, extended before the wait, then expired
+// mid-sweep, which is the "operator sees nothing and retries" failure that
+// extension exists to fix. A queued sweep also has nothing to do: the sweep
+// ahead of it processes the same batches.
+func (m *Metaloop) TryRun(ctx context.Context) (MetaloopSummary, bool, error) {
+	if !m.mu.TryLock() {
+		return MetaloopSummary{}, false, nil
+	}
+	defer m.mu.Unlock()
+	summary, err := m.sweep(ctx)
+	return summary, true, err
+}
+
+func (m *Metaloop) sweep(ctx context.Context) (MetaloopSummary, error) {
 	users, err := m.Store.ListUsersWithUnprocessedMistakes(ctx)
 	if err != nil {
 		return MetaloopSummary{}, fmt.Errorf("worker: listing users with unprocessed mistakes: %w", err)
@@ -69,6 +90,15 @@ func (m *Metaloop) Run(ctx context.Context) (MetaloopSummary, error) {
 
 	var summary MetaloopSummary
 	for _, userID := range users {
+		// Stop once the sweep's context is done — the 30-minute admin cap, or
+		// SIGTERM for the cron sweep. Without this every remaining user still
+		// gets a full curator call whose first store query fails immediately,
+		// so a course-sized worklist produces a burst of thousands of useless
+		// log lines and round trips at exactly the moment the process is
+		// shutting down. The partial summary is still reported.
+		if ctx.Err() != nil {
+			break
+		}
 		result, err := m.Curator.Run(ctx, userID)
 		if err != nil {
 			m.logf("metaloop: curator for user %s: %v", userID, err)

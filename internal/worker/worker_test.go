@@ -574,6 +574,11 @@ func (f *fakeMetaloopRunner) Run(_ context.Context) (worker.MetaloopSummary, err
 	return worker.MetaloopSummary{}, nil
 }
 
+func (f *fakeMetaloopRunner) TryRun(ctx context.Context) (worker.MetaloopSummary, bool, error) {
+	s, err := f.Run(ctx)
+	return s, true, err
+}
+
 func (f *fakeMetaloopRunner) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

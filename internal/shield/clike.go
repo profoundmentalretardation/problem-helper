@@ -54,6 +54,18 @@ func stripCLikeComments(code string, lang Language) (string, []string) {
 	// early and turns the rest of its replacement list into a new logical
 	// line. See newlinePadding.
 	dir := directiveTracker{syn: syn, atLineStart: true}
+	// Delimiters whose closing sequence is known to be absent from the rest of
+	// the file. rawStringEnd's search is a strings.Index over the whole
+	// remainder, and a miss only advances the scan to the end of the current
+	// line (unterminatedEnd, fail-closed), so a file of repeated unterminated
+	// openers re-searched the whole remainder from every line — quadratic, and
+	// with ejudge sources bounded only by maxResponseBytes (32 MiB) that is
+	// minutes of CPU inside a Strip that has no timeout and a pipeline step
+	// that has none either: the worker stalls with its heartbeat still ticking
+	// and the request is never even reclaimed. The scan only ever moves
+	// forward, so a delimiter absent from code[j+1:] is absent from every
+	// later suffix.
+	rawAbsent := map[string]bool{}
 
 	for i < n {
 		c := code[i]
@@ -99,7 +111,7 @@ func stripCLikeComments(code string, lang Language) (string, []string) {
 			case textBlocks && isEffTripleQuote(code, i, syn):
 				end = textBlockEnd(code, i, syn)
 			default:
-				if raw, ok := rawStringEnd(code, i, syn); ok {
+				if raw, ok := rawStringEnd(code, i, syn, rawAbsent); ok {
 					end = raw
 				} else {
 					end = skipEscaped(code, i, '"', syn)
@@ -457,23 +469,48 @@ func isIdentChar(c byte) bool {
 // A miss returns false so the caller falls back to the ordinary string scan —
 // `R` is a legal identifier, and `R"foo"` in Go is an identifier followed by
 // a plain string, not a raw literal.
-func rawStringEnd(code string, i int, syn clikeSyntax) (int, bool) {
+func rawStringEnd(code string, i int, syn clikeSyntax, absent map[string]bool) (int, bool) {
 	// C++ only. In C, Java and Go `R"..."` is an identifier followed by an
 	// ordinary string, so honouring the raw form there scans a plain string
 	// by rules the compiler does not use.
 	if !syn.rawStrings {
 		return 0, false
 	}
-	if i == 0 || code[i-1] != 'R' {
+	// The prefix is resolved on *effective* characters, like every other
+	// decision in this scanner: C deletes backslash-newline in phase 2, before
+	// lexing, so `R\`+newline+`"(a"b)"` opens a raw string to the compiler.
+	// Reading the raw byte before the quote saw the newline, missed the `R`,
+	// and fell back to skipEscaped — which ends the literal at the embedded
+	// quote and swallows the following `//` as ordinary code, with nothing in
+	// Removed.Comments to say a comment was missed.
+	//
+	// i is where the caller *matched* the effective quote, which for a spliced
+	// opener is the first backslash of the splice run rather than the quote
+	// byte itself; the d-char walk below reads raw bytes forward, so it has to
+	// start from the quote.
+	i = effCharIndex(code, i, syn)
+	r := prevEffIndex(code, i, syn)
+	if r < 0 || code[r] != 'R' {
 		return 0, false
 	}
 	// Only the encoding prefixes may precede the R; anything else means the
 	// R belongs to an identifier that merely ends in R.
+	p1 := prevEffIndex(code, r, syn)
 	switch {
-	case i-1 == 0:
-	case !isIdentChar(code[i-2]):
-	case strings.HasSuffix(code[:i-1], "u8") && (i-3 == 0 || !isIdentChar(code[i-4])):
-	case (code[i-2] == 'L' || code[i-2] == 'u' || code[i-2] == 'U') && (i-2 == 0 || !isIdentChar(code[i-3])):
+	case p1 < 0:
+	case !isIdentChar(code[p1]):
+	case code[p1] == '8':
+		p2 := prevEffIndex(code, p1, syn)
+		if p2 < 0 || code[p2] != 'u' {
+			return 0, false
+		}
+		if p3 := prevEffIndex(code, p2, syn); p3 >= 0 && isIdentChar(code[p3]) {
+			return 0, false
+		}
+	case code[p1] == 'L' || code[p1] == 'u' || code[p1] == 'U':
+		if p2 := prevEffIndex(code, p1, syn); p2 >= 0 && isIdentChar(code[p2]) {
+			return 0, false
+		}
 	default:
 		return 0, false
 	}
@@ -482,7 +519,7 @@ func rawStringEnd(code string, i int, syn clikeSyntax) (int, bool) {
 	// parenthesis, a backslash or a control character.
 	const maxDelim = 16
 	j := i + 1
-	for j < len(code) && j-(i+1) <= maxDelim && code[j] != '(' {
+	for j < len(code) && j-(i+1) < maxDelim && code[j] != '(' {
 		if code[j] <= ' ' || code[j] == ')' || code[j] == '\\' || code[j] == '"' {
 			return 0, false
 		}
@@ -493,11 +530,76 @@ func rawStringEnd(code string, i int, syn clikeSyntax) (int, bool) {
 	}
 
 	closing := ")" + code[i+1:j] + `"`
+	if absent[closing] {
+		return unterminatedEnd(code, i), true
+	}
 	rest := strings.Index(code[j+1:], closing)
 	if rest < 0 {
-		return unterminatedEnd(code, i), true // unterminated: fail closed
+		// Fail closed, and remember: the scan only moves forward, so this
+		// delimiter is absent from every later suffix too. Without the memo a
+		// file of repeated unterminated openers re-searches the whole
+		// remainder from every line.
+		absent[closing] = true
+		return unterminatedEnd(code, i), true
 	}
 	return j + 1 + rest + len(closing), true
+}
+
+// effCharIndex returns the index of the byte carrying the effective character
+// that syn.effChar reports at i: i itself, unless a run of backslash-newline
+// splices sits in front of it in a language that has them.
+func effCharIndex(code string, i int, syn clikeSyntax) int {
+	if !syn.splices {
+		return i
+	}
+	for scanned := 0; i < len(code) && code[i] == '\\' && scanned < maxTokenScan; scanned++ {
+		j := i + 1
+		if j < len(code) && code[j] == '\r' {
+			j++
+		}
+		if j < len(code) && code[j] == '\n' {
+			i = j + 1
+			continue
+		}
+		break
+	}
+	return i
+}
+
+// prevEffIndex returns the index of the effective character preceding i —
+// the byte the compiler sees there after translation phase 2 deletes
+// backslash-newline splices — or -1 if i is at the start of the (effective)
+// text. Splices are skipped only in the languages that have them, for the
+// reason clikeSyntax documents: applying C's splice to Java or Go would read
+// past a real backslash.
+func prevEffIndex(code string, i int, syn clikeSyntax) int {
+	k := i - 1
+	if !syn.splices {
+		if k < 0 {
+			return -1
+		}
+		return k
+	}
+	for scanned := 0; k >= 0 && scanned < maxTokenScan; scanned++ {
+		// A splice is `\` followed by \n or \r\n, so walking backwards the
+		// newline comes first.
+		j := k
+		if j >= 0 && code[j] == '\n' {
+			j--
+			if j >= 0 && code[j] == '\r' {
+				j--
+			}
+			if j >= 0 && code[j] == '\\' {
+				k = j - 1
+				continue
+			}
+		}
+		break
+	}
+	if k < 0 {
+		return -1
+	}
+	return k
 }
 
 // skipLineComment returns the index just past the // comment opening at i.

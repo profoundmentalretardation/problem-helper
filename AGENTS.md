@@ -649,6 +649,98 @@ research/              frozen Python prototypes (reference only, see research/RE
   it, so an instance permanently ran one help request at a time, each holding its slot for the
   whole repair loop including judge polling. Optional, defaults to 1, and a value that would
   disable the pool is a startup error.
+- **A fail-closed fallback must not restart the search it fell back from** (`rawStringEnd` in
+  `internal/shield/clike.go`): an unterminated `R"delim(` searches the whole remainder for its
+  closing sequence, and `unterminatedEnd` then advances the scan only to the end of *that line* —
+  so the next line's opener searched the same remainder again. Quadratic, on input bounded only
+  by `maxResponseBytes` (32 MiB), inside a `Strip` with no timeout and a pipeline step with none
+  either: the worker stalls with its heartbeat still ticking, so the request is never even
+  reclaimed. The scan only moves forward, so a delimiter absent from one suffix is absent from
+  every later one — that memo is the fix, and `TestStrip_PathologicalInputTerminatesQuickly`
+  covers it beside the splice/apostrophe/backslash runs.
+- **Every decision in the C-family scanner reads *effective* characters, including the ones
+  around the token** (`prevEffIndex`/`effCharIndex` in `internal/shield/clike.go`):
+  `rawStringEnd` resolved its `R` and encoding prefix off raw bytes, so `R\`+newline+`"(a"b)"` —
+  a raw string to the compiler, which splices in phase 2 before lexing — was missed, fell back to
+  the escaped-string scan, ended at the embedded quote and emitted the following `//` as code
+  with `Removed.Comments` empty. The caller also matches the effective quote at the *splice's*
+  first backslash, so the forward d-char walk has to be re-based on the real quote byte.
+- **Python's bracket depth is clamped in the safe direction only** (`stripPythonComments`):
+  `depth` never resets, so one unmatched opener — the commonest Python syntax error, and
+  trivially craftable — left it above zero for the rest of the file and every later
+  triple-quoted literal was preserved as an expression operand. An unbalanced file cannot
+  compile, so the mangling risk the depth rule exists to prevent does not apply to it: the
+  scan re-runs with the join tracking off and fails closed instead.
+- **The sanitize-before-strip order is only as good as `invisibleRanges`**
+  (`internal/shield/unicode.go`): the table covered the zero-width/bidi/tag blocks but not the
+  Hangul fillers, U+2800, the musical format controls, the combining grapheme joiner or the
+  C0/C1 controls — each of which renders as nothing and so is the same comment-opener bypass at
+  a codepoint the table forgot. U+00A0 is deliberately *not* in it: NBSP is legitimate inside a
+  string literal, and removing it changes what the judge runs.
+- **A judge refusing a submission on its own terms is a verdict, like a duplicate**
+  (`platform.ErrSubmitRejected`): ejudge's `ErrSubmitRejected` wrapped no backend-independent
+  sentinel, so "contest is over", a submission limit, a disabled language and an oversized source
+  all bubbled out of loop 1 as `status=failed` — an internal fault reported for a request handled
+  exactly as designed, and the same failed/no_fix analytics split `ErrDuplicateSubmission`
+  exists to keep. Both paths also now carry a `priorNote`: `runAttempt` rebuilds its conversation
+  from inputs that do not change when nothing was judged, so a bare `continue` resent a
+  byte-identical message list and the model repeated itself until `max_retries` ran out.
+- **A placeholder supplied but absent from the template fails open, so the set is checked at
+  startup** (`checkPromptTemplates` in `cmd/helper/main.go`): `Render` errors only in the other
+  direction. Dropping `{{hint}}` from `prompts/guardrail.md` therefore rendered cleanly, asked
+  the guardrail whether a hint gives the answer away while showing it no hint, and got back an
+  explicit `{"approved":true}` — an unreviewed hint delivered and cached, with no error anywhere.
+  Same rationale as `validateCaps` and the pricing-value validation.
+- **`user_id` is canonicalised at the HTTP boundary, not only at the ejudge one**
+  (`identifierRe` in `internal/api/api.go`): the rate limiter keys on the exact string, so
+  `alice`, `alice ` and `alice\n` were three separate daily quota buckets — anything that can
+  influence the field reset the per-user model budget at will — and an id ejudge would refuse was
+  accepted with 202, then reported to the caller as `status=failed` after spending a queue slot
+  and a claim cycle. Same character set as `loginRe`, applied before the row is written.
+- **A detached sweep still needs an owner** (`Server.sweepCtx`/`StopSweeps`,
+  `Metaloop.TryRun`): `POST /admin/metaloop/run` ran on `context.WithoutCancel` with a 30-minute
+  cap against a 30-second grace period, so shutdown could neither wait for it nor stop it and the
+  process exited mid-batch with merges committed — which the next instance's startup sweep
+  re-sends and re-merges, the inflation `sealBatch` exists to prevent. `sync.Mutex.Lock` also
+  ignores the context, so a second trigger was an unkillable goroutine queued behind a sweep
+  already processing its batches; `TryRun` answers 409 instead. `Run` breaks between users once
+  the context is done.
+- **A cached session is cleared only if it is still the one that failed**
+  (`invalidateMasterSID`/`invalidateClientSID`): with `WORKER_CONCURRENCY` above 1 every
+  goroutine holding the same expired SID detects the expiry, and an unconditional clear threw
+  away each fresh login as the next goroutine arrived — a login storm against a judge that caps
+  concurrent sessions, re-surfacing `Error: Invalid session` on healthy requests. The follow-up
+  in `submitWithSession` is a *submit*, so that window costs a run under the shared system login.
+- **A filter the judge evaluates is verified in the response, not trusted**
+  (`listMasterSubmissions`): ejudge compiles `filter_expr` server-side and renders the main page
+  with the *default, unfiltered* run list when it cannot — an unknown login after a roster change,
+  a filter-compiler fault. Parsing that handed `ProblemStatus` another student's `OK` run and
+  `Submissions` another student's source, which then reaches both models and the delivered hint.
+  The row carries its problem, so it is checked; the body goes through `isErrorPage` first and
+  the scan is bounded to the submissions table.
+- **One unreadable run must not condemn the whole history** (`Submissions`): both enrichment
+  calls fail deterministically per run id, so aborting on the first meant a single purged or
+  oddly-rendered run made step 3 fail forever — the request never terminal, re-handed out by
+  every reclaim sweep until `claim_attempts` ran out, for a student with good submissions right
+  there. Rows are skipped and only an empty result with an error is fatal. Relatedly, a failed
+  *statement body* parse is now an error rather than `Statement{Text: ""}`, which
+  `prompt.Render` turned into the literal "none" and had the repair model diagnose blind.
+- **A declared size is a claim about the file, not about what was rendered**
+  (`readSizedField`): ejudge prints the true size but caps what it renders at `max_file_length`,
+  so on a truncated field the size overshoots and the slice walks through the next block's
+  markup and content — the repair model handed a test whose "Input" is the input plus anchors
+  plus the program's own output. The slice is cut at the next field marker first, and that marker
+  is generated markup for the reason `hasErrorTitle` documents.
+- **Only the cached token count was clamped** (`llm.Cost`): a negative `InputTokens` dragged
+  `cachedInput` negative with it and `OutputTokens` was never checked, so one garbled usage block
+  produced a negative cost that *subtracts* from the running `retryCost`/`loopCost` — letting a
+  loop run to `max_retries` with neither cap binding. Every count is clamped now. The response
+  body is bounded too (`maxResponseBytes` in `internal/llm/client.go`): the HTTP timeout caps how
+  long a provider may take, not how much it may send.
+- **ejudge names a toolchain *variant*, not just a language** (`shield.Canonical`): the alias
+  table is exact-match, so `gcc-32`/`g++-32`/`clang-32` were `ErrUnsupportedLanguage` and every
+  request in a course configured on one of them failed. `variantSuffixes` are stripped for a
+  second lookup rather than enumerating the combinations.
 
 ## Reference material
 

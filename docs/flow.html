@@ -1,0 +1,1691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Problem Helper — request flow</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Tokens. Neutral is slate with a violet bias so the indigo
+   accent reads as chosen rather than dropped on grey. Accent is
+   reserved for interaction (active scenario, focus, the spine);
+   verdict colours are semantic and never used decoratively.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --bg:        #f3f4f8;
+  --surface:   #ffffff;
+  --surface-2: #eceef4;
+  --sunken:    #e4e6ee;
+  --line:      #d9dbe6;
+  --line-soft: #e7e9f1;
+  --text:      #1a1c25;
+  --text-dim:  #585d72;
+  --text-mute: #7c8199;
+
+  --accent:      #4b3fc7;
+  --accent-ink:  #362da0;
+  --accent-soft: #ebe9fb;
+
+  --ok:        #1c7248;
+  --ok-soft:   #e2f1e8;
+  --warn:      #8f5c11;
+  --warn-soft: #f6ecd9;
+  --bad:       #ab2119;
+  --bad-soft:  #fbe6e4;
+  --calm:      #4d5772;
+  --calm-soft: #e6e8f0;
+
+  --shadow: 0 1px 2px rgba(20, 22, 40, .05), 0 8px 24px -16px rgba(20, 22, 40, .35);
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --rail: 15px;   /* x-offset of the pipeline spine */
+  --step: 0.28s;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #0e0f16;
+    --surface:   #161824;
+    --surface-2: #1c1f2e;
+    --sunken:    #12141d;
+    --line:      #2b3044;
+    --line-soft: #232739;
+    --text:      #e6e8f2;
+    --text-dim:  #a2a8bf;
+    --text-mute: #7f869d;
+
+    --accent:      #9b93ff;
+    --accent-ink:  #b6b0ff;
+    --accent-soft: #232042;
+
+    --ok:        #5ec98d;
+    --ok-soft:   #14301f;
+    --warn:      #e0a martin;
+    --warn:      #e0a94f;
+    --warn-soft: #33270f;
+    --bad:       #f2736a;
+    --bad-soft:  #351a19;
+    --calm:      #99a2bd;
+    --calm-soft: #1e2231;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -18px rgba(0, 0, 0, .9);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:        #0e0f16;
+  --surface:   #161824;
+  --surface-2: #1c1f2e;
+  --sunken:    #12141d;
+  --line:      #2b3044;
+  --line-soft: #232739;
+  --text:      #e6e8f2;
+  --text-dim:  #a2a8bf;
+  --text-mute: #7f869d;
+
+  --accent:      #9b93ff;
+  --accent-ink:  #b6b0ff;
+  --accent-soft: #232042;
+
+  --ok:        #5ec98d;
+  --ok-soft:   #14301f;
+  --warn:      #e0a94f;
+  --warn-soft: #33270f;
+  --bad:       #f2736a;
+  --bad-soft:  #351a19;
+  --calm:      #99a2bd;
+  --calm-soft: #1e2231;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -18px rgba(0, 0, 0, .9);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+code, .mono { font-family: var(--font-mono); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ── Masthead ───────────────────────────────────────────────── */
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.masthead__mark {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.masthead__title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  margin: 0;
+}
+.masthead__sub {
+  color: var(--text-mute);
+  font-size: 13px;
+  margin-left: -8px;
+}
+.masthead__spacer { flex: 1; }
+
+.ghost {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .05em;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Shell ──────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 40px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+
+.rail { position: sticky; top: 76px; align-self: start; }
+.rail__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin: 0 0 10px;
+}
+.rail__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.rail__link {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 10px;
+  border-left: 2px solid var(--line-soft);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13.5px;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.rail__link:hover { color: var(--text); background: var(--surface-2); }
+.rail__link.is-current { color: var(--accent); border-left-color: var(--accent); font-weight: 600; }
+.rail__num {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Sections ───────────────────────────────────────────────── */
+main { min-width: 0; }
+
+.lede { margin: 0 0 44px; max-width: 62ch; }
+.lede h1 {
+  font-family: var(--font-mono);
+  font-size: clamp(24px, 3.4vw, 34px);
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.lede p { color: var(--text-dim); margin: 0 0 10px; }
+
+.section { margin: 0 0 64px; scroll-margin-top: 84px; }
+.section__head { margin: 0 0 20px; }
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 8px;
+}
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--line), transparent);
+}
+.section h2 {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  margin: 0 0 6px;
+}
+.section__note { color: var(--text-dim); margin: 0; max-width: 68ch; font-size: 14.5px; }
+
+/* ── Scenario controls ──────────────────────────────────────── */
+.console {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin: 0 0 24px;
+}
+.console__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.console__label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-right: 4px;
+}
+.chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.chip:hover { color: var(--text); border-color: var(--text-mute); }
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .chip[aria-pressed="true"],
+:root:not([data-theme="light"]) .chip[aria-pressed="true"] { color: #14121f; }
+
+.narration {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  min-height: 44px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.narration__cursor {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  flex: none;
+}
+.narration__text b { color: var(--text); font-weight: 600; }
+
+/* ── Pipeline spine ─────────────────────────────────────────── */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 42px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.steps::before {
+  content: "";
+  position: absolute;
+  left: var(--rail);
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.step { position: relative; }
+.step__mark {
+  position: absolute;
+  left: -42px;
+  top: 12px;
+  width: 32px;
+  height: 32px;
+  margin-left: calc(var(--rail) - 15px);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mute);
+  transition: all var(--step);
+}
+.step__card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color var(--step), box-shadow var(--step), opacity var(--step);
+}
+.step__head {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 13px 15px;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.step__title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.step__call {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-mute);
+  background: var(--sunken);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+.step__grow { flex: 1; }
+.step__toggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
+  transition: transform var(--step);
+}
+.step__head[aria-expanded="true"] .step__toggle { transform: rotate(90deg); color: var(--accent); }
+
+.step__body {
+  padding: 0 15px 15px;
+  border-top: 1px dashed var(--line-soft);
+  margin-top: -1px;
+  padding-top: 13px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.step__body ul { margin: 0 0 12px; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.step__body li::marker { color: var(--text-mute); }
+.step__body strong { color: var(--text); font-weight: 600; }
+
+.gotcha {
+  display: flex;
+  gap: 10px;
+  background: var(--surface-2);
+  border-left: 2px solid var(--warn);
+  border-radius: 0 5px 5px 0;
+  padding: 9px 12px;
+  font-size: 13.5px;
+}
+.gotcha__tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--warn);
+  flex: none;
+  padding-top: 3px;
+}
+
+.meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--sunken);
+  color: var(--text-dim);
+  border: 1px solid var(--line-soft);
+}
+.tag--ck { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+
+/* exits */
+.exits { list-style: none; margin: 8px 0 0; padding: 0 15px 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-mute);
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  padding: 3px 11px 3px 4px;
+  transition: all var(--step);
+}
+.exit__status {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--calm-soft);
+  color: var(--calm);
+}
+.exit[data-kind="ok"]       .exit__status { background: var(--ok-soft);   color: var(--ok); }
+.exit[data-kind="declined"] .exit__status { background: var(--warn-soft); color: var(--warn); }
+.exit[data-kind="fail"]     .exit__status { background: var(--bad-soft);  color: var(--bad); }
+
+/* scenario states */
+.steps.is-tracing .step:not(.is-lit) .step__card { opacity: .38; }
+.steps.is-tracing .step:not(.is-lit) .step__mark { opacity: .38; }
+.step.is-lit .step__mark { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.step.is-lit .step__card { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.step.is-current .step__mark {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+:root[data-theme="dark"] .step.is-current .step__mark,
+:root:not([data-theme="light"]) .step.is-current .step__mark { color: #14121f; }
+.step.is-current .step__card { box-shadow: var(--shadow); border-color: var(--accent); }
+.exit.is-taken {
+  border-style: solid;
+  border-color: currentColor;
+  color: var(--text);
+  background: var(--surface-2);
+}
+.exit.is-taken[data-kind="ok"]       { border-color: var(--ok); }
+.exit.is-taken[data-kind="declined"] { border-color: var(--warn); }
+.exit.is-taken[data-kind="fail"]     { border-color: var(--bad); }
+.exit.is-taken[data-kind="neutral"]  { border-color: var(--calm); }
+
+/* resume annotations */
+.step__resume {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  border-top: 1px dashed var(--line-soft);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+}
+.steps.is-resuming .step__resume { display: flex; }
+.step__resume[data-mode="skip"]   { color: var(--text-mute); }
+.step__resume[data-mode="reload"] { color: var(--accent); background: var(--accent-soft); }
+.step__resume[data-mode="run"]    { color: var(--ok); background: var(--ok-soft); }
+.steps.is-resuming .step[data-mode="skip"] .step__card { opacity: .5; }
+
+/* ── Mini flows (loop 1 / loop 2) ───────────────────────────── */
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.node {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+  align-items: start;
+}
+.node:first-child { border-top: 0; }
+.node__kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding-top: 3px;
+}
+.node[data-kind="decision"] .node__kind { color: var(--accent); }
+.node[data-kind="loop"]     .node__kind { color: var(--warn); }
+.node__text { font-size: 14px; }
+.node__text .mono { font-size: 12.5px; color: var(--text-dim); }
+.node__note { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+.branches { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.branch {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+.branch__key {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.branch[data-kind="ok"]       { border-left-color: var(--ok); }
+.branch[data-kind="declined"] { border-left-color: var(--warn); }
+.branch[data-kind="fail"]     { border-left-color: var(--bad); }
+.branch[data-kind="loop"]     { border-left-color: var(--accent); }
+.branch[data-kind="ok"]       .branch__key { color: var(--ok); }
+.branch[data-kind="declined"] .branch__key { color: var(--warn); }
+.branch[data-kind="fail"]     .branch__key { color: var(--bad); }
+.branch[data-kind="loop"]     .branch__key { color: var(--accent); }
+
+/* ── Tables ─────────────────────────────────────────────────── */
+.scroller { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+thead th {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  font-weight: 500;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+td .mono { font-size: 12.5px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.verdict {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.verdict[data-kind="ok"]       { background: var(--ok-soft);   color: var(--ok); }
+.verdict[data-kind="declined"] { background: var(--warn-soft); color: var(--warn); }
+.verdict[data-kind="fail"]     { background: var(--bad-soft);  color: var(--bad); }
+.verdict[data-kind="neutral"]  { background: var(--calm-soft); color: var(--calm); }
+
+/* ── Sequence (queue) ───────────────────────────────────────── */
+.seq { display: flex; flex-direction: column; gap: 0; counter-reset: seq; }
+.seq__row {
+  display: grid;
+  grid-template-columns: 30px 120px minmax(0, 1fr);
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--line-soft);
+  align-items: baseline;
+}
+.seq__row:first-child { border-top: 0; }
+.seq__n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.seq__actor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.seq__row[data-actor="db"]   .seq__actor { color: var(--calm); }
+.seq__row[data-actor="b"]    .seq__actor { color: var(--warn); }
+.seq__body { font-size: 14px; }
+.seq__body .mono { font-size: 12.5px; color: var(--text-dim); }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 14px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 15px;
+}
+.card h3 {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -.01em;
+}
+.card p { margin: 0 0 8px; font-size: 13.5px; color: var(--text-dim); }
+.card p:last-child { margin-bottom: 0; }
+.card ul { margin: 0; padding-left: 17px; font-size: 13.5px; color: var(--text-dim); display: flex; flex-direction: column; gap: 4px; }
+
+.callout {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  padding: 13px 16px;
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 16px 0 0;
+}
+.callout strong { color: var(--text); }
+
+.footer {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  color: var(--text-mute);
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.slider-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+input[type="range"] { accent-color: var(--accent); flex: 1; min-width: 200px; }
+.slider-val {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: 12.5px; color: var(--text-mute); font-family: var(--font-mono); }
+.legend span::before { content: "■ "; }
+.legend .lg-skip::before   { color: var(--text-mute); }
+.legend .lg-reload::before { color: var(--accent); }
+.legend .lg-run::before    { color: var(--ok); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 20px 16px 72px; }
+  .rail {
+    position: static;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    overflow-x: auto;
+  }
+  .rail__list { flex-direction: row; gap: 4px; }
+  .rail__link { border-left: 0; border-bottom: 2px solid var(--line-soft); white-space: nowrap; }
+  .rail__link.is-current { border-bottom-color: var(--accent); }
+  .rail__num { display: none; }
+  .node { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .seq__row { grid-template-columns: 24px minmax(0, 1fr); }
+  .seq__actor { grid-column: 2; }
+  .masthead__sub { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <span class="masthead__mark">problem-helper</span>
+  <h1 class="masthead__title">Request flow</h1>
+  <span class="masthead__sub">one <code>request_id</code>, end to end</span>
+  <span class="masthead__spacer"></span>
+  <button class="ghost" id="themeBtn" type="button" aria-label="Switch colour theme">theme: auto</button>
+</header>
+
+<div class="shell">
+
+  <nav class="rail" aria-label="Sections">
+    <p class="rail__label">Contents</p>
+    <ul class="rail__list" id="railList">
+      <li><a class="rail__link" href="#pipeline"><span class="rail__num">01</span>Pipeline</a></li>
+      <li><a class="rail__link" href="#taxonomy"><span class="rail__num">02</span>Outcomes</a></li>
+      <li><a class="rail__link" href="#resume"><span class="rail__num">03</span>Resume</a></li>
+      <li><a class="rail__link" href="#repair"><span class="rail__num">04</span>Loop 1</a></li>
+      <li><a class="rail__link" href="#hint"><span class="rail__num">05</span>Loop 2</a></li>
+      <li><a class="rail__link" href="#queue"><span class="rail__num">06</span>Queue</a></li>
+      <li><a class="rail__link" href="#metaloop"><span class="rail__num">07</span>Metaloop</a></li>
+      <li><a class="rail__link" href="#data"><span class="rail__num">08</span>Data</a></li>
+      <li><a class="rail__link" href="#ops"><span class="rail__num">09</span>Operating</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <div class="lede">
+      <h1>A student never talks to us. We read their failing code, prove a fix on the real judge, and hand back one hint.</h1>
+      <p>A frontend posts <code>user_id</code> + <code>problem_id</code>. Everything after that runs in a worker,
+      checkpointed step by step, with every model call priced and logged.</p>
+      <p>Pick a scenario below to trace a request through the pipeline, or open any step for what it
+      actually does and what it must never do.</p>
+    </div>
+
+    <!-- ── 01 Pipeline ─────────────────────────────────────── -->
+    <section class="section" id="pipeline">
+      <div class="section__head">
+        <p class="eyebrow">01 — Pipeline</p>
+        <h2>Steps 1&ndash;9</h2>
+        <p class="section__note">The synchronous part of <code>POST /help</code> ends at &ldquo;enqueued&rdquo;. A worker claims the
+        row, runs these nine steps, and leaves it in a terminal status. Every step writes an <code>events</code> row.</p>
+      </div>
+
+      <div class="console">
+        <div class="console__row">
+          <span class="console__label">Trace</span>
+          <div id="scenarioChips" class="console__row"></div>
+        </div>
+        <div class="console__row" style="margin-top:10px">
+          <button class="ghost" id="playBtn" type="button">▶ play</button>
+          <button class="ghost" id="resetBtn" type="button">clear</button>
+          <span class="console__label" style="margin-left:6px">← → to step</span>
+        </div>
+        <div class="narration">
+          <span class="narration__cursor" aria-hidden="true">&gt;</span>
+          <span class="narration__text" id="narration" role="status" aria-live="polite">No trace running. Pick a scenario, or click a step to read it.</span>
+        </div>
+      </div>
+
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <!-- ── 02 Taxonomy ─────────────────────────────────────── -->
+    <section class="section" id="taxonomy">
+      <div class="section__head">
+        <p class="eyebrow">02 — Outcomes</p>
+        <h2>Six ways a request ends</h2>
+        <p class="section__note">The split that matters is <em>we chose to stop</em> versus <em>our infrastructure broke</em>.
+        Collapsing them would report an internal fault for a request handled exactly as designed &mdash; and poison the analytics.</p>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead>
+            <tr><th>Status</th><th>Meaning</th><th>Reason codes</th><th>Whose call</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="verdict" data-kind="neutral">already_solved</span></td><td>Student already passed the problem</td><td class="mono">&mdash;</td><td>Nothing to do</td></tr>
+            <tr><td><span class="verdict" data-kind="neutral">no_submissions</span></td><td>No usable attempt to work from</td><td class="mono">&mdash;</td><td>Nothing to do</td></tr>
+            <tr><td><span class="verdict" data-kind="ok">done</span></td><td>Hint stored and delivered &mdash; fresh or from cache</td><td class="mono">&mdash;</td><td>Success</td></tr>
+            <tr><td><span class="verdict" data-kind="declined">no_fix</span></td><td>Loop 1 could not prove a fix on the judge</td><td class="mono">max_retries · cost_cap · no_baseline</td><td><strong>We chose to stop</strong></td></tr>
+            <tr><td><span class="verdict" data-kind="declined">no_hint</span></td><td>Loop 2 wrote nothing the guardrail would approve</td><td class="mono">max_retries · cost_cap · stalled · guardrail_failed</td><td><strong>We chose to stop</strong></td></tr>
+            <tr><td><span class="verdict" data-kind="fail">failed</span></td><td>Platform down, DB error, corrupt checkpoint, abandoned row</td><td class="mono">&mdash;</td><td><strong>Us</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>What the caller sees.</strong> <code>GET /requests/{id}</code> returns a fixed message for
+        <code>failed</code>: <code>help_requests.error</code> can carry provider bodies, judge URLs with a session
+        token, or raw DB text. The full string stays on the row, in <code>events</code>, and on
+        <code>GET /admin/requests</code> behind <code>ADMIN_TOKEN</code>.
+      </div>
+    </section>
+
+    <!-- ── 03 Resume ───────────────────────────────────────── -->
+    <section class="section" id="resume">
+      <div class="section__head">
+        <p class="eyebrow">03 — Resume</p>
+        <h2>What a crash costs</h2>
+        <p class="section__note">Resume is <strong>step-level</strong>. Drag the checkpoint to the last step that finished
+        before the crash, and the pipeline above annotates itself: what is skipped, what is reloaded from the store
+        instead of re-derived, and what actually runs again.</p>
+      </div>
+      <div class="console">
+        <div class="slider-row">
+          <span class="console__label">resume_step</span>
+          <input type="range" id="resumeSlider" min="0" max="7" value="0" step="1" aria-label="Last checkpoint written before the crash" />
+          <span class="slider-val" id="resumeVal">NULL — fresh request</span>
+          <button class="ghost" id="resumeOff" type="button">off</button>
+        </div>
+        <div class="legend">
+          <span class="lg-skip">skipped</span>
+          <span class="lg-reload">reloaded from the store</span>
+          <span class="lg-run">runs</span>
+        </div>
+        <div class="narration">
+          <span class="narration__cursor" aria-hidden="true">&gt;</span>
+          <span class="narration__text" id="resumeNote" role="status" aria-live="polite">Resume view is off. The pipeline shows a fresh request.</span>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>A checkpoint is only worth writing if the step&rsquo;s output is readable back.</strong>
+        Loop 1&rsquo;s verified code and run id are persisted <em>before</em> its checkpoint; the hint checkpoint moved to
+        <em>after</em> the row is inserted. A checkpoint past a step whose output is missing is treated as a corrupt
+        row and failed once with the real reason &mdash; never as a licence to re-run the step, because the reclaim
+        loop would do that up to <code>maxClaimAttempts</code> times, re-spending both model budgets and re-submitting
+        to the judge each cycle.
+      </div>
+    </section>
+
+    <!-- ── 04 Loop 1 ───────────────────────────────────────── -->
+    <section class="section" id="repair">
+      <div class="section__head">
+        <p class="eyebrow">04 — Loop 1</p>
+        <h2>Repair, verified on the real judge</h2>
+        <p class="section__note">The model has no native tool-calling channel here &mdash; <code>llm.ChatClient</code> only
+        exchanges schema-validated JSON, so the three tools are a discriminated <code>action</code> field on one response schema.</p>
+      </div>
+      <div class="flow" id="repairFlow"></div>
+      <div class="callout">
+        <strong>Verification is the judge&rsquo;s own accept verdict, not just the baseline tests.</strong>
+        This course&rsquo;s ejudge runs <code>acm</code> scoring, which halts at the first failure, so a student&rsquo;s failing
+        run only has results up to that point. Code passing exactly those and failing a later test would otherwise
+        ship as a &ldquo;verified fix&rdquo;.
+      </div>
+    </section>
+
+    <!-- ── 05 Loop 2 ───────────────────────────────────────── -->
+    <section class="section" id="hint">
+      <div class="section__head">
+        <p class="eyebrow">05 — Loop 2</p>
+        <h2>Hint, then a guardrail that can only say yes</h2>
+        <p class="section__note">The hard part is rejecting hints, not writing them. Cheap deterministic rules run
+        before any model call; the guardrail must be a different model family than the writer, enforced at startup.</p>
+      </div>
+      <div class="flow" id="hintFlow"></div>
+      <div class="cards" style="margin-top:16px">
+        <div class="card">
+          <h3>Gate on the irreversible act</h3>
+          <p>Approval gates <em>delivering</em> a hint, not writing one. A checker failure is never approval, and neither
+          is prose, the wrong schema, or a reply whose types are wrong.</p>
+        </div>
+        <div class="card">
+          <h3>An interruption is not a verdict</h3>
+          <p>An unreadable <em>answer</em> fails closed. A cancelled context or a dead connection is not an answer at
+          all &mdash; treating it as <code>guardrail_failed</code> threw away the retry budget and terminated a request
+          that should have stayed reclaimable.</p>
+        </div>
+        <div class="card">
+          <h3>Always append a turn before retrying</h3>
+          <p><code>llm.Chat</code>&rsquo;s own schema retry runs on a private copy of the conversation, so a bare
+          <code>continue</code> resends a byte-identical message list &mdash; the model repeats itself and every retry
+          burns two billed calls on the same exchange.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 06 Queue ────────────────────────────────────────── -->
+    <section class="section" id="queue">
+      <div class="section__head">
+        <p class="eyebrow">06 — Queue</p>
+        <h2>Claim, heartbeat, reclaim</h2>
+        <p class="section__note">Two workers running the same request means two judge submissions under one shared
+        system login and both model budgets spent twice. Ownership is therefore enforced in SQL, on every write.</p>
+      </div>
+      <div class="card">
+        <div class="seq" id="seq"></div>
+      </div>
+      <div class="cards" style="margin-top:16px">
+        <div class="card">
+          <h3>Every mid-run write is claim-scoped</h3>
+          <p><code>SetResumeStep</code>, <code>SetRepairResult</code>, <code>SetBestSubmission</code>,
+          <code>SetHintID</code>, <code>SetFailureReason</code>, <code>SetError</code> &mdash; not just the terminal
+          transition. An <em>unclaimed</em> row is not writable either: that is exactly the post-reclaim, pre-claim
+          window in which the stale worker is most likely still executing steps.</p>
+        </div>
+        <div class="card">
+          <h3>The judge has no fence token of ours</h3>
+          <p>SQL cannot refuse a submission that already happened, so loop 1 re-asserts the claim in the round trip
+          immediately before <code>SubmitAsSystem</code>. A guard error aborts too &mdash; it is not evidence the claim
+          is intact.</p>
+        </div>
+        <div class="card">
+          <h3>Reclaim uses the database clock</h3>
+          <p><code>heartbeat_at</code> is always written by <code>now()</code> on the server. A cutoff computed in Go
+          made reclaim depend on clock drift: too fast and live rows get reclaimed mid-submit, too slow and nothing is
+          ever reclaimed at all.</p>
+        </div>
+        <div class="card">
+          <h3>Bounded by <code>claim_attempts</code></h3>
+          <p>A pipeline that errors deterministically would be handed out forever. Past the cap the row moves to
+          <code>failed</code> with the reason recorded, instead of back to <code>pending</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 07 Metaloop ─────────────────────────────────────── -->
+    <section class="section" id="metaloop">
+      <div class="section__head">
+        <p class="eyebrow">07 — Metaloop</p>
+        <h2>Mistakes become the next prompt</h2>
+        <p class="section__note">Off the critical path. It sweeps at startup and then on an interval &mdash; a bare
+        24h ticker meant a service redeployed daily never ran the curator at all.</p>
+      </div>
+      <div class="flow" id="curatorFlow"></div>
+      <div class="callout">
+        <strong>A sweep that wrote anything seals its batch</strong> &mdash; even when it gives up or errors. Merges
+        commit as they go, so leaving the batch open makes every later sweep re-send it and merge again, inflating
+        <code>mistakes.count</code> without bound. Only a sweep that wrote <em>nothing</em> leaves the batch for a retry.
+        The sealing write runs on a detached context, because the likeliest way to reach it is the context dying.
+      </div>
+    </section>
+
+    <!-- ── 08 Data ─────────────────────────────────────────── -->
+    <section class="section" id="data">
+      <div class="section__head">
+        <p class="eyebrow">08 — Data</p>
+        <h2>What each table is for</h2>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Table</th><th>Written by</th><th>Key columns</th><th>Why it exists</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">help_requests</td><td>API + worker</td>
+              <td class="mono">status · failure_reason · resume_step · claimed_by · heartbeat_at · claim_attempts · repair_code · repair_run_id</td>
+              <td>The queue, the checkpoint, and the outcome, all on one row</td>
+            </tr>
+            <tr>
+              <td class="mono">submissions</td><td>step 3</td>
+              <td class="mono">(request_id, platform_submission_id) unique</td>
+              <td>Snapshot of what the judge showed us; ids are derived so a resumed insert is idempotent</td>
+            </tr>
+            <tr>
+              <td class="mono">shield_records</td><td>step 5</td>
+              <td class="mono">code_before · code_after · diff · removed</td>
+              <td>Audit trail of everything stripped before a model ever saw the code</td>
+            </tr>
+            <tr>
+              <td class="mono">hints</td><td>step 8</td>
+              <td class="mono">problem_id · code_hash · approved</td>
+              <td>The delivered hint, and the cross-user cache keyed on the post-shield code hash</td>
+            </tr>
+            <tr>
+              <td class="mono">llm_calls</td><td>every model call</td>
+              <td class="mono">agent · model · tokens · cost</td>
+              <td>Cost and A/B analytics; written on a detached context because the tokens are already paid for</td>
+            </tr>
+            <tr>
+              <td class="mono">raw_mistakes</td><td>loop 1</td>
+              <td class="mono">processed</td>
+              <td>One observation per failed repair attempt, waiting for the curator</td>
+            </tr>
+            <tr>
+              <td class="mono">mistakes</td><td>curator</td>
+              <td class="mono">user_id · count</td>
+              <td>The per-student profile that <code>top_n_mistakes</code> feeds back into loop 1</td>
+            </tr>
+            <tr>
+              <td class="mono">events</td><td>every step</td>
+              <td class="mono">type · payload</td>
+              <td>Append-only trace; <code>hint_delivered</code> also drives effectiveness analytics</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>The hint cache is deliberately cross-user.</strong> An approved hint only ever carries the diff and the
+        working code, never anything user-specific, so it is safe to reuse for another student who hits the same defect
+        &mdash; and that path costs zero tokens.
+      </div>
+    </section>
+
+    <!-- ── 09 Operating ────────────────────────────────────── -->
+    <section class="section" id="ops">
+      <div class="section__head">
+        <p class="eyebrow">09 — Operating</p>
+        <h2>Surface, spend, configuration</h2>
+      </div>
+
+      <div class="scroller" style="margin-bottom:16px">
+        <table>
+          <thead><tr><th>Route</th><th>Auth</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">POST /help</td><td class="mono">API_TOKEN</td><td>Enqueues and returns <code>request_id</code>. Rate-limited per user per day, counted inside a transaction holding an advisory lock &mdash; the &ldquo;obvious&rdquo; single-statement version passes every racer.</td></tr>
+            <tr><td class="mono">GET /requests/{id}</td><td class="mono">API_TOKEN</td><td>Status, hint when done, fixed message when failed.</td></tr>
+            <tr><td class="mono">GET /admin/requests</td><td class="mono">ADMIN_TOKEN</td><td>Filter by <code>useless</code> / <code>status</code> / <code>model</code>; full error text.</td></tr>
+            <tr><td class="mono">POST /admin/requests/{id}/useless</td><td class="mono">ADMIN_TOKEN</td><td>Effectiveness labelling.</td></tr>
+            <tr><td class="mono">POST /admin/metaloop/run</td><td class="mono">ADMIN_TOKEN</td><td>Runs a sweep on a detached context and extends its own write deadline &mdash; 30 minutes against a 30-second <code>WriteTimeout</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <h3>Two caps, two enforcement points</h3>
+          <ul>
+            <li><code>max_cost_per_loop</code> — checked before each attempt starts</li>
+            <li><code>max_cost_per_retry</code> — checked against <em>one attempt&rsquo;s</em> spend</li>
+            <li>Both can overshoot by at most one call: a call&rsquo;s cost is only known after it returns</li>
+            <li>What a cap is charged is what <code>llm.Chat</code> <em>spent</em> — a schema-rejected exchange billed two calls, and both count</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Fail-open keys are startup errors</h3>
+          <ul>
+            <li>Zero cost caps read as &ldquo;unlimited&rdquo;; zero <code>max_retries</code> returns without calling a model</li>
+            <li>A <code>pricing</code> entry missing <code>output</code> prices every output token at zero</li>
+            <li><code>n_submissions: 0</code> removes the scrape cap; <code>daily_requests_per_user: 0</code> 429s everyone</li>
+            <li>All of it is validated by <code>config.Load</code>, before traffic</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Different family, enforced</h3>
+          <p>The guardrail&rsquo;s model family is compared against the hint writer&rsquo;s at startup, on the id&rsquo;s last path
+          segment up to its first <code>-</code>, so a routing prefix cannot disguise one model as two.</p>
+        </div>
+        <div class="card">
+          <h3>Shutdown needs two budgets</h3>
+          <p>A metaloop handler may legitimately hold its connection for 30 minutes, so one shared budget let HTTP
+          shutdown eat all of it and abandoned every in-flight pipeline. <code>pgxpool.Close</code> is not a
+          <code>defer</code>: it closes only once the workers actually drained.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <strong>Environment.</strong> <code>DATABASE_URL</code>, <code>LLM_BASE_URL</code>, <code>LLM_API_KEY</code>,
+        <code>PLATFORM</code>, <code>API_TOKEN</code>, <code>ADMIN_TOKEN</code>, <code>EJUDGE_URL</code>,
+        <code>EJUDGE_SYSTEM_LOGIN</code>, <code>EJUDGE_SYSTEM_PASSWORD</code> are all required &mdash; including under
+        <code>PLATFORM=mock</code>. Optional: <code>EJUDGE_CONTEST_ID</code> (default <code>1</code>) and
+        <code>WORKER_CONCURRENCY</code> (default <code>1</code>).
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Source of truth: <code>docs/plans/20260729-mvp-service.md</code></span>
+      <span>Orientation: <code>CLAUDE.md</code></span>
+      <span>Markdown twin: <code>docs/FLOW.md</code></span>
+    </footer>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+/* ── Data ───────────────────────────────────────────────────── */
+
+const STEPS = [
+  {
+    id: "status", n: 1, title: "Problem status", call: "platform.ProblemStatus",
+    checkpoint: "status",
+    points: [
+      "Asks the judge whether this student has already passed this problem.",
+      "A solved problem stops the pipeline terminally, so a resumed run never re-checks it — it could not have reached this checkpoint otherwise."
+    ],
+    exits: [{ status: "already_solved", kind: "neutral", when: "solved" }]
+  },
+  {
+    id: "statement", n: 2, title: "Problem statement", call: "platform.ProblemStatement",
+    checkpoint: "statement",
+    points: [
+      "The only step whose output is <strong>never persisted</strong> — a cheap idempotent read, so it is re-fetched rather than reloaded.",
+      "Fetched only while a later step still needs it."
+    ],
+    gotcha: "A request resumed past the repair checkpoint has its verified code on the row and nothing left but writing and delivering the hint — so a statement endpoint that happens to be down must not turn it into <code>failed</code>."
+  },
+  {
+    id: "submissions", n: 3, title: "Submissions", call: "platform.Submissions",
+    checkpoint: "submissions", writes: "submissions",
+    points: [
+      "Scrapes up to <code>n_submissions</code> attempts and snapshots them.",
+      "Snapshot ids are <strong>derived</strong> from <code>(request_id, platform_submission_id)</code>, not random, so a resumed insert is an idempotent no-op instead of a silent divergence."
+    ],
+    exits: [{ status: "no_submissions", kind: "neutral", when: "nothing usable" }],
+    gotcha: "Judges name languages after the compiler — <code>g++</code>, <code>clang++</code>, <code>fbc-32</code>. A row regex that assumes <code>\\w+</code> does not error; the row just vanishes from the list, which turned every C++ student into <code>no_submissions</code>."
+  },
+  {
+    id: "pick", n: 4, title: "Pick the best attempt", call: "pick.Best",
+    checkpoint: "submissions",
+    points: [
+      "Max tests passed; a tie goes to the latest.",
+      "The winner&rsquo;s store id is recorded on the row as <code>best_submission_id</code>."
+    ],
+    gotcha: "<code>best_submission_id</code> has no foreign key, so a dangling or NULL id on resume is a corrupt row — failed once with the real reason, never re-derived."
+  },
+  {
+    id: "shield", n: 5, title: "SHIELD", call: "shield.Strip",
+    checkpoint: "shield", writes: "shield_records",
+    points: [
+      "<code>shield.Canonical</code> maps the judge&rsquo;s language name onto a family; that table is the single mapping point.",
+      "<strong>Sanitize Unicode first, then strip comments.</strong> The scanners match raw bytes, so an invisible character wedged into an opener is not a comment to them.",
+      "Records <code>code_before</code>, <code>code_after</code>, the diff, and a structured report of everything removed."
+    ],
+    exits: [{ status: "failed", kind: "fail", when: "unsupported language" }],
+    gotcha: "The C-family scanner implements C&rsquo;s actual lexer — phase-2 line splices, raw strings, Java text blocks, <code>u8'a'</code>, preprocessor directives. Every approximation of it so far turned out to be a shield bypass."
+  },
+  {
+    id: "cache", n: 6, title: "Hint cache", call: "worker.Lookup",
+    checkpoint: "cache",
+    points: [
+      "Keyed on <code>problem_id</code> + <code>sha256</code> of the post-shield code, after normalizing line endings and trimming.",
+      "Cross-user by design: an approved hint carries only the diff and the working code.",
+      "A hit still emits <code>hint_delivered</code> with <code>{\"cached\": true}</code> — a re-delivery is still a delivery, and the effectiveness analytics key off that event."
+    ],
+    exits: [{ status: "done", kind: "ok", when: "hit — zero model calls" }]
+  },
+  {
+    id: "repair", n: 7, title: "Loop 1 — repair", call: "agent/repair",
+    checkpoint: "repair", writes: "repair_code · repair_run_id",
+    points: [
+      "Fixes the code and <strong>proves it by submitting to the real judge</strong> under the shared system login.",
+      "The run id and the code it carries are persisted the moment submit returns, so a resumed loop polls that run instead of submitting a second one.",
+      "Every failed attempt writes a <code>raw_mistakes</code> row for the nightly curator."
+    ],
+    exits: [{ status: "no_fix", kind: "declined", when: "max_retries · cost_cap · no_baseline" }]
+  },
+  {
+    id: "hint", n: 8, title: "Loop 2 — hint + guardrail", call: "agent/hint",
+    checkpoint: "hint", writes: "hints",
+    points: [
+      "Sees a unified diff of original → working code. Never the two full files together.",
+      "Deterministic leak rules run first and cost zero tokens; only what survives reaches the guardrail.",
+      "The guardrail is a different model family, and only its explicit approval is a pass."
+    ],
+    exits: [{ status: "no_hint", kind: "declined", when: "max_retries · cost_cap · stalled · guardrail_failed" }]
+  },
+  {
+    id: "deliver", n: 9, title: "Deliver", call: "InsertHint → SetHintID",
+    points: [
+      "The hint row is inserted <em>before</em> the checkpoint, so resuming past it means &ldquo;stored, only delivery left&rdquo;.",
+      "Emits <code>hint_delivered</code> and transitions the row to <code>done</code>, scoped to this worker&rsquo;s claim."
+    ],
+    exits: [{ status: "done", kind: "ok", when: "hint delivered" }]
+  }
+];
+
+const SCENARIOS = [
+  {
+    id: "done", label: "happy path",
+    beats: [
+      ["status",      "Not solved yet. Checkpoint <b>status</b> written."],
+      ["statement",   "Statement pulled into the request context. Never persisted."],
+      ["submissions", "25 attempts scraped and snapshotted."],
+      ["pick",        "Best failing attempt: 7 of 12 tests. Recorded as <b>best_submission_id</b>."],
+      ["shield",      "Comments stripped, invisible characters removed, diff recorded."],
+      ["cache",       "No approved hint for this code hash. Both loops will run."],
+      ["repair",      "Attempt 2 compiles, the judge accepts it, and the baseline tests still pass."],
+      ["hint",        "Rules find no leak; the guardrail approves on the first hint."],
+      ["deliver",     "Hint stored and delivered.", { status: "done", kind: "ok" }]
+    ]
+  },
+  {
+    id: "cached", label: "cache hit",
+    beats: [
+      ["status",      "Not solved yet."],
+      ["statement",   "Statement fetched."],
+      ["submissions", "Attempts snapshotted."],
+      ["pick",        "Best failing attempt picked."],
+      ["shield",      "Post-shield code hashed."],
+      ["cache",       "Another student already earned an approved hint for this exact defect. <b>Zero model calls, zero judge submissions.</b>", { status: "done", kind: "ok" }]
+    ]
+  },
+  {
+    id: "solved", label: "already solved",
+    beats: [
+      ["status", "The judge says this problem is already accepted. Stop before anything is spent.", { status: "already_solved", kind: "neutral" }]
+    ]
+  },
+  {
+    id: "nosubs", label: "no submissions",
+    beats: [
+      ["status",      "Not solved yet."],
+      ["statement",   "Statement fetched."],
+      ["submissions", "Nothing usable came back — the snapshot is still written, then we stop.", { status: "no_submissions", kind: "neutral" }]
+    ]
+  },
+  {
+    id: "unsupported", label: "unsupported language",
+    beats: [
+      ["status",      "Not solved yet."],
+      ["statement",   "Statement fetched."],
+      ["submissions", "Attempts snapshotted."],
+      ["pick",        "Best failing attempt picked."],
+      ["shield",      "The judge reports a language no stripper covers. We refuse to hand unshielded code to a model.", { status: "failed", kind: "fail" }]
+    ]
+  },
+  {
+    id: "nofix", label: "no fix",
+    beats: [
+      ["status",      "Not solved yet."],
+      ["statement",   "Statement fetched."],
+      ["submissions", "Attempts snapshotted."],
+      ["pick",        "Best failing attempt picked."],
+      ["shield",      "Code shielded."],
+      ["cache",       "Cache miss."],
+      ["repair",      "Three attempts, three rejected runs. <b>The judge said no — our infrastructure did not break.</b>", { status: "no_fix", kind: "declined" }]
+    ]
+  },
+  {
+    id: "nohint", label: "no hint",
+    beats: [
+      ["status",      "Not solved yet."],
+      ["statement",   "Statement fetched."],
+      ["submissions", "Attempts snapshotted."],
+      ["pick",        "Best failing attempt picked."],
+      ["shield",      "Code shielded."],
+      ["cache",       "Cache miss."],
+      ["repair",      "A fix is verified on the judge."],
+      ["hint",        "Every hint either leaked the answer or the guardrail refused it. We deliver nothing.", { status: "no_hint", kind: "declined" }]
+    ]
+  },
+  {
+    id: "infra", label: "platform down",
+    beats: [
+      ["status",      "Not solved yet. Checkpoint written."],
+      ["statement",   "The judge stops answering. This one <b>is</b> ours — the row goes to failed and stays reclaimable.", { status: "failed", kind: "fail" }]
+    ]
+  }
+];
+
+const CHECKPOINTS = ["status", "statement", "submissions", "shield", "cache", "repair", "hint"];
+
+const RESUME_NOTES = {
+  0: "Fresh request — <b>resume_step is NULL</b>. Every step runs.",
+  1: "Crashed after the status check. The statement is re-fetched (it was never persisted); everything else runs.",
+  2: "Crashed after the statement. Submissions are scraped and snapshotted for the first time.",
+  3: "Crashed after the snapshot. The best submission is <b>reloaded from the store</b>, never re-picked — the judge&rsquo;s list may have changed since.",
+  4: "Crashed after the shield. The shield record is reloaded instead of re-stripping, which would insert a duplicate row.",
+  5: "Crashed after the cache lookup. A hit would have ended the request, so this checkpoint means it missed — both loops run.",
+  6: "Crashed inside loop 2. Loop 1&rsquo;s verified code and run id come off the row: <b>no second judge submission, no second repair budget</b>.",
+  7: "Crashed after the hint was stored. Only delivery is left."
+};
+
+const RESUME_LABELS = ["NULL — fresh request", "status", "statement", "submissions", "shield", "cache", "repair", "hint"];
+
+/* index in CHECKPOINTS+1 space that each step belongs to */
+const STEP_ORDER = { status: 1, statement: 2, submissions: 3, pick: 3, shield: 4, cache: 5, repair: 6, hint: 7, deliver: 8 };
+
+const RELOADS = {
+  submissions: "reloaded — submissions rows already committed",
+  pick: "reloaded — best_submission_id → submissions row",
+  shield: "reloaded — shield_records row",
+  cache: "skipped — a hit would have ended the request",
+  repair: "reloaded — repair_code + repair_run_id",
+  hint: "reloaded — hint_id",
+  statement: "re-fetched — never persisted, cheap and idempotent"
+};
+
+const REPAIR_FLOW = [
+  { kind: "input", text: "Fetch the baseline test cases", note: "Read off the student&rsquo;s own failing run — the tests the fix has to keep passing." },
+  {
+    kind: "decision", text: "Baseline empty?",
+    branches: [{ key: "yes", kind: "declined", text: "<code>no_fix · no_baseline</code> — success can never hold against an empty baseline, so every attempt would be a guaranteed-failing model call plus a real judge submission. Deterministic checks run before any model call." }]
+  },
+  {
+    kind: "decision", text: "A pending run id on the row?",
+    branches: [{ key: "yes", kind: "loop", text: "Poll that run. <strong>Never resubmit</strong> — the judge already has the code and the system login&rsquo;s quota was already spent on it. A run judged on zero tests is not adopted: the tools could not read from it and every later attempt would repair blind." }]
+  },
+  {
+    kind: "loop", text: "Budget check, once per attempt",
+    note: "<code>max_cost_per_loop</code> before the attempt starts, <code>max_retries</code> as the attempt counter.",
+    branches: [{ key: "exhausted", kind: "declined", text: "<code>no_fix · cost_cap</code> or <code>no_fix · max_retries</code>" }]
+  },
+  { kind: "call", text: "Attempt N — render the repair prompt", note: "Statement, shielded code, the student&rsquo;s top-N curated mistakes, the previous attempt&rsquo;s code, and the reason the last attempt was abandoned if it proposed nothing." },
+  {
+    kind: "decision", text: "The model picks an action",
+    branches: [
+      { key: "list_test_results", kind: "loop", text: "A window over the <strong>tail</strong> of the verdicts — <code>acm</code> scoring halts at the first failure, so the failing test is always last. A window from the front hid the only test that explains the failure." },
+      { key: "get_test", kind: "loop", text: "One test&rsquo;s input, expected output and the run&rsquo;s output. Sliced by the declared size <em>after</em> unescaping, or the data arrives truncated mid-entity." },
+      { key: "submit", kind: "ok", text: "Proceed to verification." }
+    ]
+  },
+  { kind: "guard", text: "Format (optional) → re-assert the claim → <code>SubmitAsSystem</code>", note: "The claim is re-asserted in the round trip immediately before the POST: SQL cannot refuse a submission that already happened." },
+  { kind: "write", text: "Persist the run id and the code it carries", note: "The moment submit returns — before waiting for a verdict, because that wait is where crashes happen." },
+  { kind: "wait", text: "Poll until judged" },
+  {
+    kind: "decision", text: "Judge accepted <em>and</em> every baseline test still passes?",
+    branches: [
+      { key: "yes", kind: "ok", text: "<code>fixed</code> — the verified code and run id go to loop 2." },
+      { key: "no", kind: "loop", text: "Record a <code>raw_mistakes</code> observation, carry the failed code forward as feedback, and start the next attempt." }
+    ]
+  }
+];
+
+const HINT_FLOW = [
+  { kind: "input", text: "Unified diff: original → working", note: "The only view either agent gets. Never the two full files side by side." },
+  {
+    kind: "loop", text: "Budget check, once per attempt",
+    branches: [{ key: "exhausted", kind: "declined", text: "<code>no_hint · cost_cap</code> or <code>no_hint · max_retries</code>" }]
+  },
+  { kind: "call", text: "The hint writer proposes a hint" },
+  {
+    kind: "decision", text: "Did this attempt blow <code>max_cost_per_retry</code>?",
+    branches: [{ key: "yes", kind: "loop", text: "Abandon it <em>before</em> the guardrail call — the last point at which spending can still be avoided. It is not recorded as seen: it was never judged, so banning it would end the next attempt as <code>stalled</code> rather than the cap that actually stopped it." }]
+  },
+  {
+    kind: "decision", text: "Has this exact hint been proposed before?",
+    branches: [{ key: "yes", kind: "declined", text: "<code>no_hint · stalled</code> — the model is repeating itself; burning another retry on it buys nothing." }]
+  },
+  {
+    kind: "check", text: "Deterministic rules — zero tokens",
+    note: "Leak fragments and explicit-answer checks, ported from the research prototypes.",
+    branches: [{ key: "leak", kind: "loop", text: "Rejected without a model call. The reason becomes the next user turn." }]
+  },
+  { kind: "call", text: "Guardrail model", note: "A different model family than the writer — compared at startup on the id&rsquo;s last path segment, so a routing prefix cannot disguise one model as two." },
+  {
+    kind: "decision", text: "What came back?",
+    branches: [
+      { key: "approved", kind: "ok", text: "The only pass. Store the hint and deliver." },
+      { key: "rejected", kind: "loop", text: "The reason becomes the next user turn and the writer tries again." },
+      { key: "unreadable", kind: "declined", text: "Prose, the wrong schema, or <code>{\"approved\":true,\"reason\":42}</code> — <code>no_hint · guardrail_failed</code>, fail closed. Every field is type-checked." },
+      { key: "no answer", kind: "fail", text: "A cancelled context or a dead connection is <strong>not a verdict</strong>. The request errors out and stays reclaimable instead of burning its remaining budget." }
+    ]
+  }
+];
+
+const CURATOR_FLOW = [
+  { kind: "input", text: "Load one user&rsquo;s unprocessed <code>raw_mistakes</code>", note: "Oldest first, capped by <code>maxBatchSize</code> — the whole batch is inlined into every call&rsquo;s system prompt. The overflow is simply picked up next sweep." },
+  {
+    kind: "decision", text: "The model picks an action",
+    branches: [
+      { key: "merge_into", kind: "loop", text: "This observation is the same underlying habit as one already on file — <code>count++</code>. The <code>mistake_id</code> comes from a model, so it is constrained by <code>user_id</code> in the SQL predicate rather than trusted; a miss is fed back as a tool error." },
+      { key: "create_mistake", kind: "loop", text: "Genuinely new — a fresh row in <code>mistakes</code>." },
+      { key: "finish", kind: "ok", text: "Mark exactly this batch&rsquo;s ids processed." }
+    ]
+  },
+  { kind: "write", text: "Seal the batch", note: "Any sweep that wrote something seals it, including one that gives up or errors. Its budget is one call per raw mistake <em>plus</em> <code>max_retries</code> — sizing it from the cap alone made any oversized batch permanently unprocessable." },
+  { kind: "output", text: "<code>TopMistakes(user, top_n_mistakes)</code> → loop 1&rsquo;s prompt", note: "The read side of the loop. Without it the curator builds a profile nobody ever sees." }
+];
+
+const SEQ = [
+  { actor: "worker A", key: "a", text: "<code>ClaimNext(A)</code> — the row moves to <code>running</code>, <code>claimed_by = A</code>, <code>claim_attempts++</code>." },
+  { actor: "worker A", key: "a", text: "Heartbeats every tick: <code>Heartbeat(id, A)</code> matches on <code>claimed_by</code> and returns whether a row was actually refreshed." },
+  { actor: "—", key: "db", text: "The process stalls: a paused container, a long GC, a lost network. <code>heartbeat_at</code> stops advancing." },
+  { actor: "worker B", key: "b", text: "<code>ReclaimStale(staleAfter)</code> compares against the <em>database&rsquo;s</em> clock, not the app&rsquo;s." },
+  { actor: "postgres", key: "db", text: "Under the attempt cap → back to <code>pending</code>, <code>claimed_by</code> cleared. Over it → straight to <code>failed</code> with the reason recorded. <strong>Both exits clear the claim</strong>, which is why ownership is decided by <code>claimed_by</code> and never by the status." },
+  { actor: "worker A", key: "a", text: "Its next heartbeat returns false. It confirms via <code>GetHelpRequest</code> — a terminal row is the normal case — and only cancels the run on a genuine loss. A failed <em>probe</em> is not a loss: it keeps ticking and falls back on lease expiry." },
+  { actor: "worker B", key: "b", text: "<code>ClaimNext</code> picks the row up and resumes at its <code>resume_step</code>." }
+];
+
+/* ── Render ─────────────────────────────────────────────────── */
+
+const esc = (s) => s;
+
+function el(tag, cls, html) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+}
+
+function renderSteps() {
+  const list = document.getElementById("steps");
+  STEPS.forEach((s) => {
+    const li = el("li", "step");
+    li.dataset.id = s.id;
+
+    li.appendChild(el("div", "step__mark", String(s.n)));
+
+    const card = el("div", "step__card");
+
+    const head = el("button", "step__head");
+    head.type = "button";
+    head.setAttribute("aria-expanded", "false");
+    head.innerHTML =
+      '<span class="step__title">' + s.title + "</span>" +
+      '<span class="step__call">' + s.call + "</span>" +
+      '<span class="step__grow"></span>' +
+      '<span class="step__toggle" aria-hidden="true">▸</span>';
+    card.appendChild(head);
+
+    const body = el("div", "step__body");
+    body.hidden = true;
+    const meta = el("div", "meta");
+    if (s.checkpoint) meta.appendChild(el("span", "tag tag--ck", "checkpoint: " + s.checkpoint));
+    if (s.writes) meta.appendChild(el("span", "tag", "writes: " + s.writes));
+    if (meta.children.length) body.appendChild(meta);
+    const ul = el("ul");
+    s.points.forEach((p) => ul.appendChild(el("li", null, p)));
+    body.appendChild(ul);
+    if (s.gotcha) {
+      const g = el("div", "gotcha");
+      g.appendChild(el("span", "gotcha__tag", "trap"));
+      g.appendChild(el("span", null, s.gotcha));
+      body.appendChild(g);
+    }
+    card.appendChild(body);
+
+    const resume = el("div", "step__resume");
+    resume.dataset.mode = "run";
+    card.appendChild(resume);
+
+    if (s.exits) {
+      const exits = el("ul", "exits");
+      s.exits.forEach((x) => {
+        const li2 = el("li", "exit");
+        li2.dataset.kind = x.kind;
+        li2.dataset.status = x.status;
+        li2.innerHTML = '<span class="exit__status">' + x.status + "</span><span>" + x.when + "</span>";
+        exits.appendChild(li2);
+      });
+      card.appendChild(exits);
+    }
+
+    li.appendChild(card);
+    list.appendChild(li);
+
+    head.addEventListener("click", () => {
+      const open = head.getAttribute("aria-expanded") === "true";
+      head.setAttribute("aria-expanded", String(!open));
+      body.hidden = open;
+    });
+  });
+}
+
+function renderFlow(id, nodes) {
+  const root = document.getElementById(id);
+  nodes.forEach((n) => {
+    const node = el("div", "node");
+    node.dataset.kind = n.kind;
+    node.appendChild(el("div", "node__kind", n.kind));
+    const wrap = el("div", "node__text", n.text);
+    if (n.note) wrap.appendChild(el("div", "node__note", n.note));
+    if (n.branches) {
+      const ul = el("ul", "branches");
+      n.branches.forEach((b) => {
+        const li = el("li", "branch");
+        li.dataset.kind = b.kind;
+        li.appendChild(el("span", "branch__key", b.key));
+        li.appendChild(el("span", null, b.text));
+        ul.appendChild(li);
+      });
+      wrap.appendChild(ul);
+    }
+    node.appendChild(wrap);
+    root.appendChild(node);
+  });
+}
+
+function renderSeq() {
+  const root = document.getElementById("seq");
+  SEQ.forEach((s, i) => {
+    const row = el("div", "seq__row");
+    row.dataset.actor = s.key;
+    row.appendChild(el("div", "seq__n", String(i + 1).padStart(2, "0")));
+    row.appendChild(el("div", "seq__actor", s.actor));
+    row.appendChild(el("div", "seq__body", s.text));
+    root.appendChild(row);
+  });
+}
+
+/* ── Scenario tracing ───────────────────────────────────────── */
+
+const stepsEl = document.getElementById("steps");
+const narration = document.getElementById("narration");
+let current = null;   // scenario object
+let beatIdx = -1;
+let timer = null;
+
+function stepNode(id) { return stepsEl.querySelector('.step[data-id="' + id + '"]'); }
+
+function clearTrace() {
+  clearTimeout(timer);
+  timer = null;
+  current = null;
+  beatIdx = -1;
+  stepsEl.classList.remove("is-tracing");
+  stepsEl.querySelectorAll(".step").forEach((n) => n.classList.remove("is-lit", "is-current"));
+  stepsEl.querySelectorAll(".exit").forEach((n) => n.classList.remove("is-taken"));
+  document.querySelectorAll("#scenarioChips .chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
+  narration.innerHTML = "No trace running. Pick a scenario, or click a step to read it.";
+  document.getElementById("playBtn").textContent = "▶ play";
+}
+
+function paint() {
+  stepsEl.querySelectorAll(".step").forEach((n) => n.classList.remove("is-lit", "is-current"));
+  stepsEl.querySelectorAll(".exit").forEach((n) => n.classList.remove("is-taken"));
+  if (!current) return;
+  stepsEl.classList.add("is-tracing");
+  current.beats.forEach((b, i) => {
+    if (i > beatIdx) return;
+    const node = stepNode(b[0]);
+    if (!node) return;
+    node.classList.add("is-lit");
+    if (i === beatIdx) {
+      node.classList.add("is-current");
+      const exit = b[2];
+      if (exit) {
+        const e = node.querySelector('.exit[data-status="' + exit.status + '"]');
+        if (e) e.classList.add("is-taken");
+      }
+    }
+  });
+  const beat = current.beats[beatIdx];
+  if (beat) {
+    const n = STEPS.find((s) => s.id === beat[0]);
+    const term = beat[2]
+      ? ' <span class="verdict" data-kind="' + beat[2].kind + '">' + beat[2].status + "</span>"
+      : "";
+    narration.innerHTML = "<b>" + n.n + " · " + n.title + "</b> — " + beat[1] + term;
+  }
+}
+
+function go(idx) {
+  if (!current) return;
+  beatIdx = Math.max(0, Math.min(idx, current.beats.length - 1));
+  paint();
+}
+
+function selectScenario(id) {
+  clearTimeout(timer);
+  timer = null;
+  const s = SCENARIOS.find((x) => x.id === id);
+  document.querySelectorAll("#scenarioChips .chip").forEach((c) =>
+    c.setAttribute("aria-pressed", String(c.dataset.id === id))
+  );
+  current = s;
+  beatIdx = s.beats.length - 1;
+  paint();
+  document.getElementById("playBtn").textContent = "▶ replay";
+}
+
+function play() {
+  if (!current) selectScenario(SCENARIOS[0].id);
+  clearTimeout(timer);
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce) { beatIdx = current.beats.length - 1; paint(); return; }
+  beatIdx = 0;
+  paint();
+  const tick = () => {
+    if (beatIdx >= current.beats.length - 1) { timer = null; return; }
+    beatIdx += 1;
+    paint();
+    timer = setTimeout(tick, 780);
+  };
+  timer = setTimeout(tick, 780);
+}
+
+/* ── Resume explorer ────────────────────────────────────────── */
+
+const slider = document.getElementById("resumeSlider");
+const resumeVal = document.getElementById("resumeVal");
+const resumeNote = document.getElementById("resumeNote");
+let resumeOn = false;
+
+function paintResume() {
+  if (!resumeOn) {
+    stepsEl.classList.remove("is-resuming");
+    stepsEl.querySelectorAll(".step").forEach((n) => { n.dataset.mode = ""; });
+    resumeNote.innerHTML = "Resume view is off. The pipeline shows a fresh request.";
+    return;
+  }
+  const idx = Number(slider.value);
+  stepsEl.classList.add("is-resuming");
+  resumeVal.textContent = RESUME_LABELS[idx];
+  resumeNote.innerHTML = RESUME_NOTES[idx];
+
+  STEPS.forEach((s) => {
+    const node = stepNode(s.id);
+    const box = node.querySelector(".step__resume");
+    const order = STEP_ORDER[s.id];
+    let mode, text;
+    if (s.id === "statement" && idx >= 2 && idx < 6) {
+      mode = "run"; text = RELOADS.statement;
+    } else if (s.id === "statement" && idx >= 6) {
+      mode = "skip"; text = "skipped — nothing left needs the statement";
+    } else if (order > idx) {
+      mode = "run"; text = "runs";
+    } else if (RELOADS[s.id]) {
+      mode = "reload"; text = RELOADS[s.id];
+    } else {
+      mode = "skip"; text = "skipped";
+    }
+    box.dataset.mode = mode;
+    box.textContent = (mode === "run" ? "▸ " : mode === "reload" ? "↺ " : "· ") + text;
+    node.dataset.mode = mode;
+  });
+}
+
+/* ── Theme ──────────────────────────────────────────────────── */
+
+const themeBtn = document.getElementById("themeBtn");
+const MODES = ["auto", "light", "dark"];
+let mode = "auto";
+try { mode = localStorage.getItem("ph-theme") || "auto"; } catch (e) { /* file:// or blocked */ }
+
+function applyTheme() {
+  if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+  themeBtn.textContent = "theme: " + mode;
+  try { localStorage.setItem("ph-theme", mode); } catch (e) { /* ignore */ }
+}
+
+/* ── Scrollspy ──────────────────────────────────────────────── */
+
+function scrollspy() {
+  const links = Array.from(document.querySelectorAll(".rail__link"));
+  const targets = links
+    .map((a) => document.querySelector(a.getAttribute("href")))
+    .filter(Boolean);
+  const obs = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        links.forEach((a) =>
+          a.classList.toggle("is-current", a.getAttribute("href") === "#" + e.target.id)
+        );
+      });
+    },
+    { rootMargin: "-80px 0px -70% 0px", threshold: 0 }
+  );
+  targets.forEach((t) => obs.observe(t));
+}
+
+/* ── Boot ───────────────────────────────────────────────────── */
+
+renderSteps();
+renderFlow("repairFlow", REPAIR_FLOW);
+renderFlow("hintFlow", HINT_FLOW);
+renderFlow("curatorFlow", CURATOR_FLOW);
+renderSeq();
+scrollspy();
+applyTheme();
+
+const chips = document.getElementById("scenarioChips");
+SCENARIOS.forEach((s) => {
+  const b = el("button", "chip", s.label);
+  b.type = "button";
+  b.dataset.id = s.id;
+  b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => selectScenario(s.id));
+  chips.appendChild(b);
+});
+
+document.getElementById("playBtn").addEventListener("click", play);
+document.getElementById("resetBtn").addEventListener("click", clearTrace);
+
+themeBtn.addEventListener("click", () => {
+  mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+  applyTheme();
+});
+
+slider.addEventListener("input", () => { resumeOn = true; paintResume(); });
+document.getElementById("resumeOff").addEventListener("click", () => {
+  resumeOn = !resumeOn;
+  document.getElementById("resumeOff").textContent = resumeOn ? "off" : "on";
+  paintResume();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea")) return;
+  if (e.key === "ArrowRight") { if (current) { e.preventDefault(); go(beatIdx + 1); } }
+  else if (e.key === "ArrowLeft") { if (current) { e.preventDefault(); go(beatIdx - 1); } }
+  else if (e.key === "Escape") clearTrace();
+});
+</script>
+</body>
+</html>

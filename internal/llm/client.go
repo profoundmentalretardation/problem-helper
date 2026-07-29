@@ -66,6 +66,11 @@ type CallRecorder interface {
 // rather than inheriting none.
 const recordTimeout = 5 * time.Second
 
+// maxResponseBytes bounds a single chat-completion response body. Generous
+// next to any reply a schema-constrained agent produces, and small enough that
+// a misbehaving provider cannot exhaust the worker's heap.
+const maxResponseBytes = 16 << 20
+
 // ErrInvalidResponse is returned when the model's reply is not valid JSON
 // matching the requested schema, even after one retry.
 var ErrInvalidResponse = errors.New("llm: model did not return valid JSON matching the schema")
@@ -335,9 +340,18 @@ func (c *Client) rawChat(ctx context.Context, req Request, messages []Message) (
 	}
 	defer func() { _ = httpResp.Body.Close() }()
 
-	data, err := io.ReadAll(httpResp.Body)
+	// Bounded, like every ejudge read and the formatter's stdout: c.http.Timeout
+	// caps how long the provider may take, not how much it may send, and a
+	// gateway streaming an error page with no Content-Length would otherwise be
+	// buffered whole — once per concurrent worker goroutine. Over the limit is
+	// an error, never a truncation: a truncated body decodes to a shorter
+	// `content` that is then billed at full usage.
+	data, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBytes+1))
 	if err != nil {
 		return "", Usage{}, fmt.Errorf("llm: reading response: %w", err)
+	}
+	if len(data) > maxResponseBytes {
+		return "", Usage{}, fmt.Errorf("llm: response exceeds %d bytes", maxResponseBytes)
 	}
 	if httpResp.StatusCode != http.StatusOK {
 		return "", Usage{}, fmt.Errorf("llm: chat completion request failed: %s: %s", httpResp.Status, data)

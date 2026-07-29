@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -33,9 +34,57 @@ import (
 	"github.com/profoundmentalretardation/problem-helper/internal/worker"
 )
 
-// requiredPromptNames are the templates the wired agents need; startup
-// fails if any is missing from the loaded prompts directory.
-var requiredPromptNames = []string{"repair", "hint", "guardrail", "curator"}
+// requiredPlaceholders is the placeholder set each wired agent renders into
+// its template. Startup fails when a template is missing one of them.
+//
+// Template.Render errors on a placeholder that is in the template but absent
+// from the supplied values — the direction that fails loudly. The reverse
+// fails *open* and silently: a value supplied for a placeholder the template
+// no longer contains is simply discarded. Dropping or renaming `{{hint}}` in
+// prompts/guardrail.md therefore renders cleanly, asks the guardrail whether a
+// hint gives the answer away while showing it no hint, and gets back an
+// explicit `{"approved":true}` — which the hint loop honours, delivering and
+// caching an unreviewed hint. That is the one gate the whole "gate on the
+// irreversible action" rule exists for, degrading with no error anywhere.
+// Same class for prompts/repair.md losing `{{user_code}}` (the model repairs
+// blind) or prompts/hint.md losing `{{diff}}`.
+//
+// Checked at startup for the same reason validateCaps and the pricing values
+// are: a misedited prompt must fail before serving traffic, not silently at
+// first call.
+var requiredPlaceholders = map[string][]string{
+	"repair":    {"problem_statement", "user_code", "mistakes", "previous_code"},
+	"hint":      {"diff", "working_code"},
+	"guardrail": {"diff", "working_code", "hint"},
+	"curator":   {"raw_mistakes", "existing_mistakes"},
+}
+
+// checkPromptTemplates verifies every required template is present and carries
+// every placeholder its agent renders.
+func checkPromptTemplates(dir string, templates map[string]prompt.Template) error {
+	names := make([]string, 0, len(requiredPlaceholders))
+	for name := range requiredPlaceholders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		tmpl, ok := templates[name]
+		if !ok {
+			return fmt.Errorf("prompt: %s: missing required template %q", dir, name)
+		}
+		have := make(map[string]bool, len(tmpl.Placeholders()))
+		for _, p := range tmpl.Placeholders() {
+			have[p] = true
+		}
+		for _, want := range requiredPlaceholders[name] {
+			if !have[want] {
+				return fmt.Errorf("prompt: %s: template %q is missing the {{%s}} placeholder", dir, name, want)
+			}
+		}
+	}
+	return nil
+}
 
 func main() {
 	agentsPath := flag.String("agents", "agents.yaml", "path to agents.yaml")
@@ -88,10 +137,8 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	if err != nil {
 		return fmt.Errorf("prompt: loading %s: %w", promptsDir, err)
 	}
-	for _, name := range requiredPromptNames {
-		if _, ok := templates[name]; !ok {
-			return fmt.Errorf("prompt: %s: missing required template %q", promptsDir, name)
-		}
+	if err := checkPromptTemplates(promptsDir, templates); err != nil {
+		return err
 	}
 
 	st := store.New(pool)
@@ -211,6 +258,14 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	// deploy and handing it straight back to the reclaim sweep, which
 	// re-spends both model budgets and re-submits under the shared system
 	// login. Each phase gets its own shutdownTimeout.
+	// Stop the admin metaloop sweep first: it is detached from its request and
+	// runs for up to 30 minutes against a 30-second grace period, so without
+	// this Shutdown burns the whole HTTP budget on it and the process then
+	// exits through the middle of the sweep anyway — with merges committed and
+	// the batch unsealed, which the next instance's startup sweep re-sends and
+	// re-merges. Cancelling makes it stop at the next user boundary.
+	srv.StopSweeps()
+
 	httpCtx, cancelHTTP := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelHTTP()
 	if err := httpServer.Shutdown(httpCtx); err != nil {

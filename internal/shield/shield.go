@@ -58,9 +58,31 @@ var languageAliases = map[string]Language{
 // Canonical maps a platform-reported language name onto the shield's own
 // Language vocabulary, reporting whether the language is supported at all.
 func Canonical(language string) (Language, bool) {
-	lang, ok := languageAliases[strings.ToLower(strings.TrimSpace(language))]
-	return lang, ok
+	name := strings.ToLower(strings.TrimSpace(language))
+	if lang, ok := languageAliases[name]; ok {
+		return lang, true
+	}
+	// ejudge builds a short_name per *toolchain variant*, so one compiler
+	// appears as `gcc`, `gcc-32` and `gcc-vg`. The suffix names how the
+	// compiler is invoked (32-bit target, run under valgrind), never a
+	// different language — but the table is exact-match, so an unlisted
+	// variant is ErrUnsupportedLanguage and the pipeline fails the request.
+	// A course configured on a variant this table has not seen would fail
+	// every request in it. Retry once with the variant suffix removed rather
+	// than enumerating a combinatorial table.
+	for _, suffix := range variantSuffixes {
+		if trimmed, ok := strings.CutSuffix(name, suffix); ok {
+			if lang, ok := languageAliases[trimmed]; ok {
+				return lang, true
+			}
+		}
+	}
+	return "", false
 }
+
+// variantSuffixes are the ejudge toolchain-variant suffixes Canonical strips
+// before its second lookup.
+var variantSuffixes = []string{"-32", "-64", "-vg", "-vgb"}
 
 // UnicodeRemoval is one invalid/confusable character stripped from the code.
 type UnicodeRemoval struct {
