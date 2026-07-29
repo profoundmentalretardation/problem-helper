@@ -257,7 +257,7 @@ func TestSetResumeStep(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.SetResumeStep(ctx, id, "shield"); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", "shield"); err != nil {
 		t.Fatalf("set resume step: %v", err)
 	}
 
@@ -272,9 +272,44 @@ func TestSetResumeStep(t *testing.T) {
 
 func TestSetResumeStep_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetResumeStep(ctx, uuid.New(), "shield")
+	err := s.SetResumeStep(ctx, uuid.New(), "", "shield")
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}
+
+// The row mutators the pipeline calls mid-run are claim-scoped for the same
+// reason TransitionStatus is: a worker that was reclaimed while still
+// executing steps must not write onto the new claimant's row. Both
+// directions are covered — the claimant's own write lands, a stranger's is
+// refused with ErrClaimLost — because a predicate that rejects everything
+// would pass a one-sided test while breaking every pipeline.
+func TestSetters_ClaimScoping(t *testing.T) {
+	lockQueueTable(t)
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
+		t.Fatalf("claim next: %v", err)
+	}
+
+	byOwner := map[string]func(worker string) error{
+		"SetResumeStep":     func(w string) error { return s.SetResumeStep(ctx, id, w, "shield") },
+		"SetRepairResult":   func(w string) error { return s.SetRepairResult(ctx, id, w, "code", "run-1") },
+		"SetBestSubmission": func(w string) error { return s.SetBestSubmission(ctx, id, w, uuid.New()) },
+		"SetHintID":         func(w string) error { return s.SetHintID(ctx, id, w, uuid.New()) },
+		"SetFailureReason":  func(w string) error { return s.SetFailureReason(ctx, id, w, "max_retries") },
+		"SetError":          func(w string) error { return s.SetError(ctx, id, w, "boom") },
+	}
+	for name, set := range byOwner {
+		if err := set("worker-1"); err != nil {
+			t.Errorf("%s by the claimant: %v, want success", name, err)
+		}
+		if err := set("worker-2"); !errors.Is(err, store.ErrClaimLost) {
+			t.Errorf("%s by a stranger: err = %v, want wrapping ErrClaimLost", name, err)
+		}
+		if err := set(""); err != nil {
+			t.Errorf("%s with an empty worker id: %v, want the check skipped", name, err)
+		}
 	}
 }
 
@@ -282,7 +317,7 @@ func TestSetRepairResult(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.SetRepairResult(ctx, id, "int main(void){return 0;}", "run-42"); err != nil {
+	if err := s.SetRepairResult(ctx, id, "", "int main(void){return 0;}", "run-42"); err != nil {
 		t.Fatalf("set repair result: %v", err)
 	}
 
@@ -300,7 +335,7 @@ func TestSetRepairResult(t *testing.T) {
 
 func TestSetRepairResult_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetRepairResult(ctx, uuid.New(), "code", "run-1")
+	err := s.SetRepairResult(ctx, uuid.New(), "", "code", "run-1")
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -316,7 +351,7 @@ func TestSetBestSubmission(t *testing.T) {
 		t.Fatalf("snapshot submissions: %v", err)
 	}
 
-	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+	if err := s.SetBestSubmission(ctx, id, "", subID); err != nil {
 		t.Fatalf("set best submission: %v", err)
 	}
 
@@ -331,7 +366,7 @@ func TestSetBestSubmission(t *testing.T) {
 
 func TestSetBestSubmission_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetBestSubmission(ctx, uuid.New(), uuid.New())
+	err := s.SetBestSubmission(ctx, uuid.New(), "", uuid.New())
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -347,7 +382,7 @@ func TestSetHintID(t *testing.T) {
 		t.Fatalf("insert hint: %v", err)
 	}
 
-	if err := s.SetHintID(ctx, id, hintID); err != nil {
+	if err := s.SetHintID(ctx, id, "", hintID); err != nil {
 		t.Fatalf("set hint id: %v", err)
 	}
 
@@ -362,7 +397,7 @@ func TestSetHintID(t *testing.T) {
 
 func TestSetHintID_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetHintID(ctx, uuid.New(), uuid.New())
+	err := s.SetHintID(ctx, uuid.New(), "", uuid.New())
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -372,7 +407,7 @@ func TestSetFailureReason(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.SetFailureReason(ctx, id, "max_retries"); err != nil {
+	if err := s.SetFailureReason(ctx, id, "", "max_retries"); err != nil {
 		t.Fatalf("set failure reason: %v", err)
 	}
 
@@ -387,7 +422,7 @@ func TestSetFailureReason(t *testing.T) {
 
 func TestSetFailureReason_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetFailureReason(ctx, uuid.New(), "max_retries")
+	err := s.SetFailureReason(ctx, uuid.New(), "", "max_retries")
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -397,7 +432,7 @@ func TestSetError(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.SetError(ctx, id, "platform unreachable"); err != nil {
+	if err := s.SetError(ctx, id, "", "platform unreachable"); err != nil {
 		t.Fatalf("set error: %v", err)
 	}
 
@@ -412,7 +447,7 @@ func TestSetError(t *testing.T) {
 
 func TestSetError_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.SetError(ctx, uuid.New(), "platform unreachable")
+	err := s.SetError(ctx, uuid.New(), "", "platform unreachable")
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -1132,7 +1167,7 @@ func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testi
 	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
 		t.Fatalf("claim next: %v", err)
 	}
-	if err := s.SetResumeStep(ctx, id, "shield"); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", "shield"); err != nil {
 		t.Fatalf("set resume step: %v", err)
 	}
 

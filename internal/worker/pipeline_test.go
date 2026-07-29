@@ -727,7 +727,7 @@ func TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pre-seed submissions: %v", err)
 	}
-	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+	if err := s.SetBestSubmission(ctx, id, "", subID); err != nil {
 		t.Fatalf("pre-seed best submission: %v", err)
 	}
 	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
@@ -735,7 +735,7 @@ func TestRunPipeline_ResumesAtCheckpoint_SkipsCompletedSteps(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pre-seed shield record: %v", err)
 	}
-	if err := s.SetResumeStep(ctx, id, worker.StepShield); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", worker.StepShield); err != nil {
 		t.Fatalf("pre-seed resume step: %v", err)
 	}
 
@@ -808,7 +808,7 @@ func TestRunPipeline_ResumesAfterRepairCheckpoint_ReusesPersistedFix(t *testing.
 	}); err != nil {
 		t.Fatalf("pre-seed submissions: %v", err)
 	}
-	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+	if err := s.SetBestSubmission(ctx, id, "", subID); err != nil {
 		t.Fatalf("pre-seed best submission: %v", err)
 	}
 	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
@@ -816,10 +816,10 @@ func TestRunPipeline_ResumesAfterRepairCheckpoint_ReusesPersistedFix(t *testing.
 	}); err != nil {
 		t.Fatalf("pre-seed shield record: %v", err)
 	}
-	if err := s.SetRepairResult(ctx, id, "print(2)", "run-1"); err != nil {
+	if err := s.SetRepairResult(ctx, id, "", "print(2)", "run-1"); err != nil {
 		t.Fatalf("pre-seed repair result: %v", err)
 	}
-	if err := s.SetResumeStep(ctx, id, worker.StepRepair); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", worker.StepRepair); err != nil {
 		t.Fatalf("pre-seed resume step: %v", err)
 	}
 
@@ -882,7 +882,7 @@ func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T)
 	}); err != nil {
 		t.Fatalf("pre-seed submissions: %v", err)
 	}
-	if err := s.SetBestSubmission(ctx, id, subID); err != nil {
+	if err := s.SetBestSubmission(ctx, id, "", subID); err != nil {
 		t.Fatalf("pre-seed best submission: %v", err)
 	}
 	if err := s.InsertShieldRecord(ctx, store.ShieldRecord{
@@ -890,7 +890,7 @@ func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T)
 	}); err != nil {
 		t.Fatalf("pre-seed shield record: %v", err)
 	}
-	if err := s.SetRepairResult(ctx, id, "print(2)", "run-1"); err != nil {
+	if err := s.SetRepairResult(ctx, id, "", "print(2)", "run-1"); err != nil {
 		t.Fatalf("pre-seed repair result: %v", err)
 	}
 	hintID := uuid.New()
@@ -900,10 +900,10 @@ func TestRunPipeline_ResumesAfterHintCheckpoint_DeliversStoredHint(t *testing.T)
 	}); err != nil {
 		t.Fatalf("pre-seed hint: %v", err)
 	}
-	if err := s.SetHintID(ctx, id, hintID); err != nil {
+	if err := s.SetHintID(ctx, id, "", hintID); err != nil {
 		t.Fatalf("pre-seed hint id: %v", err)
 	}
-	if err := s.SetResumeStep(ctx, id, worker.StepHint); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", worker.StepHint); err != nil {
 		t.Fatalf("pre-seed resume step: %v", err)
 	}
 

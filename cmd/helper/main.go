@@ -103,6 +103,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 			Events:   st,
 			Runs:     st,
 			Mistakes: st,
+			WorkerID: workerID,
 			Formatter: format.Runner{
 				Enabled: cfg.Agents.Formatter.Enabled,
 				Command: cfg.Agents.Formatter.Command,

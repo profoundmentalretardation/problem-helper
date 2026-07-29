@@ -90,14 +90,14 @@ type Store interface {
 	InsertShieldRecord(ctx context.Context, r store.ShieldRecord) error
 	FindApprovedHint(ctx context.Context, problemID, codeHash string) (*store.Hint, error)
 	InsertHint(ctx context.Context, h store.Hint) error
-	SetResumeStep(ctx context.Context, id uuid.UUID, step string) error
-	SetRepairResult(ctx context.Context, id uuid.UUID, code, runID string) error
+	SetResumeStep(ctx context.Context, id uuid.UUID, workerID, step string) error
+	SetRepairResult(ctx context.Context, id uuid.UUID, workerID, code, runID string) error
 	GetSubmission(ctx context.Context, id uuid.UUID) (*store.Submission, error)
 	GetShieldRecordByRequest(ctx context.Context, requestID uuid.UUID) (*store.ShieldRecord, error)
-	SetBestSubmission(ctx context.Context, id, submissionID uuid.UUID) error
-	SetHintID(ctx context.Context, id, hintID uuid.UUID) error
-	SetFailureReason(ctx context.Context, id uuid.UUID, reason string) error
-	SetError(ctx context.Context, id uuid.UUID, message string) error
+	SetBestSubmission(ctx context.Context, id uuid.UUID, workerID string, submissionID uuid.UUID) error
+	SetHintID(ctx context.Context, id uuid.UUID, workerID string, hintID uuid.UUID) error
+	SetFailureReason(ctx context.Context, id uuid.UUID, workerID, reason string) error
+	SetError(ctx context.Context, id uuid.UUID, workerID, message string) error
 	TopMistakes(ctx context.Context, userID string, limit int) ([]store.Mistake, error)
 }
 
@@ -206,7 +206,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		if err != nil {
 			return err
 		}
-		if err := pl.Store.SetBestSubmission(ctx, requestID, bestStoreID); err != nil {
+		if err := pl.Store.SetBestSubmission(ctx, requestID, pl.WorkerID, bestStoreID); err != nil {
 			return fmt.Errorf("pipeline: recording best submission: %w", err)
 		}
 		if err := pl.event(ctx, requestID, "best_submission_picked", map[string]any{
@@ -284,7 +284,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 			return pl.infraFail(ctx, requestID, err)
 		}
 		if ok {
-			if err := pl.Store.SetHintID(ctx, requestID, cached.ID); err != nil {
+			if err := pl.Store.SetHintID(ctx, requestID, pl.WorkerID, cached.ID); err != nil {
 				return fmt.Errorf("pipeline: recording cached hint id: %w", err)
 			}
 			if err := pl.event(ctx, requestID, "hint_cache_hit", map[string]any{"hint_id": cached.ID}); err != nil {
@@ -345,7 +345,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		}
 		// Persisted before the checkpoint, not after: the checkpoint is only
 		// honest if the code it claims is done is already readable back.
-		if err := pl.Store.SetRepairResult(ctx, requestID, repairResult.Code, repairResult.RunID); err != nil {
+		if err := pl.Store.SetRepairResult(ctx, requestID, pl.WorkerID, repairResult.Code, repairResult.RunID); err != nil {
 			return fmt.Errorf("pipeline: recording repair result: %w", err)
 		}
 		if err := pl.checkpoint(ctx, requestID, StepRepair); err != nil {
@@ -392,7 +392,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		}); err != nil {
 			return fmt.Errorf("pipeline: inserting hint: %w", err)
 		}
-		if err := pl.Store.SetHintID(ctx, requestID, hintID); err != nil {
+		if err := pl.Store.SetHintID(ctx, requestID, pl.WorkerID, hintID); err != nil {
 			return fmt.Errorf("pipeline: recording delivered hint id: %w", err)
 		}
 		// The checkpoint goes after the hint row exists, so resuming past it
@@ -478,7 +478,7 @@ var submissionIDNamespace = uuid.MustParse("6f9619ff-8b86-d011-b42d-00c04fc964ff
 
 // checkpoint records the resume_step for requestID after a step completes.
 func (pl *Pipeline) checkpoint(ctx context.Context, requestID uuid.UUID, step string) error {
-	if err := pl.Store.SetResumeStep(ctx, requestID, step); err != nil {
+	if err := pl.Store.SetResumeStep(ctx, requestID, pl.WorkerID, step); err != nil {
 		return fmt.Errorf("pipeline: checkpointing step %q: %w", step, err)
 	}
 	return nil
@@ -509,7 +509,7 @@ func (pl *Pipeline) finish(ctx context.Context, requestID uuid.UUID, status stor
 // terminal status (no_fix, no_hint) — our infra didn't break, we chose not
 // to deliver.
 func (pl *Pipeline) finishWithReason(ctx context.Context, requestID uuid.UUID, status store.Status, reason string) error {
-	if err := pl.Store.SetFailureReason(ctx, requestID, reason); err != nil {
+	if err := pl.Store.SetFailureReason(ctx, requestID, pl.WorkerID, reason); err != nil {
 		return fmt.Errorf("pipeline: recording failure reason: %w", err)
 	}
 	return pl.finish(ctx, requestID, status)
@@ -519,7 +519,7 @@ func (pl *Pipeline) finishWithReason(ctx context.Context, requestID uuid.UUID, s
 // clear, non-retryable problem detected without a lower-level error (e.g. an
 // unsupported submission language).
 func (pl *Pipeline) finishWithError(ctx context.Context, requestID uuid.UUID, message string) error {
-	if err := pl.Store.SetError(ctx, requestID, message); err != nil {
+	if err := pl.Store.SetError(ctx, requestID, pl.WorkerID, message); err != nil {
 		return fmt.Errorf("pipeline: recording error: %w", err)
 	}
 	return pl.finish(ctx, requestID, store.StatusFailed)
@@ -528,7 +528,7 @@ func (pl *Pipeline) finishWithError(ctx context.Context, requestID uuid.UUID, me
 // infraFail records err's message then transitions requestID to
 // status=failed for an infrastructure/platform error encountered mid-step.
 func (pl *Pipeline) infraFail(ctx context.Context, requestID uuid.UUID, err error) error {
-	if serr := pl.Store.SetError(ctx, requestID, err.Error()); serr != nil {
+	if serr := pl.Store.SetError(ctx, requestID, pl.WorkerID, err.Error()); serr != nil {
 		return fmt.Errorf("pipeline: recording error for %v: %w", err, serr)
 	}
 	return pl.finish(ctx, requestID, store.StatusFailed)

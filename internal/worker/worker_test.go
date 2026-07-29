@@ -180,7 +180,7 @@ func TestWorker_ReclaimedRequest_IsReClaimedAndRun(t *testing.T) {
 	if _, err := s.ClaimNext(ctx, "dead-worker"); err != nil {
 		t.Fatalf("claim next: %v", err)
 	}
-	if err := s.SetResumeStep(ctx, id, "shield"); err != nil {
+	if err := s.SetResumeStep(ctx, id, "", "shield"); err != nil {
 		t.Fatalf("set resume step: %v", err)
 	}
 
@@ -477,12 +477,14 @@ func TestWorker_MetaloopRunsOnInterval_AndStopsWithContext(t *testing.T) {
 		close(done)
 	}()
 
+	// Two sweeps, not one: the first is the startup sweep, so only a second
+	// proves the interval is still arming.
 	deadline := time.Now().Add(time.Second)
-	for fm.callCount() == 0 && time.Now().Before(deadline) {
+	for fm.callCount() < 2 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if fm.callCount() == 0 {
-		t.Fatal("metaloop never ran on its interval")
+	if fm.callCount() < 2 {
+		t.Fatalf("metaloop ran %d time(s), want it to keep firing on its interval", fm.callCount())
 	}
 
 	cancel()
@@ -496,6 +498,55 @@ func TestWorker_MetaloopRunsOnInterval_AndStopsWithContext(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	if fm.callCount() != seen {
 		t.Error("metaloop kept firing after Run returned — the ticker must stop with the worker")
+	}
+}
+
+// A bare ticker fires only after a full interval, so with the shipped 24h
+// interval a service redeployed more often than once a day never ran the
+// curator at all: raw_mistakes accumulated forever, mistakes stayed empty,
+// and the repair prompt's top-N — the read side of the whole metaloop —
+// always rendered nothing. The first sweep is capped at
+// one sweep at startup instead.
+func TestWorker_MetaloopRunsAtStartup_NotOnlyAfterAFullInterval(t *testing.T) {
+	fq := &fakeQueueStore{}
+	fp := &fakePipelineRunner{}
+	fm := &fakeMetaloopRunner{}
+
+	w := &worker.Worker{
+		ID:                "w1",
+		Store:             fq,
+		Pipeline:          fp,
+		Metaloop:          fm,
+		Concurrency:       1,
+		PollInterval:      5 * time.Millisecond,
+		HeartbeatInterval: 5 * time.Millisecond,
+		ReclaimInterval:   -1,
+		// Far longer than the test's patience: only the startup sweep can
+		// make this fire.
+		MetaloopInterval: time.Hour,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		_ = w.Run(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for fm.callCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if fm.callCount() == 0 {
+		t.Fatal("metaloop never ran: a process restarted more often than the interval never curates at all")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after cancel")
 	}
 }
 

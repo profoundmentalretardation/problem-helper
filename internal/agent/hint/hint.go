@@ -154,24 +154,45 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		retryCost := parseCost(resp.Cost)
 		loopCost += retryCost
 
-		var out hintResponse
-		if err := json.Unmarshal(resp.JSON, &out); err != nil {
-			return Result{}, fmt.Errorf("hint: unmarshaling hint response: %w", err)
-		}
-		hintText := out.Hint
 		messages = append(messages, llm.Message{Role: "assistant", Content: string(resp.JSON)})
 
-		if seen[hintText] {
-			return Result{Status: StatusNoHint, Reason: ReasonStalled, Rejected: rejected, Attempts: attempts}, nil
+		// llm.validateJSON only checks that the required keys are *present*,
+		// never their types, so {"hint": 42} reaches here having satisfied
+		// Chat. That is a model formatting mistake, exactly like the
+		// ErrInvalidResponse case above — burn the attempt and feed the error
+		// back, rather than erroring the request into status=failed and
+		// reporting an internal fault for a request the pipeline handled as
+		// designed.
+		var out hintResponse
+		if err := json.Unmarshal(resp.JSON, &out); err != nil {
+			messages = append(messages, llm.Message{
+				Role: "user", Content: `{"approved":false,"reason":"your reply was not a JSON object with a string \"hint\" field"}`,
+			})
+			continue
 		}
-		seen[hintText] = true
+		hintText := out.Hint
 
 		if r.Agent.MaxCostPerRetry > 0 && retryCost >= r.Agent.MaxCostPerRetry {
 			// This attempt has already spent its budget; skip the guardrail
 			// call and let the next attempt start with a fresh one. Same
 			// enforcement point as the repair loop's per-retry cap.
+			//
+			// Checked before `seen` is recorded, and followed by a user turn:
+			// this hint was never judged, so banning it would make the next
+			// attempt's identical (and still unjudged) reply terminate the
+			// loop as ReasonStalled, and without a turn here attempt N+1 would
+			// resume a conversation whose last message is the model's own
+			// reply — no feedback at all, so it simply repeats itself.
+			messages = append(messages, llm.Message{
+				Role: "user", Content: `{"approved":false,"reason":"that attempt exceeded its cost budget before it could be reviewed; answer more concisely"}`,
+			})
 			continue
 		}
+
+		if seen[hintText] {
+			return Result{Status: StatusNoHint, Reason: ReasonStalled, Rejected: rejected, Attempts: attempts}, nil
+		}
+		seen[hintText] = true
 
 		v, err := r.judge(ctx, p.RequestID, attempts, diff, p.WorkingCode, hintText, p.OriginalCode)
 		if err != nil {

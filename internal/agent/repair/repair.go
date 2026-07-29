@@ -156,7 +156,7 @@ type EventRecorder interface {
 // that turns out to have passed still has to hand loop 2 the code it
 // verified.
 type RunRecorder interface {
-	SetRepairResult(ctx context.Context, requestID uuid.UUID, code, runID string) error
+	SetRepairResult(ctx context.Context, requestID uuid.UUID, workerID, code, runID string) error
 }
 
 // MistakeRecorder persists one raw_mistakes row; *store.Store satisfies it.
@@ -176,6 +176,13 @@ type Runner struct {
 	Runs      RunRecorder
 	Mistakes  MistakeRecorder
 	Formatter format.Runner
+
+	// WorkerID scopes the SetRepairResult write to this process's claim, for
+	// the same reason worker.Pipeline.WorkerID scopes the pipeline's own
+	// writes: a reclaimed worker that is still mid-loop must not stamp its
+	// run id and code onto a row the new claimant now owns. Empty skips the
+	// check, which is what tests driving the loop without a worker want.
+	WorkerID string
 }
 
 // modelAction is the single schema every repair Chat call uses: a
@@ -610,7 +617,7 @@ func (r *Runner) pollUntilDone(
 
 func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, code, runID string, attempt int) error {
 	if r.Runs != nil {
-		if err := r.Runs.SetRepairResult(ctx, requestID, code, runID); err != nil {
+		if err := r.Runs.SetRepairResult(ctx, requestID, r.WorkerID, code, runID); err != nil {
 			return fmt.Errorf("repair: persisting verification run: %w", err)
 		}
 	}

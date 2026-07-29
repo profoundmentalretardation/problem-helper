@@ -360,6 +360,45 @@ research/              frozen Python prototypes (reference only, see research/RE
   vars as unconditionally required regardless of which platform backend is selected; this is by
   design (`newPlatform` in `cmd/helper/main.go` is the only place that branches on `PLATFORM`)
   but easy to forget when standing up a local/mock-only environment.
+- **Every mid-run row write is claim-scoped, not just the terminal transition**
+  (`store.claimScopedUpdate`, used by `SetResumeStep`/`SetRepairResult`/`SetBestSubmission`/
+  `SetHintID`/`SetFailureReason`/`SetError`): the reclaimed-worker window that
+  `TransitionStatus` and `Heartbeat` guard against is a window in which the old worker is still
+  *executing steps*, so leaving the step writers unscoped let it walk the new claimant's
+  checkpoint backwards (`resume_step`) — re-running loop 1 on the next resume, i.e. another
+  judge submission under the shared system login and both model budgets again — and stamp its
+  own `repair_code` under the claimant's `repair_run_id`, so loop 2 explained code that run
+  never held. `TransitionStatus` catches none of that; it fires only after it has all
+  committed. A new pipeline-called writer needs the same predicate and the same
+  `worker.Pipeline.WorkerID` / `repair.Runner.WorkerID` threading.
+- **A model formatting mistake is never `status=failed`, and `llm.Chat` does not check types**
+  (`validateJSON` only asserts required keys are *present*): `{"hint": 42}` satisfies `Chat` and
+  fails at the loop's `json.Unmarshal`. Returning that error hard-failed the request and
+  reported an internal fault for a request handled exactly as designed. Every loop treats it
+  the way it treats `llm.ErrInvalidResponse` — feed the error back, burn the attempt,
+  terminate as `no_fix`/`no_hint`.
+- **An attempt abandoned by the per-retry cost cap was never judged, so it is not "seen"**
+  (`internal/agent/hint/hint.go`): recording it before the cap check banned an unjudged hint,
+  so the next attempt's identical reply ended the loop as `ReasonStalled` rather than the cap
+  that actually stopped it — and without a user turn before `continue`, attempt N+1 resumed a
+  conversation whose last message was the model's own reply, i.e. no feedback at all.
+- **A curator sweep that aborts after writing still seals its batch** (`sealBatch`/`fail` in
+  `internal/agent/curator/curator.go`): `giveUp` covered the budget paths, but every *error*
+  return bypassed it with merges already committed, so the next sweep re-sent the batch and
+  merged again — the unbounded `mistakes.count` inflation `StatusGaveUp` exists to prevent. The
+  sealing write runs on `context.WithoutCancel`, because the likeliest way to reach it is `ctx`
+  itself dying (an operator disconnecting from `POST /admin/metaloop/run`, SIGTERM during the
+  nightly sweep); for the same reason that handler runs the sweep on a detached context.
+- **The metaloop sweeps once at startup, not only after a full interval**
+  (`metaloopLoop`): a bare 24h ticker meant a service redeployed more often than once a day
+  never ran the curator at all — `raw_mistakes` grew unbounded, `mistakes` stayed empty, and
+  `Pipeline.TopNMistakes` always rendered nothing, silently disabling the read side of the
+  whole loop. The interval timer is re-armed after each sweep rather than free-running, so a
+  slow sweep cannot queue a second one behind itself.
+- **`store.Migrate` runs every statement on the connection holding its lock**: going back to
+  `pool` for them deadlocks any deployment whose `DATABASE_URL` caps the pool at one
+  connection — `conn` is checked out for the whole call, so `pool.Exec` waits for a connection
+  that frees only when `Migrate` returns. Startup hangs with no error at all.
 
 ## Reference material
 

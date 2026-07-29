@@ -540,6 +540,22 @@ func TestRunResult_NotFound(t *testing.T) {
 
 // --- TestResult -------------------------------------------------------------
 
+// TestResult is a report parser like RunResult, so it reads the same error
+// sentinels off the same page. Without them an unknown run id came back as an
+// untyped "has no test N", which satisfies neither ErrRunNotFound nor
+// ErrMalformedResponse — so the caller could not tell a missing run from a
+// judge outage, exactly the outcome-vs-infrastructure split the failed/no_fix
+// statuses rest on.
+func TestTestResult_NotFound(t *testing.T) {
+	srv := newFixtureServer(t)
+	c := newClient(t, srv)
+
+	_, err := c.TestResult(context.Background(), "99999", 1)
+	if !errors.Is(err, ejudge.ErrRunNotFound) {
+		t.Errorf("err = %v, want ErrRunNotFound", err)
+	}
+}
+
 func TestTestResult_OK_FullDetail(t *testing.T) {
 	srv := newFixtureServer(t)
 	c := newClient(t, srv)

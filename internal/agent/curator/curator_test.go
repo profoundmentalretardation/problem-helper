@@ -8,6 +8,7 @@ package curator_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -399,6 +400,57 @@ func TestRun_GaveUpWithoutWriting_LeavesBatchUnprocessed(t *testing.T) {
 	}
 	if len(unprocessed) != 1 {
 		t.Errorf("unprocessed = %d, want 1 (nothing was written, so the batch is retried next sweep)", len(unprocessed))
+	}
+}
+
+// The other side of TestRun_GaveUpWithoutWriting_LeavesBatchUnprocessed: a
+// sweep that aborts on an infrastructure error *after* committing a merge
+// must still seal its batch. MergeMistake commits as it goes, so returning
+// with the batch unprocessed makes every later sweep re-send it and merge
+// again, inflating mistakes.count — which drives the repair prompt's
+// top-N — without bound. A cancelled context is the likely trigger (an
+// operator disconnecting from POST /admin/metaloop/run, or SIGTERM during
+// the nightly sweep), which is why the sealing write is detached from ctx.
+func TestRun_FailsAfterWriting_StillMarksBatchProcessed(t *testing.T) {
+	s, ctx := withStore(t)
+	reqID := createRequest(t, s, ctx, "user-1")
+
+	existingID := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID: existingID, UserID: "user-1", Title: "off-by-one", Description: "loop bound is one short",
+	}); err != nil {
+		t.Fatalf("create existing mistake: %v", err)
+	}
+	for _, text := range []string{"loop stops one iteration early", "and again on the second problem"} {
+		if err := s.InsertRawMistake(ctx, store.RawMistake{
+			RequestID: reqID, UserID: "user-1", Text: text,
+		}); err != nil {
+			t.Fatalf("insert raw mistake: %v", err)
+		}
+	}
+
+	chat := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: mergeJSON(existingID), Usage: llm.Usage{InputTokens: 40, OutputTokens: 10}},
+		// The sweep dies before it can call finish, with one merge committed.
+		llm.ScriptedResponse{Err: context.Canceled},
+	)
+	runner := newRunner(s, chat, 4, t)
+
+	got, err := runner.Run(ctx, "user-1")
+	if err == nil {
+		t.Fatalf("Run: want the transport failure to propagate, got %+v", got)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it to wrap the transport failure", err)
+	}
+
+	unprocessed, lerr := s.ListUnprocessedRawMistakes(ctx, "user-1")
+	if lerr != nil {
+		t.Fatalf("list unprocessed: %v", lerr)
+	}
+	if len(unprocessed) != 0 {
+		t.Errorf("unprocessed = %d, want 0 — a merge was committed, so re-sending this batch would double-count it",
+			len(unprocessed))
 	}
 }
 

@@ -744,7 +744,7 @@ type fakeRuns struct {
 	}
 }
 
-func (f *fakeRuns) SetRepairResult(_ context.Context, id uuid.UUID, code, runID string) error {
+func (f *fakeRuns) SetRepairResult(_ context.Context, id uuid.UUID, _, code, runID string) error {
 	f.calls = append(f.calls, struct {
 		RequestID uuid.UUID
 		Code      string

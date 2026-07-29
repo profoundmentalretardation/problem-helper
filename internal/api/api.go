@@ -116,6 +116,10 @@ const maxIdentifierLen = 128
 // caller can't turn a single /help into an unbounded platform scrape.
 const maxNSubmissions = 200
 
+// metaloopRunTimeout bounds a manually triggered sweep, which runs on a
+// context detached from the request's.
+const metaloopRunTimeout = 30 * time.Minute
+
 func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 	var body helpRequestBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxHelpBodyBytes)).Decode(&body); err != nil {
@@ -241,7 +245,15 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 // with unprocessed raw mistakes — the same sweep the nightly cron runs
 // (internal/worker), exposed for manual/testing use.
 func (s *Server) handleMetaloopRun(w http.ResponseWriter, r *http.Request) {
-	summary, err := s.metaloop.Run(r.Context())
+	// Detached from the request context: the sweep commits mistake merges and
+	// creations as it goes, so an operator disconnecting (or a client
+	// timeout) mid-sweep would abort it with writes already committed. The
+	// curator seals its batch on that path, but the remaining users would be
+	// skipped for no reason a caller cares about.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), metaloopRunTimeout)
+	defer cancel()
+
+	summary, err := s.metaloop.Run(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return

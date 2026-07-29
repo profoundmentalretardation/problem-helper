@@ -277,22 +277,40 @@ func (w *Worker) reclaimLoop(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// metaloopLoop runs the curator sweep on a fixed interval until ctx is
-// canceled.
+// metaloopLoop runs the curator sweep once at startup and then every
+// interval until ctx is canceled.
+//
+// The startup sweep is not a nicety. A bare ticker fires only after a full
+// interval has elapsed, so with the shipped 24h interval a service
+// redeployed or restarted more often than once a day never ran the curator
+// at all: raw_mistakes accumulated unbounded, mistakes was never populated,
+// and the repair prompt's top-N — the read side the whole metaloop exists to
+// feed — always rendered empty. The sweep is cheap when there is nothing to
+// do (a user with no unprocessed raw mistakes costs zero model calls) and it
+// runs on its own goroutine, so it delays nothing else.
 func (w *Worker) metaloopLoop(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	sweep := func() {
+		if summary, err := w.Metaloop.Run(ctx); err != nil {
+			w.logf("metaloop sweep: %v", err)
+		} else {
+			w.logf("metaloop sweep: processed %d user(s), merged %d, created %d, gave up on %d",
+				summary.UsersProcessed, summary.Merged, summary.Created, summary.GaveUp)
+		}
+	}
+	sweep()
+
+	// A timer re-armed after each sweep, not a free-running ticker: a sweep
+	// that outlasts the interval must not queue up a second one behind
+	// itself.
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if summary, err := w.Metaloop.Run(ctx); err != nil {
-				w.logf("metaloop sweep: %v", err)
-			} else {
-				w.logf("metaloop sweep: processed %d user(s), merged %d, created %d, gave up on %d",
-					summary.UsersProcessed, summary.Merged, summary.Created, summary.GaveUp)
-			}
+		case <-timer.C:
+			sweep()
+			timer.Reset(interval)
 		}
 	}
 }

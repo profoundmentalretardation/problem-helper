@@ -218,6 +218,65 @@ func TestRun_CostCapStopsBeforeNextAttempt(t *testing.T) {
 	}
 }
 
+// llm.validateJSON only checks that the required keys are *present*, never
+// their types, so a reply like {"hint": 42} satisfies Chat and only fails
+// when the loop unmarshals it. That is a model formatting mistake, not an
+// infrastructure fault: it must burn the attempt and terminate as no_hint,
+// never bubble out as an error (which the pipeline turns into
+// status=failed and reports to the caller as an internal error).
+func TestRun_WriterReplyWithWrongTypesBurnsTheAttempt(t *testing.T) {
+	writer := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"hint": 42}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
+		llm.ScriptedResponse{JSON: `{"hint": {"text": "nested"}}`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
+	)
+	// No guardrail responses: neither malformed attempt may reach it.
+	guardrail := llm.NewScripted(nil, testPricing())
+
+	runner := newRunner(writer, guardrail, t)
+	runner.Agent.MaxRetries = 2
+
+	got, err := runner.Run(context.Background(), baseParams())
+	if err != nil {
+		t.Fatalf("Run: %v, want no_hint rather than an infrastructure failure", err)
+	}
+	if got.Status != hint.StatusNoHint || got.Reason != hint.ReasonMaxRetries {
+		t.Fatalf("status/reason = %q/%q, want %q/%q", got.Status, got.Reason, hint.StatusNoHint, hint.ReasonMaxRetries)
+	}
+	if writer.Remaining() != 0 {
+		t.Errorf("writer responses left = %d, want both attempts burned", writer.Remaining())
+	}
+}
+
+// The per-retry cost cap abandons an attempt before the guardrail sees it.
+// That hint was therefore never judged, so it must not be recorded as
+// "seen": doing so made the next attempt's identical reply terminate the
+// loop as ReasonStalled instead of letting the cap keep working, and the
+// loop reported a reason that was not what actually stopped it.
+func TestRun_CostPerRetryDoesNotPoisonTheNextAttempt(t *testing.T) {
+	writer := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: hintJSON("expensive hint"), Usage: llm.Usage{InputTokens: 1000, OutputTokens: 1000}},
+		llm.ScriptedResponse{JSON: hintJSON("expensive hint"), Usage: llm.Usage{InputTokens: 1000, OutputTokens: 1000}},
+	)
+	guardrail := llm.NewScripted(nil, testPricing())
+
+	runner := newRunner(writer, guardrail, t)
+	runner.Agent.MaxRetries = 2
+	runner.Agent.MaxCostPerRetry = 0.0000001 // every writer call blows it
+	runner.Agent.MaxCostPerLoop = 0          // unlimited, so the retry cap is what stops the loop
+
+	got, err := runner.Run(context.Background(), baseParams())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Reason != hint.ReasonMaxRetries {
+		t.Fatalf("reason = %q, want %q — an unjudged hint must not count as stalled",
+			got.Reason, hint.ReasonMaxRetries)
+	}
+	if guardrail.Remaining() != 0 {
+		t.Errorf("guardrail responses left = %d, want the guardrail never consulted", guardrail.Remaining())
+	}
+}
+
 func TestRun_GuardrailUnreadable(t *testing.T) {
 	tests := []struct {
 		label string

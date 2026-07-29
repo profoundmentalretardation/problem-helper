@@ -129,7 +129,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLockKey)
 	}()
 
-	if _, err := pool.Exec(ctx, `
+	// Every statement below runs on conn, the connection holding the lock —
+	// not on pool. Going back to the pool for them deadlocks a deployment
+	// whose DATABASE_URL caps the pool at one connection: conn is checked out
+	// for the whole function, so pool.Exec would wait for a connection that
+	// only becomes free once Migrate returns.
+	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			name        TEXT PRIMARY KEY,
 			applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -151,7 +156,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 
 	for _, name := range names {
 		var applied bool
-		if err := pool.QueryRow(ctx,
+		if err := conn.QueryRow(ctx,
 			`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = $1)`, name,
 		).Scan(&applied); err != nil {
 			return fmt.Errorf("store: checking migration %s: %w", name, err)
@@ -165,7 +170,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("store: reading migration %s: %w", name, err)
 		}
 
-		tx, err := pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("store: beginning migration tx for %s: %w", name, err)
 		}
@@ -520,91 +525,99 @@ func (s *Store) ReclaimStale(ctx context.Context, staleAfter time.Duration) ([]u
 	return ids, nil
 }
 
-// SetResumeStep records the last pipeline step a request completed, so a
-// crash-reclaimed row resumes there instead of restarting from step 1.
-func (s *Store) SetResumeStep(ctx context.Context, id uuid.UUID, step string) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET resume_step = $1, updated_at = now() WHERE id = $2`, step, id)
-	if err != nil {
-		return fmt.Errorf("store: setting resume step: %w", err)
+// claimScopedUpdate runs one help_requests UPDATE whose WHERE clause is
+// completed with the same claim predicate TransitionStatus uses, and maps a
+// no-op to ErrClaimLost or ErrUnknownRequest.
+//
+// Every row mutator the pipeline calls mid-run needs this, not just the
+// terminal transition. A worker whose heartbeats lapsed long enough to be
+// reclaimed only learns it lost the claim on its next heartbeat tick, and in
+// that window it is still executing steps: an unscoped SetResumeStep walks
+// the new claimant's checkpoint backwards (re-running loop 1 on the next
+// resume — a second judge submission under the shared system login and both
+// model budgets again), and an unscoped SetRepairResult puts the old worker's
+// code under the new claimant's run id, so loop 2 explains code that run
+// never held. TransitionStatus alone catches none of that: it only fires
+// after all of it has committed.
+//
+// setSQL is the "UPDATE help_requests SET ..." head only — the WHERE clause
+// carrying the claim predicate is appended here. Its placeholders must be
+// numbered so that $1 is the row id and $2 is the worker id; value arguments
+// start at $3.
+func (s *Store) claimScopedUpdate(ctx context.Context, id uuid.UUID, workerID, what, setSQL string, args ...any) error {
+	params := append([]any{id, workerID}, args...)
+	row := s.db.QueryRow(ctx, fmt.Sprintf(`
+		WITH upd AS (
+			%s
+			WHERE id = $1 AND ($2 = '' OR claimed_by IS NULL OR claimed_by = $2)
+			RETURNING id
+		)
+		SELECT h.claimed_by, EXISTS (SELECT 1 FROM upd)
+		FROM help_requests h WHERE h.id = $1`, setSQL), params...)
+
+	var claimedBy *string
+	var updated bool
+	if err := row.Scan(&claimedBy, &updated); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+		}
+		return fmt.Errorf("store: %s: %w", what, err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
+	if !updated {
+		return fmt.Errorf("%w: id %s is claimed by %s", ErrClaimLost, id, derefOrNone(claimedBy))
 	}
 	return nil
+}
+
+func derefOrNone(s *string) string {
+	if s == nil {
+		return "nobody"
+	}
+	return *s
+}
+
+// SetResumeStep records the last pipeline step a request completed, so a
+// crash-reclaimed row resumes there instead of restarting from step 1.
+func (s *Store) SetResumeStep(ctx context.Context, id uuid.UUID, workerID, step string) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting resume step",
+		`UPDATE help_requests SET resume_step = $3, updated_at = now()`, step)
 }
 
 // SetRepairResult records loop 1's verified fix — the working code and the
 // judge run it was accepted on — before the "repair" checkpoint is written,
 // so a reclaimed row can hand that code to the hint loop instead of running
 // loop 1 (and submitting to the judge) a second time.
-func (s *Store) SetRepairResult(ctx context.Context, id uuid.UUID, code, runID string) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET repair_code = $1, repair_run_id = $2, updated_at = now()
-		 WHERE id = $3`, code, runID, id)
-	if err != nil {
-		return fmt.Errorf("store: setting repair result: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
-	}
-	return nil
+func (s *Store) SetRepairResult(ctx context.Context, id uuid.UUID, workerID, code, runID string) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting repair result",
+		`UPDATE help_requests SET repair_code = $3, repair_run_id = $4, updated_at = now()`, code, runID)
 }
 
 // SetBestSubmission records which snapshotted submission the pipeline picked
 // as best for this request.
-func (s *Store) SetBestSubmission(ctx context.Context, id, submissionID uuid.UUID) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET best_submission_id = $1, updated_at = now() WHERE id = $2`, submissionID, id)
-	if err != nil {
-		return fmt.Errorf("store: setting best submission: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
-	}
-	return nil
+func (s *Store) SetBestSubmission(ctx context.Context, id uuid.UUID, workerID string, submissionID uuid.UUID) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting best submission",
+		`UPDATE help_requests SET best_submission_id = $3, updated_at = now()`, submissionID)
 }
 
 // SetHintID records which hints row was (or will be) delivered for this
 // request.
-func (s *Store) SetHintID(ctx context.Context, id, hintID uuid.UUID) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET hint_id = $1, updated_at = now() WHERE id = $2`, hintID, id)
-	if err != nil {
-		return fmt.Errorf("store: setting hint id: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
-	}
-	return nil
+func (s *Store) SetHintID(ctx context.Context, id uuid.UUID, workerID string, hintID uuid.UUID) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting hint id",
+		`UPDATE help_requests SET hint_id = $3, updated_at = now()`, hintID)
 }
 
 // SetFailureReason records why a no_fix/no_hint request stopped short of
 // delivering a hint (e.g. "max_retries", "cost_cap").
-func (s *Store) SetFailureReason(ctx context.Context, id uuid.UUID, reason string) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET failure_reason = $1, updated_at = now() WHERE id = $2`, reason, id)
-	if err != nil {
-		return fmt.Errorf("store: setting failure reason: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
-	}
-	return nil
+func (s *Store) SetFailureReason(ctx context.Context, id uuid.UUID, workerID, reason string) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting failure reason",
+		`UPDATE help_requests SET failure_reason = $3, updated_at = now()`, reason)
 }
 
 // SetError records the error message for a request that ends status=failed
 // (infrastructure/platform error, as opposed to a declined no_fix/no_hint).
-func (s *Store) SetError(ctx context.Context, id uuid.UUID, message string) error {
-	tag, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET error = $1, updated_at = now() WHERE id = $2`, message, id)
-	if err != nil {
-		return fmt.Errorf("store: setting error: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
-	}
-	return nil
+func (s *Store) SetError(ctx context.Context, id uuid.UUID, workerID, message string) error {
+	return s.claimScopedUpdate(ctx, id, workerID, "setting error",
+		`UPDATE help_requests SET error = $3, updated_at = now()`, message)
 }
 
 // AppendEvent inserts one events row.

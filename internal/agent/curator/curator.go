@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -116,6 +117,11 @@ var responseSchema = map[string]any{
 // depend on how long a student went un-curated.
 const maxBatchSize = 50
 
+// sealTimeout bounds the detached write that marks a batch processed after a
+// sweep aborted. It is a single UPDATE on a context that outlives ctx, so it
+// needs its own deadline rather than inheriting none.
+const sealTimeout = 10 * time.Second
+
 // Run folds userID's unprocessed raw mistakes into their mistakes tally.
 // The call budget is one call per raw mistake in the batch (each may need
 // its own merge_into or create_mistake) plus Agent.MaxRetries of slack for
@@ -171,15 +177,42 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 	loopCost := 0.0
 	callBudget := len(raw) + r.Agent.MaxRetries
 
+	// sealBatch marks the batch processed when the sweep already wrote
+	// something. It runs on a context detached from ctx because the most
+	// likely way to reach it is ctx itself being cancelled — an operator
+	// disconnecting from POST /admin/metaloop/run, or SIGTERM during the
+	// nightly sweep — and marking on a dead context would leave exactly the
+	// state it exists to prevent.
+	sealBatch := func() error {
+		if merged == 0 && created == 0 {
+			// Nothing committed: leaving the batch unprocessed costs nothing
+			// and lets the next sweep retry it.
+			return nil
+		}
+		mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sealTimeout)
+		defer cancel()
+		return r.RawMistakes.MarkRawMistakesProcessed(mctx, ids)
+	}
+
 	giveUp := func() (Result, error) {
 		// See StatusGaveUp: anything already merged or created is committed,
 		// so the batch must not be handed to the next sweep again.
-		if merged > 0 || created > 0 {
-			if err := r.RawMistakes.MarkRawMistakesProcessed(ctx, ids); err != nil {
-				return Result{}, fmt.Errorf("curator: marking raw mistakes processed after giving up: %w", err)
-			}
+		if err := sealBatch(); err != nil {
+			return Result{}, fmt.Errorf("curator: marking raw mistakes processed after giving up: %w", err)
 		}
 		return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
+	}
+
+	// fail aborts the sweep on an infrastructure error, but seals the batch
+	// first for the same reason giveUp does: MergeMistake/CreateMistake commit
+	// as they go, so returning with committed writes and an unprocessed batch
+	// makes every later sweep re-send it and merge again — inflating
+	// mistakes.count, which drives the repair prompt's top-N, without bound.
+	fail := func(err error) (Result, error) {
+		if serr := sealBatch(); serr != nil {
+			return Result{}, errors.Join(err, fmt.Errorf("curator: marking raw mistakes processed after failure: %w", serr))
+		}
+		return Result{}, err
 	}
 
 	for {
@@ -222,7 +255,7 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 				})
 				continue
 			}
-			return Result{}, fmt.Errorf("curator: chat: %w", err)
+			return fail(fmt.Errorf("curator: chat: %w", err))
 		}
 
 		var action curatorAction
@@ -252,7 +285,7 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 					messages = append(messages, llm.Message{Role: "user", Content: `{"ok":false,"error":"no mistake with that id"}`})
 					continue
 				}
-				return Result{}, fmt.Errorf("curator: merging mistake: %w", err)
+				return fail(fmt.Errorf("curator: merging mistake: %w", err))
 			}
 			merged++
 			messages = append(messages, llm.Message{Role: "user", Content: `{"ok":true}`})
@@ -267,14 +300,14 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 				Title:       action.Title,
 				Description: action.Description,
 			}); err != nil {
-				return Result{}, fmt.Errorf("curator: creating mistake: %w", err)
+				return fail(fmt.Errorf("curator: creating mistake: %w", err))
 			}
 			created++
 			messages = append(messages, llm.Message{Role: "user", Content: `{"ok":true}`})
 
 		case "finish":
 			if err := r.RawMistakes.MarkRawMistakesProcessed(ctx, ids); err != nil {
-				return Result{}, fmt.Errorf("curator: marking raw mistakes processed: %w", err)
+				return fail(fmt.Errorf("curator: marking raw mistakes processed: %w", err))
 			}
 			status := StatusCurated
 			if merged == 0 && created == 0 {

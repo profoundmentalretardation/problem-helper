@@ -369,6 +369,18 @@ func (c *Client) TestResult(ctx context.Context, runID string, testID int) (plat
 	if hasErrorTitle(body, "Report is not available") {
 		return platform.TestCase{}, fmt.Errorf("ejudge: run %s test %d: %w", runID, testID, ErrMalformedResponse)
 	}
+	// Same sentinels RunResult reads, for the same reason: this is a report
+	// parser, and an error page renders in the same shape as a report. Without
+	// them an unknown run id or a master-side error came back as an untyped
+	// "has no test N", which satisfies neither errors.Is(ErrRunNotFound) nor
+	// errors.Is(ErrMalformedResponse) — so the caller cannot tell a missing
+	// run from a judge outage.
+	if hasErrorDetail(body, "is out of range") {
+		return platform.TestCase{}, fmt.Errorf("%w: run %s", ErrRunNotFound, runID)
+	}
+	if isErrorPage(body) {
+		return platform.TestCase{}, fmt.Errorf("ejudge: run %s test %d: %w", runID, testID, ErrMalformedResponse)
+	}
 
 	verdict, ok := reportTestVerdict(body, testID)
 	if !ok {
