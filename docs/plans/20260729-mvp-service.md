@@ -546,16 +546,40 @@ The "cache hit skips the LLM entirely" end-to-end assertion lives in Task 13.
 Deliberately after the mock-based pipeline: the MVP is demonstrable end-to-end regardless of
 what ejudge integration uncovers.
 
-- [ ] FIRST: capture real request/response samples from an ejudge instance (or local docker
+- [x] FIRST: capture real request/response samples from an ejudge instance (or local docker
       ejudge) into `testdata/`; record whether the surface is JSON or HTML/CGI and which of
       statement / status / submissions / submit / run-result / per-test data are available
-- [ ] write failing tests against `httptest` replaying the captured fixtures: statement,
+- [x] write failing tests against `httptest` replaying the captured fixtures: statement,
       status, submissions (with language), submit as system user, poll run by id, per-test
       results (or the degraded `{index, verdict}` form — update the repair prompt if so)
-- [ ] implement ejudge client until green (auth, retries on transient errors)
-- [ ] write error-case tests: auth failure, timeout, malformed response, run stuck in queue →
+- [x] implement ejudge client until green (auth, retries on transient errors)
+- [x] write error-case tests: auth failure, timeout, malformed response, run stuck in queue →
       typed errors surfacing as request `failed`
-- [ ] run tests + lint - must pass before task 16
+- [x] run tests + lint - must pass before task 16
+
+**Findings against a live ejudge 3.8.0 docker instance** (see `internal/platform/ejudge/ejudge.go`
+package doc for full detail):
+- Surface is classic HTML/CGI, not JSON: the `*_JSON` actions in ejudge's own protocol header
+  (`NEW_SRV_ACTION_LOGIN_JSON` etc.) exist but returned malformed/unusable output against this
+  build; the client scrapes the same HTML pages a browser would render, using two sessions —
+  `new-client` (participant role) for statements and submitting, `new-master` (Administrator
+  role) for another user's status/submissions/run detail.
+- Per-test detail (input/expected/actual) is fully available to the Administrator role on this
+  instance, so `TestResult` is NOT degraded to `{index, verdict}` here — the plan's anticipated
+  fallback path is still implemented (see `TestResult` doc comment) in case a course configures
+  a contest that hides it even from admins.
+- One real degradation found: this course's `serve.cfg` uses `score_system = acm`, which halts
+  judging at the first failing test. For a non-passing run, `TestsTotal` therefore reflects
+  tests actually judged before ejudge stopped, not the problem's true hidden test count — no
+  ejudge endpoint (including Administrator-only ones) reports the true total independently of
+  a run's outcome. Documented in the package doc; does not affect `pick.Best`, which only
+  compares `TestsPassed` within one problem's submissions.
+- This sandbox's ejudge instance has exactly one registered user (the built-in `ejudge`
+  administrator, who is also registered as a contest participant), so captured fixtures
+  necessarily use that single login for both the "system user" and "student" roles. The
+  query surface itself (`new-master`'s `filter_expr`, scoped by `login`/`prob`) is
+  user-parameterized and works identically for any login — nothing in the client is hardwired
+  to that one account beyond the fixtures.
 
 ### Task 16: Metaloop curator (raw_mistakes → mistakes) + cron
 
