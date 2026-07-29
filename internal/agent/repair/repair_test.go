@@ -734,3 +734,137 @@ func TestRun_MistakeProfileRendersIntoPrompt(t *testing.T) {
 		t.Errorf("mistake profile did not reach the prompt; system message:\n%s", system)
 	}
 }
+
+// fakeRuns is an in-memory repair.RunRecorder.
+type fakeRuns struct {
+	calls []struct {
+		RequestID uuid.UUID
+		Code      string
+		RunID     string
+	}
+}
+
+func (f *fakeRuns) SetRepairResult(_ context.Context, id uuid.UUID, code, runID string) error {
+	f.calls = append(f.calls, struct {
+		RequestID uuid.UUID
+		Code      string
+		RunID     string
+	}{id, code, runID})
+	return nil
+}
+
+// The plan requires the verification run id persisted BEFORE polling, so a
+// crash in the polling window resumes by polling rather than re-submitting.
+// An events row does not satisfy that — nothing reads it back — so the id
+// (and the code it carries, which loop 2 needs) goes on the request row.
+func TestRun_PersistsRunIDBeforePolling(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"fixed code"}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+	runs := &fakeRuns{}
+	r := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t),
+		Agent: testAgent(), Runs: runs,
+	}
+
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	got, err := r.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if len(runs.calls) != 1 {
+		t.Fatalf("SetRepairResult calls = %d, want 1 (persisted at submit time)", len(runs.calls))
+	}
+	if runs.calls[0].RunID != "run-1" || runs.calls[0].Code != "fixed code" {
+		t.Errorf("persisted = %+v, want run-1 / \"fixed code\"", runs.calls[0])
+	}
+}
+
+// The crash-resume case itself: handed a run id it already submitted, the
+// loop polls that run instead of submitting again. Re-submitting would spend
+// a second model budget and put another run under the shared system login,
+// once per reclaim.
+func TestRun_PendingRunIsPolledNeverResubmitted(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptRunResult("run-7", platform.RunResult{ID: "run-7", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-7", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	// No ScriptSubmitResult: the mock panics on an unscripted call, so a
+	// re-submission fails this test loudly.
+
+	// No scripted replies either — a model call would panic for the same
+	// reason.
+	scripted := llm.NewScripted(nil, testPricing())
+	r := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent(),
+	}
+
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	p.PendingRunID = "run-7"
+	p.PendingCode = "code from before the crash"
+
+	got, err := r.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if got.RunID != "run-7" {
+		t.Errorf("RunID = %q, want run-7 (the resumed run)", got.RunID)
+	}
+	if got.Code != "code from before the crash" {
+		t.Errorf("Code = %q, want the code persisted alongside the run", got.Code)
+	}
+	if scripted.Remaining() != 0 {
+		t.Errorf("scripted replies left = %d, want 0", scripted.Remaining())
+	}
+}
+
+// A model that cannot produce schema-shaped JSON even after llm.Chat's own
+// retry is the model failing, not our infrastructure: the attempt is burned
+// and the loop terminates as no_fix. Bubbling the error out would report an
+// internal error for a request processed exactly as designed and pollute the
+// failed/no_fix analytics split.
+func TestRun_InvalidModelResponseBurnsRetryNotTheRequest(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+
+	agent := testAgent()
+	agent.MaxRetries = 2
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{Usage: llm.Usage{InputTokens: 100, OutputTokens: 20}, Err: llm.ErrInvalidResponse},
+		llm.ScriptedResponse{Usage: llm.Usage{InputTokens: 100, OutputTokens: 20}, Err: llm.ErrInvalidResponse},
+	)
+	r := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: agent,
+	}
+
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	got, err := r.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusNoFix || got.Reason != repair.ReasonMaxRetries {
+		t.Errorf("status/reason = %q/%q, want no_fix/max_retries", got.Status, got.Reason)
+	}
+	if got.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2 (each unusable reply burns one)", got.Attempts)
+	}
+}

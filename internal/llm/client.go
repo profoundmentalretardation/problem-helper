@@ -91,7 +91,9 @@ func New(baseURL, apiKey string, rec CallRecorder, pricing map[string]config.Pri
 // the invalid reply and an explanation appended to the conversation. Every
 // underlying HTTP call is recorded as its own llm_calls row regardless of
 // validity — a rejected reply still spent real tokens. The returned Usage
-// and Cost cover every call this Chat made, not just the last one.
+// and Cost cover every call this Chat made, not just the last one, and are
+// populated on the error returns too (see spent) so a caller's cost caps can
+// charge a failed Chat for what it actually burned.
 func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 	messages := append([]Message(nil), req.Messages...)
 
@@ -108,7 +110,7 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 		start := time.Now()
 		content, usage, err := c.rawChat(ctx, req, messages)
 		if err != nil {
-			return Response{}, err
+			return c.spent(req, total), err
 		}
 		latency := time.Since(start)
 		cost := Cost(usage, c.pricing[req.Model])
@@ -118,7 +120,7 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 		total.OutputTokens += usage.OutputTokens
 
 		if recErr := c.record(ctx, req, messages, content, usage, cost, latency); recErr != nil {
-			return Response{}, recErr
+			return c.spent(req, total), recErr
 		}
 
 		if valErr := validateJSON(content, req.Schema); valErr != nil {
@@ -139,7 +141,17 @@ func (c *Client) Chat(ctx context.Context, req Request) (Response, error) {
 		}, nil
 	}
 
-	return Response{}, fmt.Errorf("%w: %v", ErrInvalidResponse, lastErr)
+	return c.spent(req, total), fmt.Errorf("%w: %v", ErrInvalidResponse, lastErr)
+}
+
+// spent packages what this Chat call has burned so far so an error path can
+// still be charged for it. Every error return carries it: the tokens were
+// spent and written to llm_calls either way, and returning a zero Response
+// let a model that keeps missing the schema escape max_cost_per_retry and
+// max_cost_per_loop by up to two whole calls — the exact model for which the
+// caps matter most. Callers must add Cost before propagating the error.
+func (c *Client) spent(req Request, total Usage) Response {
+	return Response{Usage: total, Cost: Cost(total, c.pricing[req.Model])}
 }
 
 func (c *Client) record(ctx context.Context, req Request, messages []Message, content string, usage Usage, cost string, latency time.Duration) error {
@@ -255,7 +267,19 @@ func (c *Client) rawChat(ctx context.Context, req Request, messages []Message) (
 			JSONSchema: wireJSONSchema{
 				Name:   req.SchemaName,
 				Schema: req.Schema,
-				Strict: true,
+				// Not strict. OpenAI's strict structured-output mode is not
+				// "validate harder" — it constrains which schemas are legal:
+				// every object must carry "additionalProperties": false and
+				// list *every* property in "required". None of this service's
+				// three schemas do (they all have optional fields keyed off a
+				// discriminated "action"), so strict:true makes the provider
+				// reject the request with a 400 before the model ever runs —
+				// every help request would end in status=failed against a real
+				// endpoint, which the httptest fixtures cannot show because
+				// they never validate response_format. Chat's own
+				// validate-and-retry (validateJSON above) is what enforces the
+				// shape here.
+				Strict: false,
 			},
 		},
 	}

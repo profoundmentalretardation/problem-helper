@@ -109,6 +109,15 @@ type Params struct {
 	BaselineRunID      string
 	BaselineTestsTotal int
 
+	// PendingRunID is a verification run this request already submitted and
+	// never got a verdict for, read back off the help_requests row on
+	// resume. When set, the loop polls and evaluates it before spending
+	// anything — the crash-safety the plan's Resume-granularity decision
+	// buys with "run-id persisted so polls resume instead of re-submitting".
+	PendingRunID string
+	// PendingCode is the code that pending run carries, persisted with it.
+	PendingCode string
+
 	// PollInterval overrides defaultPollInterval; zero uses the default.
 	PollInterval time.Duration
 	// MaxPollWait overrides defaultMaxPollWait, the wall-clock bound on
@@ -126,11 +135,28 @@ type Result struct {
 	Attempts int
 }
 
-// EventRecorder persists one events row; *store.Store satisfies it. Used to
-// record a verification run's id before polling starts, so a crash-recovered
-// worker resumes the existing run instead of resubmitting.
+// EventRecorder persists one events row; *store.Store satisfies it. The
+// run-id event is an audit trail, not the crash-recovery mechanism — that is
+// RunRecorder, below, because an events row is not read back anywhere.
 type EventRecorder interface {
 	AppendEvent(ctx context.Context, requestID uuid.UUID, kind string, payload []byte) error
+}
+
+// RunRecorder persists the id of the verification run currently in flight,
+// on the help_requests row itself; *store.Store satisfies it.
+//
+// This is what makes the plan's "run id is persisted BEFORE polling
+// (crash-safe: resume polls the run, never re-submits)" true rather than
+// aspirational. Without it the only durable copy of the run id was written
+// after loop 1 had already succeeded, so a worker dying between
+// SubmitAsSystem and a verdict was reclaimed into a fresh loop 1 — a second
+// judge submission under the shared system login plus a whole second model
+// budget, repeatable up to store.maxClaimAttempts times.
+// The submitted code is persisted alongside the id because a resumed run
+// that turns out to have passed still has to hand loop 2 the code it
+// verified.
+type RunRecorder interface {
+	SetRepairResult(ctx context.Context, requestID uuid.UUID, code, runID string) error
 }
 
 // MistakeRecorder persists one raw_mistakes row; *store.Store satisfies it.
@@ -147,6 +173,7 @@ type Runner struct {
 	Template  prompt.Template
 	Agent     config.AgentConfig
 	Events    EventRecorder
+	Runs      RunRecorder
 	Mistakes  MistakeRecorder
 	Formatter format.Runner
 }
@@ -214,6 +241,27 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 	loopCost := 0.0
 	attempts := 0
 
+	// A run this request already submitted and never saw a verdict for is
+	// resolved by polling, never by submitting again: the judge has the code
+	// and the system login's quota was already spent on it.
+	if p.PendingRunID != "" {
+		verified, testsTotal, err := r.resumePendingRun(ctx, p, baseline, pollInterval, maxPollWait)
+		if err != nil {
+			return Result{}, err
+		}
+		if verified {
+			return Result{
+				Status: StatusFixed, Code: p.PendingCode,
+				RunID: p.PendingRunID, Attempts: attempts,
+			}, nil
+		}
+		// It was judged and it wasn't a fix — carry it as the run the tools
+		// read from, exactly like any other failed attempt.
+		currentRunID = p.PendingRunID
+		currentTestsTotal = testsTotal
+		previousCode = p.PendingCode
+	}
+
 	for {
 		if r.Agent.MaxCostPerLoop > 0 && loopCost >= r.Agent.MaxCostPerLoop {
 			return Result{Status: StatusNoFix, Reason: ReasonCostCap, Attempts: attempts}, nil
@@ -262,7 +310,11 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			}
 			return Result{}, fmt.Errorf("repair: submitting for verification: %w", err)
 		}
-		if err := r.recordRunID(ctx, p.RequestID, run.ID, attempts); err != nil {
+		// Persisted before the first poll, not after the loop succeeds: a
+		// crash in the polling window is the whole reason the plan requires
+		// the run id on the row. Both fields go down together so a resume
+		// can evaluate the run *and* hand loop 2 the code it verified.
+		if err := r.recordRunID(ctx, p.RequestID, code, run.ID, attempts); err != nil {
 			return Result{}, err
 		}
 
@@ -287,6 +339,36 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		currentTestsTotal = result.TestsTotal
 		previousCode = code
 	}
+}
+
+// resumePendingRun polls a verification run submitted before a crash and
+// reports whether it verified as a fix, plus how many tests it was judged on
+// (so the tools can read from it if it did not).
+//
+// A run id the judge no longer recognises — a wiped contest, a row copied
+// between environments — is not fatal: it just means there is nothing to
+// resume, and the caller falls through to a normal first attempt.
+func (r *Runner) resumePendingRun(
+	ctx context.Context, p Params, baseline map[int]platform.TestCase, pollInterval, maxWait time.Duration,
+) (verified bool, testsTotal int, err error) {
+	result, err := r.Platform.RunResult(ctx, p.PendingRunID)
+	if err != nil {
+		if errors.Is(err, platform.ErrRunNotFound) {
+			return false, 0, nil
+		}
+		return false, 0, fmt.Errorf("repair: reading pending verification run: %w", err)
+	}
+
+	result, err = r.pollUntilDone(ctx, result, pollInterval, maxWait)
+	if err != nil {
+		return false, 0, err
+	}
+
+	current, err := r.fetchTestCases(ctx, p.PendingRunID, result.TestsTotal)
+	if err != nil {
+		return false, 0, fmt.Errorf("repair: fetching pending run test results: %w", err)
+	}
+	return success(result, baseline, current), result.TestsTotal, nil
 }
 
 // runAttempt runs the tool sub-loop for one attempt: repeated Chat calls
@@ -325,11 +407,22 @@ func (r *Runner) runAttempt(
 			SchemaName:      "repair_action",
 			Schema:          responseSchema,
 		})
-		if err != nil {
-			return nil, nil, retryCost, fmt.Errorf("repair: chat: %w", err)
-		}
+		// Charged before the error check: Chat populates Usage/Cost on its
+		// error returns too, and those tokens were really spent.
 		if cost, perr := strconv.ParseFloat(resp.Cost, 64); perr == nil {
 			retryCost += cost
+		}
+		if err != nil {
+			// A model that cannot produce schema-shaped JSON even after
+			// Chat's own retry is the model failing, not our infrastructure:
+			// abandon the attempt (burning the retry, like the per-retry cost
+			// cap does) so the loop can terminate as no_fix rather than
+			// reporting an internal error to a caller whose request was
+			// processed exactly as designed.
+			if errors.Is(err, llm.ErrInvalidResponse) {
+				return nil, nil, retryCost, nil
+			}
+			return nil, nil, retryCost, fmt.Errorf("repair: chat: %w", err)
 		}
 
 		var action modelAction
@@ -508,7 +601,12 @@ func (r *Runner) pollUntilDone(
 	return result, nil
 }
 
-func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, runID string, attempt int) error {
+func (r *Runner) recordRunID(ctx context.Context, requestID uuid.UUID, code, runID string, attempt int) error {
+	if r.Runs != nil {
+		if err := r.Runs.SetRepairResult(ctx, requestID, code, runID); err != nil {
+			return fmt.Errorf("repair: persisting verification run: %w", err)
+		}
+	}
 	if r.Events == nil {
 		return nil
 	}

@@ -148,6 +148,8 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 				serveFixture(w, fixture(t, "run_report_wa.html"))
 			case "7":
 				serveFixture(w, fixture(t, "run_report_not_available.html"))
+			case "8":
+				serveFixture(w, fixture(t, "run_report_runtime_error_out_of_range.html"))
 			case "99999":
 				serveFixture(w, fixture(t, "run_report_out_of_range.html"))
 			default:
@@ -420,7 +422,12 @@ func TestSubmitAsSystem_RunIDNotNewerThanPreSubmit_IsRejected(t *testing.T) {
 func TestSubmitAsSystem_ExpiredSession_ReLoginsAndRetries(t *testing.T) {
 	srv := newSubmitServer(t, func(n int) string {
 		if n == 1 {
-			return `<html><body><h2>Error: Invalid session</h2></body></html>`
+			// Shaped like ejudge's real expired-session page
+			// (testdata/session_invalid_master.html): the sentinel lives in
+			// the <title>, which is where the client looks for it so a
+			// student's own source or program output can never spoof it.
+			return `<html><head><title>Participant: Error: Invalid session</title></head>` +
+				`<body><h1>Participant: Error: Invalid session</h1><h2>Invalid session</h2></body></html>`
 		}
 		return fixture(t, "submit_run_response.html")
 	})
@@ -849,5 +856,87 @@ func TestSubmissions_AcceptsLegitimateLogins(t *testing.T) {
 				t.Errorf("Submissions(%q): %v, want the login accepted", login, err)
 			}
 		})
+	}
+}
+
+// A report page embeds every test's stdout and stderr, and a source page
+// embeds the student's whole submission — so ejudge's error sentinels have
+// to be read off ejudge's own markup, not scanned for anywhere in the
+// document. A program that prints "k is out of range" is a normal failing
+// run, not a missing one; reporting ErrRunNotFound for it puts the request
+// in status=failed instead of no_fix, which is the distinction the pipeline
+// exists to keep (and the student authors that text, so it is forgeable).
+func TestRunResult_StudentOutputMentioningOutOfRangeIsStillAVerdict(t *testing.T) {
+	srv := newFixtureServer(t)
+	c := newClient(t, srv)
+
+	got, err := c.RunResult(context.Background(), "8")
+	if err != nil {
+		t.Fatalf("RunResult: %v", err)
+	}
+	if !got.Done || got.Passed {
+		t.Errorf("Done/Passed = %v/%v, want true/false (a judged, failing run)", got.Done, got.Passed)
+	}
+	if got.TestsTotal != 1 {
+		t.Errorf("TestsTotal = %d, want 1", got.TestsTotal)
+	}
+}
+
+// ejudge answers all of its own error conditions with a 200 and an error
+// page, so a non-2xx is something in front of it (an nginx 502, a CGI 500).
+// isErrorPage does not recognise those, so an unchecked status code let a
+// proxy error page flow into the parsers, where it yields zero test rows and
+// no error — indistinguishable from a compile error, which makes pick.Best
+// choose on garbage.
+func TestRunResult_ProxyErrorPageIsNotParsedAsAVerdict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "new-master") && r.URL.Query().Get("action") == "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("<html><head><title>502 Bad Gateway</title></head><body>nginx</body></html>"))
+	}))
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	_, err := c.RunResult(context.Background(), "5")
+	if !errors.Is(err, ejudge.ErrMalformedResponse) {
+		t.Errorf("err = %v, want ErrMalformedResponse for a 502 from in front of ejudge", err)
+	}
+}
+
+// A repair verification POST must never be replayed: ejudge has already
+// received and queued it, so a retry either creates a second run under the
+// shared system login or draws ErrDuplicateSubmission for an attempt that
+// actually succeeded. The retry loop only exists for failures that prove the
+// request never landed.
+func TestSubmitAsSystem_NotRetriedAfterTheServerResponded(t *testing.T) {
+	var submits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-client", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			submits.Add(1)
+			// Responded, then failed: a status ejudge itself never returns.
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("<html><head><title>502 Bad Gateway</title></head><body>nginx</body></html>"))
+			return
+		}
+		_ = r.ParseForm()
+		if r.URL.Query().Get("action") == "139" || r.FormValue("action") == "139" {
+			serveFixture(w, fixture(t, "statement_prob_a.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "login_client_ok.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newClient(t, srv)
+
+	if _, err := c.SubmitAsSystem(context.Background(), "1", "int main(){return 0;}", "gcc"); err == nil {
+		t.Fatal("SubmitAsSystem: want an error, got nil")
+	}
+	if n := submits.Load(); n != 1 {
+		t.Errorf("submit POSTs = %d, want 1 (the request must not be replayed once ejudge has it)", n)
 	}
 }

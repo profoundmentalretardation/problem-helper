@@ -87,7 +87,10 @@ func TestLookup_Hit(t *testing.T) {
 		t.Fatalf("insert hint: %v", err)
 	}
 
-	got, ok := worker.Lookup(ctx, s, "problem-1", hash)
+	got, ok, err := worker.Lookup(ctx, s, "problem-1", hash)
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
 	if !ok {
 		t.Fatal("Lookup: ok = false, want true")
 	}
@@ -122,7 +125,11 @@ func TestLookup_Miss(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, ok := worker.Lookup(ctx, s, tt.problemID, tt.codeHash); ok {
+			got, ok, err := worker.Lookup(ctx, s, tt.problemID, tt.codeHash)
+			if err != nil {
+				t.Fatalf("Lookup: %v", err)
+			}
+			if ok {
 				t.Errorf("Lookup: ok = true, got %+v, want a miss", got)
 			}
 		})

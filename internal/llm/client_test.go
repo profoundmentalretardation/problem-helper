@@ -3,6 +3,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -222,7 +223,7 @@ func TestChat_FailsAfterRetryExhausted(t *testing.T) {
 	recorder := &fakeRecorder{}
 	client := llm.New(srv.URL, "test-key", recorder, testPricing())
 
-	_, err := client.Chat(context.Background(), llm.Request{
+	resp, err := client.Chat(context.Background(), llm.Request{
 		RequestID:  uuid.New(),
 		Agent:      "repair",
 		Model:      "gpt-test",
@@ -230,8 +231,8 @@ func TestChat_FailsAfterRetryExhausted(t *testing.T) {
 		SchemaName: "verdict",
 		Schema:     testSchema,
 	})
-	if err == nil {
-		t.Fatal("Chat: want error after both attempts return invalid JSON, got nil")
+	if !errors.Is(err, llm.ErrInvalidResponse) {
+		t.Fatalf("Chat: err = %v, want ErrInvalidResponse after both attempts return invalid JSON", err)
 	}
 	if *calls != 2 {
 		t.Fatalf("HTTP calls = %d, want 2 (initial + one retry, then give up)", *calls)
@@ -239,6 +240,51 @@ func TestChat_FailsAfterRetryExhausted(t *testing.T) {
 	// Both failed calls still cost money and must be recorded.
 	if len(recorder.calls) != 2 {
 		t.Fatalf("llm_calls rows recorded = %d, want 2", len(recorder.calls))
+	}
+	// ...and the caller has to be able to charge its cost caps for them.
+	// Returning a zero Response here let a model that keeps missing the
+	// schema overshoot max_cost_per_retry and max_cost_per_loop by two whole
+	// calls, while the llm_calls rows said otherwise.
+	if resp.Usage.InputTokens != 200 || resp.Usage.OutputTokens != 20 {
+		t.Errorf("usage on the error return = %+v, want both calls summed (200 in / 20 out)", resp.Usage)
+	}
+	if resp.Cost == "" || resp.Cost == "0.000000" {
+		t.Errorf("cost on the error return = %q, want the two calls' spend", resp.Cost)
+	}
+}
+
+// OpenAI's strict structured-output mode is not "validate harder": it
+// rejects any schema that omits additionalProperties:false or leaves a
+// property out of required. All three of this service's schemas do both, so
+// sending strict:true would 400 every call against a real endpoint and put
+// every request in status=failed — invisible to fixtures that never look at
+// response_format.
+func TestChat_DoesNotRequestStrictSchemaMode(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decoding request body: %v", err)
+		}
+		_, _ = w.Write([]byte(chatResponseBody(`{"verdict":"approve"}`, 1, 0, 1)))
+	}))
+	t.Cleanup(srv.Close)
+	client := llm.New(srv.URL, "test-key", &fakeRecorder{}, testPricing())
+
+	if _, err := client.Chat(context.Background(), llm.Request{
+		RequestID:  uuid.New(),
+		Agent:      "repair",
+		Model:      "gpt-test",
+		Messages:   []llm.Message{{Role: "user", Content: "hi"}},
+		SchemaName: "verdict",
+		Schema:     testSchema,
+	}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+
+	format, _ := gotBody["response_format"].(map[string]any)
+	schema, _ := format["json_schema"].(map[string]any)
+	if schema["strict"] != false {
+		t.Errorf("response_format.json_schema.strict = %v, want false", schema["strict"])
 	}
 }
 

@@ -131,24 +131,24 @@ func TestRequestCountsByStatus(t *testing.T) {
 	id3 := createRequest(t, s, ctx)
 
 	// id1: pending -> running -> no_fix
-	if err := s.TransitionStatus(ctx, id1, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id1, store.StatusRunning, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.TransitionStatus(ctx, id1, store.StatusNoFix); err != nil {
+	if err := s.TransitionStatus(ctx, id1, store.StatusNoFix, ""); err != nil {
 		t.Fatal(err)
 	}
 	// id2: pending -> running -> no_hint
-	if err := s.TransitionStatus(ctx, id2, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id2, store.StatusRunning, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.TransitionStatus(ctx, id2, store.StatusNoHint); err != nil {
+	if err := s.TransitionStatus(ctx, id2, store.StatusNoHint, ""); err != nil {
 		t.Fatal(err)
 	}
 	// id3: pending -> running -> failed
-	if err := s.TransitionStatus(ctx, id3, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id3, store.StatusRunning, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.TransitionStatus(ctx, id3, store.StatusFailed); err != nil {
+	if err := s.TransitionStatus(ctx, id3, store.StatusFailed, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -292,10 +292,10 @@ func TestListRequests_FilterByStatus(t *testing.T) {
 	s, ctx := withStore(t)
 	id1 := createRequest(t, s, ctx)
 	id2 := createRequest(t, s, ctx)
-	if err := s.TransitionStatus(ctx, id1, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id1, store.StatusRunning, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.TransitionStatus(ctx, id1, store.StatusNoFix); err != nil {
+	if err := s.TransitionStatus(ctx, id1, store.StatusNoFix, ""); err != nil {
 		t.Fatal(err)
 	}
 

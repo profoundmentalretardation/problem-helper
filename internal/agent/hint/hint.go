@@ -12,6 +12,7 @@ package hint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -133,6 +134,16 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			Schema:          hintSchema,
 		})
 		if err != nil {
+			// Chat populates Usage/Cost on its error returns, so the loop is
+			// charged for what a failed call really spent. A model that
+			// cannot produce schema-shaped JSON even after Chat's own retry
+			// burns this attempt rather than failing the whole request:
+			// "we declined to hint" (no_hint) and "our infra broke" (failed)
+			// are the split the pipeline exists to keep.
+			loopCost += parseCost(resp.Cost)
+			if errors.Is(err, llm.ErrInvalidResponse) {
+				continue
+			}
 			return Result{}, fmt.Errorf("hint: chat: %w", err)
 		}
 		// retryCost is this attempt's writer call only, unlike loopCost which

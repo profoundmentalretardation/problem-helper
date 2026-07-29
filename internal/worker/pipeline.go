@@ -63,6 +63,14 @@ var stepOrder = map[string]int{
 	StepHint:        7,
 }
 
+// deref reads an optional string column, treating NULL as empty.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // resumeIndex returns step's position in stepOrder, or 0 if step is nil —
 // a fresh request that hasn't completed any pipeline step yet.
 func resumeIndex(step *string) int {
@@ -76,7 +84,7 @@ func resumeIndex(step *string) int {
 // satisfies it.
 type Store interface {
 	GetHelpRequest(ctx context.Context, id uuid.UUID) (*store.HelpRequest, error)
-	TransitionStatus(ctx context.Context, id uuid.UUID, to store.Status) error
+	TransitionStatus(ctx context.Context, id uuid.UUID, to store.Status, workerID string) error
 	AppendEvent(ctx context.Context, id uuid.UUID, kind string, payload []byte) error
 	SnapshotSubmissions(ctx context.Context, requestID uuid.UUID, subs []store.Submission) error
 	InsertShieldRecord(ctx context.Context, r store.ShieldRecord) error
@@ -114,6 +122,14 @@ type Pipeline struct {
 	// into the repair prompt (agents.yaml repair.top_n_mistakes). Zero
 	// disables the lookup, so the prompt renders no mistakes at all.
 	TopNMistakes int
+
+	// WorkerID is the claimant identity every terminal transition is scoped
+	// to, so a worker that was reclaimed mid-run cannot finish a row the new
+	// claimant now owns (see store.TransitionStatus). A process runs one
+	// Worker, so one value covers every pipeline goroutine in it. Empty
+	// skips the check, which is what tests that drive RunPipeline without a
+	// worker want.
+	WorkerID string
 }
 
 // RunPipeline drives one help_requests row (already claimed, status=running)
@@ -263,7 +279,11 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 
 	codeHash := HashCode(shielded.CodeAfter)
 	if resumeIdx < stepOrder[StepCache] {
-		if cached, ok := Lookup(ctx, pl.Store, hr.ProblemID, codeHash); ok {
+		cached, ok, err := Lookup(ctx, pl.Store, hr.ProblemID, codeHash)
+		if err != nil {
+			return pl.infraFail(ctx, requestID, err)
+		}
+		if ok {
 			if err := pl.Store.SetHintID(ctx, requestID, cached.ID); err != nil {
 				return fmt.Errorf("pipeline: recording cached hint id: %w", err)
 			}
@@ -306,6 +326,11 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 			Mistakes:           mistakes,
 			BaselineRunID:      best.ID,
 			BaselineTestsTotal: best.TestsTotal,
+			// A run id on the row before the repair checkpoint means a
+			// previous claim submitted for verification and died waiting for
+			// the verdict. Loop 1 polls it instead of submitting again.
+			PendingRunID: deref(hr.RepairRunID),
+			PendingCode:  deref(hr.RepairCode),
 		})
 		if err != nil {
 			return pl.infraFail(ctx, requestID, fmt.Errorf("running repair loop: %w", err))
@@ -459,7 +484,7 @@ func (pl *Pipeline) event(ctx context.Context, requestID uuid.UUID, kind string,
 // finish transitions requestID to a terminal status reached without error
 // (already_solved, no_submissions, done).
 func (pl *Pipeline) finish(ctx context.Context, requestID uuid.UUID, status store.Status) error {
-	if err := pl.Store.TransitionStatus(ctx, requestID, status); err != nil {
+	if err := pl.Store.TransitionStatus(ctx, requestID, status, pl.WorkerID); err != nil {
 		return fmt.Errorf("pipeline: transitioning to %s: %w", status, err)
 	}
 	return nil

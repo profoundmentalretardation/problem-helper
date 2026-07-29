@@ -35,6 +35,13 @@ func TestLooksExplicit(t *testing.T) {
 		hint       string
 		shouldFire bool
 	}{
+		// An empty hint leaks nothing, so every other rule passes it and a
+		// guardrail asked "does this give the answer away?" plausibly
+		// approves — after which it is stored, cached under the code hash
+		// for every later student with the same defect, and delivered as
+		// status=done.
+		{"an empty hint", "", true},
+		{"a whitespace-only hint", "   \n\t ", true},
 		{"quotes the repaired expression",
 			"In the for statement, use range(1, n - k + 1) instead of what you have.", true},
 		{"names a line number", "Look at line 7 of your solution.", true},

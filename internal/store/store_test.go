@@ -15,6 +15,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -156,10 +157,10 @@ func TestTransitionStatus_LegalPath(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning, ""); err != nil {
 		t.Fatalf("pending -> running: %v", err)
 	}
-	if err := s.TransitionStatus(ctx, id, store.StatusDone); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusDone, ""); err != nil {
 		t.Fatalf("running -> done: %v", err)
 	}
 
@@ -176,10 +177,10 @@ func TestTransitionStatus_ReclaimPath(t *testing.T) {
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
-	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning, ""); err != nil {
 		t.Fatalf("pending -> running: %v", err)
 	}
-	if err := s.TransitionStatus(ctx, id, store.StatusPending); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusPending, ""); err != nil {
 		t.Fatalf("running -> pending (reclaim): %v", err)
 	}
 }
@@ -205,17 +206,17 @@ func TestTransitionStatus_Illegal(t *testing.T) {
 				// drive the row to `from` via the legal pending->running->from
 				// path (running is an intermediate for every non-pending
 				// terminal status in this graph).
-				if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+				if err := s.TransitionStatus(ctx, id, store.StatusRunning, ""); err != nil {
 					t.Fatalf("setup pending -> running: %v", err)
 				}
 				if tt.from != store.StatusRunning {
-					if err := s.TransitionStatus(ctx, id, tt.from); err != nil {
+					if err := s.TransitionStatus(ctx, id, tt.from, ""); err != nil {
 						t.Fatalf("setup running -> %s: %v", tt.from, err)
 					}
 				}
 			}
 
-			err := s.TransitionStatus(ctx, id, tt.to)
+			err := s.TransitionStatus(ctx, id, tt.to, "")
 			if err == nil {
 				t.Fatalf("transition %s -> %s: expected error, got nil", tt.from, tt.to)
 			}
@@ -246,7 +247,7 @@ func TestTransitionStatus_Illegal(t *testing.T) {
 
 func TestTransitionStatus_UnknownRequest(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.TransitionStatus(ctx, uuid.New(), store.StatusRunning)
+	err := s.TransitionStatus(ctx, uuid.New(), store.StatusRunning, "")
 	if !errors.Is(err, store.ErrUnknownRequest) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
@@ -993,7 +994,7 @@ func TestClaimNext_SkipsAlreadyRunningRow(t *testing.T) {
 	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
-	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning, ""); err != nil {
 		t.Fatalf("transition to running: %v", err)
 	}
 
@@ -1270,5 +1271,93 @@ func TestMergeMistake_OtherUsersMistakeIsNotBumped(t *testing.T) {
 	}
 	if got[0].Count != 1 {
 		t.Errorf("count = %d, want 1 (another user's merge must not bump it)", got[0].Count)
+	}
+}
+
+// The daily cap is the only control between one caller and both the whole
+// LLM budget and a flood of judge submissions under the shared system login,
+// so it has to hold when a frontend bursts. Counting and inserting as two
+// statements let every concurrent request read the same pre-insert count and
+// all pass; the single-statement form is what makes the limit real.
+func TestCreateHelpRequestWithinDailyLimit_ConcurrentBurstCannotExceedTheCap(t *testing.T) {
+	// This test commits `pending` rows, which ClaimNext/ReclaimStale in both
+	// this package and internal/worker will happily pick up — the same
+	// cross-package hazard queueLockKey exists for.
+	lockQueueTable(t)
+
+	// A shared committed pool, not the per-test transaction: the race this
+	// asserts on only exists between separate connections.
+	ctx := context.Background()
+	const limit = 3
+	const attempts = 12
+	userID := "user-burst-" + uuid.NewString()
+	since := time.Now().Add(-time.Hour)
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM help_requests WHERE user_id = $1`, userID)
+	})
+
+	var mu sync.Mutex
+	var accepted int
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			created, err := store.New(testPool).CreateHelpRequestWithinDailyLimit(ctx, store.HelpRequestInput{
+				ID: uuid.New(), UserID: userID, ProblemID: "problem-1", Platform: "mock", NSubmissionsTaken: 5,
+			}, since, limit)
+			if err != nil {
+				t.Errorf("CreateHelpRequestWithinDailyLimit: %v", err)
+				return
+			}
+			if created {
+				mu.Lock()
+				accepted++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	if accepted > limit {
+		t.Errorf("accepted = %d, want at most %d", accepted, limit)
+	}
+	if accepted == 0 {
+		t.Errorf("accepted = 0, want the cap to admit requests, not reject everything")
+	}
+
+	var stored int
+	if err := testPool.QueryRow(ctx,
+		`SELECT count(*) FROM help_requests WHERE user_id = $1`, userID).Scan(&stored); err != nil {
+		t.Fatalf("counting stored rows: %v", err)
+	}
+	if stored != accepted {
+		t.Errorf("stored rows = %d, want %d (one row per accepted request)", stored, accepted)
+	}
+}
+
+// A worker whose heartbeats lapsed long enough to be reclaimed only learns
+// it lost the claim on its next tick. In that window it can finish its
+// pipeline and write a legal terminal status onto a row the new claimant is
+// actively working — delivering the stale worker's hint and failing the
+// healthy one. Ownership is checked in SQL, like Heartbeat's.
+func TestTransitionStatus_RejectsAWriteFromAWorkerThatLostTheClaim(t *testing.T) {
+	lockQueueTable(t)
+	s, ctx := withStore(t)
+	createRequest(t, s, ctx)
+
+	claimed, err := s.ClaimNext(ctx, "worker-new")
+	if err != nil {
+		t.Fatalf("ClaimNext: %v", err)
+	}
+	if claimed == nil {
+		t.Fatal("ClaimNext returned no row")
+	}
+
+	if err := s.TransitionStatus(ctx, claimed.ID, store.StatusDone, "worker-old"); !errors.Is(err, store.ErrClaimLost) {
+		t.Fatalf("err = %v, want ErrClaimLost for a worker that no longer owns the row", err)
+	}
+	if err := s.TransitionStatus(ctx, claimed.ID, store.StatusDone, "worker-new"); err != nil {
+		t.Fatalf("the current claimant must still be able to finish: %v", err)
 	}
 }

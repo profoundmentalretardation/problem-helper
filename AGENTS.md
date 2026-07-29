@@ -100,7 +100,11 @@ research/              frozen Python prototypes (reference only, see research/RE
   completed *step* (`help_requests.resume_step`); a crash strictly inside an in-flight
   repair/hint loop re-enters that whole loop on resume. This is intentional MVP scope,
   documented in `internal/worker/pipeline.go`'s header comment — don't "fix" it without
-  checking the plan's "Resume granularity" decision first.
+  checking the plan's "Resume granularity" decision first. The one carve-out that decision
+  itself names is the verification run: `repair.Runner.Runs` persists the run id *and* the code
+  it carries the moment `SubmitAsSystem` returns, and `Params.PendingRunID` makes a resumed
+  loop 1 poll that run instead of submitting a second one under the shared system login. An
+  events row does not satisfy this — nothing reads it back.
 - **A resume checkpoint is only worth writing if the step's output is readable back.** The
   repair and hint checkpoints were originally written but never consulted, because the state
   the next step needs lived in memory: `resume_step='repair'` still re-ran loop 1 — re-spending
@@ -124,6 +128,62 @@ research/              frozen Python prototypes (reference only, see research/RE
   also matches C itself, which removes comments in translation phase 3, before directives run
   in phase 4. `#` has no special meaning to the scanner, and `skipEscaped` stopping at newlines
   is what keeps `#error don't` from swallowing the rest of the file.
+- **The C-family scanner's lexical rules are shield boundaries, not pedantry**
+  (`internal/shield/clike.go`). Three separate bypasses came from approximating C's lexer:
+  `u8'a'` was misread as a C++14 digit separator because `8` is a hex digit, so the literal was
+  never entered and its closing quote opened a phantom one that hid the rest of the line
+  (`isDigitSeparator` now walks to the token start and asks whether it begins with a digit —
+  `0xFF'FF` does, `u8` does not); C++11 raw strings `R"delim(...)delim"` were scanned as
+  ordinary escaped strings, so `R"(a"b)"` ended early and swallowed the following `//`, while a
+  `//` *inside* a raw string was deleted from the program (`rawStringEnd`); and a `//` comment
+  ending in an odd number of backslashes continues onto the next line in C's translation phase
+  2, so stopping at the newline emitted comment prose to the model as code (`skipLineComment`).
+  A block comment is replaced by a *space*, not deleted, for the same reason C does it —
+  `int/**/main()` otherwise reaches the judge as the uncompilable `intmain()`. New literal
+  forms belong in this scanner, with a case in `TestStrip_InjectionCorpus_MustNotSurvive` or
+  `TestStrip_ApostropheEdgeCases`.
+- **`Strict: false` on `response_format` is deliberate** (`internal/llm/client.go`): OpenAI's
+  strict structured-output mode constrains which *schemas are legal* — every object must carry
+  `additionalProperties: false` and list every property in `required` — and all three of this
+  service's schemas are discriminated unions with optional fields. `strict: true` therefore
+  400s before the model runs, i.e. every request ends `status=failed`, and no fixture catches
+  it because none validate `response_format`. `Chat`'s own validate-and-retry is the enforcement.
+- **A failed `Chat` still returns what it spent** (`spent` in `internal/llm/client.go`, mirrored
+  by `Scripted`): both HTTP calls of a schema-rejected exchange are billed and written to
+  `llm_calls`, so returning a zero `Response` on the error path let a model that keeps missing
+  the schema overshoot `max_cost_per_retry`/`max_cost_per_loop` by two whole calls. Agents
+  charge their caps *before* checking the error. `llm.ErrInvalidResponse` is also not infra
+  failure: repair burns the attempt, hint burns the retry, curator burns a call — `no_fix` /
+  `no_hint`, never `failed`.
+- **Rate limiting needs a lock, and one clever statement is not enough**
+  (`store.CreateHelpRequestWithinDailyLimit`): the obvious
+  `INSERT ... SELECT ... WHERE (SELECT count(*) ...) < limit` looks atomic but isn't — under
+  READ COMMITTED the subquery reads the statement's own snapshot, so every racing statement
+  sees the same pre-insert count and all pass. The count has to run as its own statement inside
+  a transaction that already holds `pg_advisory_xact_lock(hashtextextended(user_id, 0))`.
+  `TestCreateHelpRequestWithinDailyLimit_ConcurrentBurstCannotExceedTheCap` is what caught the
+  first, wrong fix.
+- **Terminal transitions are ownership-scoped like `Heartbeat`**
+  (`store.TransitionStatus`'s `workerID`, `worker.Pipeline.WorkerID`): a reclaimed worker only
+  learns it lost the claim on its next heartbeat tick, and in that window it can write a
+  perfectly legal terminal status onto a row the new claimant is running — delivering the stale
+  worker's hint and failing the healthy one. `store.ErrClaimLost` is deliberately distinct from
+  `ErrIllegalTransition`: the transition was legal, the row just isn't ours.
+- **ejudge's error sentinels are read off ejudge's own markup**
+  (`hasErrorTitle`/`hasErrorDetail`): report pages embed each test's stdout/stderr and source
+  pages embed the whole submission, so scanning the document for `is out of range` or
+  `Report is not available` let a student's text — which they author, hence can forge —
+  masquerade as a judge error and push a normal failing verification into `status=failed`. The
+  `<title>` is generated from ejudge's message catalogue and never carries submission text.
+  Relatedly, a non-2xx is *never* ejudge (it answers its own errors with a 200 + error page),
+  so `doOnce` treats it as `ErrMalformedResponse`, and any failure after the server responded
+  is a `respondedError` that `doWithRetry` must not replay — replaying a submit POST creates a
+  second run under the shared system login.
+- **The curator marks its batch processed whenever it wrote something**, even on
+  `StatusGaveUp` (`giveUp` in `internal/agent/curator/curator.go`): `MergeMistake` and
+  `CreateMistake` commit as they go, so leaving the batch unprocessed made every later sweep
+  re-send it and merge/create again — inflating `mistakes.count`, which drives the repair
+  prompt's top-N, without bound. Only a sweep that wrote *nothing* leaves the batch for a retry.
 - **`agents.yaml` validation is strict by construction**: `yaml.Decoder.KnownFields(true)`
   rejects unknown keys at both the top level and inside each agent block; every agent's `model`
   must have a matching `pricing` entry or `config.Load` fails at startup — a misconfigured or

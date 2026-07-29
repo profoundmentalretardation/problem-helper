@@ -89,6 +89,8 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		return err
 	}
 
+	workerID := fmt.Sprintf("%s-%d", hostname(), os.Getpid())
+
 	pipeline := &worker.Pipeline{
 		Store:    st,
 		Platform: plt,
@@ -98,6 +100,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 			Template: templates["repair"],
 			Agent:    cfg.Agents.Repair,
 			Events:   st,
+			Runs:     st,
 			Mistakes: st,
 			Formatter: format.Runner{
 				Enabled: cfg.Agents.Formatter.Enabled,
@@ -113,6 +116,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 			GuardrailAgent:    cfg.Agents.Guardrail,
 		},
 		TopNMistakes: cfg.Agents.Repair.TopNMistakes,
+		WorkerID:     workerID,
 	}
 
 	metaloop := &worker.Metaloop{
@@ -126,7 +130,6 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		},
 	}
 
-	workerID := fmt.Sprintf("%s-%d", hostname(), os.Getpid())
 	w := &worker.Worker{
 		ID:       workerID,
 		Store:    st,
@@ -135,7 +138,20 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	}
 
 	srv := api.NewServer(st, cfg, metaloop)
-	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
+	// Timeouts are not optional here: header reads happen before any handler
+	// (and so before bearer-token auth) runs, so without ReadHeaderTimeout an
+	// unauthenticated client can hold connections open indefinitely and
+	// exhaust the process's file descriptors and goroutines. The rest bound a
+	// slow or stalled body/response the same way.
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16,
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)

@@ -27,11 +27,25 @@ type Usage struct {
 // per-1M rates already carry, and is formatted as a fixed 6-decimal string.
 func Cost(u Usage, pricing config.PricingConfig) string {
 	million := big.NewRat(1_000_000, 1)
-	uncachedInput := u.InputTokens - u.CachedInputTokens
+
+	// The cached count comes straight off the wire and is only a subset of
+	// the input count by convention; a provider that reports it additively
+	// (or a garbled response) would make uncachedInput negative and hand back
+	// an understated — possibly negative — cost, silently disabling both cost
+	// caps against exactly the provider whose accounting differs. Clamp
+	// rather than trust.
+	cachedInput := u.CachedInputTokens
+	if cachedInput < 0 {
+		cachedInput = 0
+	}
+	if cachedInput > u.InputTokens {
+		cachedInput = u.InputTokens
+	}
+	uncachedInput := u.InputTokens - cachedInput
 
 	total := new(big.Rat)
 	total.Add(total, tokenCost(uncachedInput, pricing.Input, million))
-	total.Add(total, tokenCost(u.CachedInputTokens, pricing.CachedInput, million))
+	total.Add(total, tokenCost(cachedInput, pricing.CachedInput, million))
 	total.Add(total, tokenCost(u.OutputTokens, pricing.Output, million))
 
 	return total.FloatString(6)

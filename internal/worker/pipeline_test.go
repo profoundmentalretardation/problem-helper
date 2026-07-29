@@ -37,7 +37,7 @@ func newClaimedRequest(t *testing.T, s *store.Store, ctx context.Context, nSubmi
 	}); err != nil {
 		t.Fatalf("create help request: %v", err)
 	}
-	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
+	if err := s.TransitionStatus(ctx, id, store.StatusRunning, ""); err != nil {
 		t.Fatalf("transition to running: %v", err)
 	}
 	return id

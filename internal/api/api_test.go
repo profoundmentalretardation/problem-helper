@@ -47,7 +47,13 @@ func newFakeStore() *fakeStore {
 	}
 }
 
-func (f *fakeStore) CreateHelpRequest(_ context.Context, in store.HelpRequestInput) error {
+// CreateHelpRequestWithinDailyLimit mirrors the store's single-statement
+// enforcement: over the limit means no row is written and created=false.
+func (f *fakeStore) CreateHelpRequestWithinDailyLimit(_ context.Context, in store.HelpRequestInput, _ time.Time, limit int) (bool, error) {
+	if f.counts[in.UserID] >= limit {
+		return false, nil
+	}
+	f.counts[in.UserID]++
 	f.created = append(f.created, in)
 	f.requests[in.ID] = &store.HelpRequest{
 		ID:                in.ID,
@@ -57,7 +63,7 @@ func (f *fakeStore) CreateHelpRequest(_ context.Context, in store.HelpRequestInp
 		NSubmissionsTaken: in.NSubmissionsTaken,
 		Status:            store.StatusPending,
 	}
-	return nil
+	return true, nil
 }
 
 func (f *fakeStore) GetHelpRequest(_ context.Context, id uuid.UUID) (*store.HelpRequest, error) {
@@ -74,10 +80,6 @@ func (f *fakeStore) GetHint(_ context.Context, id uuid.UUID) (*store.Hint, error
 		panic(fmt.Sprintf("fakeStore: unscripted GetHint(%s)", id))
 	}
 	return h, nil
-}
-
-func (f *fakeStore) CountRequestsSince(_ context.Context, userID string, _ time.Time) (int, error) {
-	return f.counts[userID], nil
 }
 
 func (f *fakeStore) SetUseless(_ context.Context, id uuid.UUID, useless bool) error {

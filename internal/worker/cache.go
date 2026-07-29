@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	"github.com/profoundmentalretardation/problem-helper/internal/store"
@@ -38,10 +39,18 @@ func HashCode(code string) string {
 // cross-user: an approved hint only ever carries diff + working code, never
 // user-specific data, so it is safe to reuse for another student who hits
 // the same defect.
-func Lookup(ctx context.Context, hints HintFinder, problemID, codeHash string) (*store.Hint, bool) {
+//
+// A store error is returned, not folded into "miss": the two are not
+// interchangeable outcomes. A miss means run both model loops and submit to
+// the judge as the system user; a transient DB fault reported as a miss
+// spends all of that on a request whose hint was already on file.
+func Lookup(ctx context.Context, hints HintFinder, problemID, codeHash string) (*store.Hint, bool, error) {
 	hint, err := hints.FindApprovedHint(ctx, problemID, codeHash)
-	if err != nil || hint == nil {
-		return nil, false
+	if err != nil {
+		return nil, false, fmt.Errorf("worker: looking up cached hint: %w", err)
 	}
-	return hint, true
+	if hint == nil {
+		return nil, false, nil
+	}
+	return hint, true, nil
 }

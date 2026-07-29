@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/profoundmentalretardation/problem-helper/internal/config"
 )
@@ -29,8 +30,11 @@ type Scripted struct {
 	rec       CallRecorder
 	pricing   map[string]config.PricingConfig
 	responses []ScriptedResponse
-	calls     []Request
-	next      int
+	// mu guards next/calls: a worker pool with Concurrency > 1 shares one
+	// Scripted across pipelines, and without it the replay cursor races.
+	mu    sync.Mutex
+	calls []Request
+	next  int
 }
 
 // NewScripted builds a Scripted client that replays responses in order.
@@ -40,6 +44,9 @@ func NewScripted(rec CallRecorder, pricing map[string]config.PricingConfig, resp
 
 // Chat returns the next scripted response, recording it like a real call.
 func (s *Scripted) Chat(ctx context.Context, req Request) (Response, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.next >= len(s.responses) {
 		panic(fmt.Sprintf("llm: scripted client consulted beyond its %d scripted response(s); unexpected call for agent %q, model %q", len(s.responses), req.Agent, req.Model))
 	}
@@ -48,7 +55,10 @@ func (s *Scripted) Chat(ctx context.Context, req Request) (Response, error) {
 	s.calls = append(s.calls, req)
 
 	if r.Err != nil {
-		return Response{}, r.Err
+		// Usage rides along with the error, like the real Client's spent():
+		// callers charge their cost caps from the returned Response on both
+		// paths, so a Scripted that dropped it would hide a cap regression.
+		return Response{Usage: r.Usage, Cost: Cost(r.Usage, s.pricing[req.Model])}, r.Err
 	}
 
 	cost := Cost(r.Usage, s.pricing[req.Model])
@@ -62,9 +72,17 @@ func (s *Scripted) Chat(ctx context.Context, req Request) (Response, error) {
 }
 
 // Calls returns every request made so far, for test assertions.
-func (s *Scripted) Calls() []Request { return s.calls }
+func (s *Scripted) Calls() []Request {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Request(nil), s.calls...)
+}
 
 // Remaining reports how many scripted responses were never consulted —
 // tests should assert this is zero so a scripted response never silently
 // goes unused.
-func (s *Scripted) Remaining() int { return len(s.responses) - s.next }
+func (s *Scripted) Remaining() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.responses) - s.next
+}

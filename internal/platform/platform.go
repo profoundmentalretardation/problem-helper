@@ -19,6 +19,13 @@ import (
 // Backends wrap their own sentinel around this one.
 var ErrDuplicateSubmission = errors.New("platform: duplicate submission")
 
+// ErrRunNotFound is the backend-independent signal that a judge does not
+// recognise a run id. Like ErrDuplicateSubmission it is an outcome rather
+// than a fault: the repair loop uses it to tell "the run I persisted before
+// crashing is gone, start fresh" apart from "the judge is unreachable".
+// Backends wrap their own sentinel around this one.
+var ErrRunNotFound = errors.New("platform: run not found")
+
 // Statement is a problem's statement, as pulled from the platform.
 type Statement struct {
 	ProblemID string

@@ -56,6 +56,17 @@ func leakFragments(original, fixed string) []string {
 // An empty result means nothing provably leaked, not that the hint is good
 // — that judgement is the guardrail's.
 func looksExplicit(hint, original, fixed string) []string {
+	// An empty hint leaks nothing, so every other rule below passes it and a
+	// guardrail asked "does this give the answer away?" plausibly approves
+	// it — after which it is stored, cached under the submission's code hash
+	// (poisoning the cache for every later student with the same defect) and
+	// delivered as status=done. There is no judgement call here, so it is
+	// rejected deterministically, before the guardrail call, like every other
+	// hopeless hint.
+	if strings.TrimSpace(hint) == "" {
+		return []string{"is empty"}
+	}
+
 	var reasons []string
 	flatHint := flatten(hint)
 	for _, frag := range leakFragments(original, fixed) {

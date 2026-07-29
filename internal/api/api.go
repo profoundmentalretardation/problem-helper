@@ -24,10 +24,9 @@ import (
 // Store is the persistence dependency handlers need; *store.Store satisfies
 // it.
 type Store interface {
-	CreateHelpRequest(ctx context.Context, in store.HelpRequestInput) error
+	CreateHelpRequestWithinDailyLimit(ctx context.Context, in store.HelpRequestInput, since time.Time, limit int) (bool, error)
 	GetHelpRequest(ctx context.Context, id uuid.UUID) (*store.HelpRequest, error)
 	GetHint(ctx context.Context, id uuid.UUID) (*store.Hint, error)
-	CountRequestsSince(ctx context.Context, userID string, since time.Time) (int, error)
 	SetUseless(ctx context.Context, id uuid.UUID, useless bool) error
 	ListRequests(ctx context.Context, filter store.RequestFilter) ([]store.HelpRequest, error)
 }
@@ -154,25 +153,24 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	since := startOfDay(s.now())
-	count, err := s.store.CountRequestsSince(ctx, body.UserID, since)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
-		return
-	}
-	if count >= s.dailyRequestsPerUser {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "daily request limit reached"})
-		return
-	}
-
+	// The cap is enforced by the insert itself rather than by a count-then-
+	// insert pair, so concurrent requests for one user cannot all observe the
+	// same pre-insert count and all slip through. See
+	// store.CreateHelpRequestWithinDailyLimit.
 	id := uuid.New()
-	if err := s.store.CreateHelpRequest(ctx, store.HelpRequestInput{
+	created, err := s.store.CreateHelpRequestWithinDailyLimit(ctx, store.HelpRequestInput{
 		ID:                id,
 		UserID:            body.UserID,
 		ProblemID:         body.ProblemID,
 		Platform:          s.platform,
 		NSubmissionsTaken: nSubmissions,
-	}); err != nil {
+	}, since, s.dailyRequestsPerUser)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !created {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "daily request limit reached"})
 		return
 	}
 

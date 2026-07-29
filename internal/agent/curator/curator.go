@@ -41,10 +41,18 @@ const (
 	// StatusNothingToSave means finish was called without saving
 	// anything — a normal outcome; the batch is still marked processed.
 	StatusNothingToSave Status = "nothing_to_save"
-	// StatusGaveUp means the call budget was exhausted before finish was
-	// ever called (malformed replies, or a model that never wraps up).
-	// Nothing is written and the batch's raw mistakes stay unprocessed,
-	// so they are retried on the next sweep.
+	// StatusGaveUp means the call budget or the loop cost cap was exhausted
+	// before finish was ever called (malformed replies, or a model that
+	// never wraps up).
+	//
+	// Whether the batch stays unprocessed depends on whether anything was
+	// written. MergeMistake and CreateMistake commit as they go, so a run
+	// that merged or created something and then gave up must still mark the
+	// batch processed: leaving it unprocessed means the next sweep re-sends
+	// the identical batch and merges/creates it again, inflating
+	// mistakes.count (the value TopMistakes feeds into the repair prompt)
+	// without bound and accumulating duplicate mistake rows. Only a run that
+	// wrote nothing — the pure-garbage case — leaves the batch for a retry.
 	StatusGaveUp Status = "gave_up"
 )
 
@@ -153,21 +161,37 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 	// guaranteed to exist.
 	requestID := raw[0].RequestID
 
+	ids := make([]uuid.UUID, len(raw))
+	for i, m := range raw {
+		ids[i] = m.ID
+	}
+
 	messages := []llm.Message{{Role: "system", Content: rendered}}
 	var merged, created, calls int
 	loopCost := 0.0
 	callBudget := len(raw) + r.Agent.MaxRetries
 
+	giveUp := func() (Result, error) {
+		// See StatusGaveUp: anything already merged or created is committed,
+		// so the batch must not be handed to the next sweep again.
+		if merged > 0 || created > 0 {
+			if err := r.RawMistakes.MarkRawMistakesProcessed(ctx, ids); err != nil {
+				return Result{}, fmt.Errorf("curator: marking raw mistakes processed after giving up: %w", err)
+			}
+		}
+		return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
+	}
+
 	for {
 		if calls >= callBudget {
-			return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
+			return giveUp()
 		}
 		// Checked before the call, like repair's loop cap: a call's cost is
 		// only known once it returns, so the loop can overshoot by at most
 		// one call. Without this the cap configured for the curator in
 		// agents.yaml is silently a no-op.
 		if r.Agent.MaxCostPerLoop > 0 && loopCost >= r.Agent.MaxCostPerLoop {
-			return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
+			return giveUp()
 		}
 		calls++
 
@@ -182,11 +206,23 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 			SchemaName:      "curator_action",
 			Schema:          responseSchema,
 		})
-		if err != nil {
-			return Result{}, fmt.Errorf("curator: chat: %w", err)
-		}
+		// Charged before the error check: Chat populates Usage/Cost on its
+		// error returns too, and those tokens were really spent.
 		if cost, perr := strconv.ParseFloat(resp.Cost, 64); perr == nil {
 			loopCost += cost
+		}
+		if err != nil {
+			// A model that cannot produce schema-shaped JSON even after
+			// Chat's own retry burns a call from the budget, exactly like an
+			// unparseable reply below; failing the sweep would strand the
+			// batch and re-send it unchanged every night.
+			if errors.Is(err, llm.ErrInvalidResponse) {
+				messages = append(messages, llm.Message{
+					Role: "user", Content: `{"ok":false,"error":"your reply did not match the schema"}`,
+				})
+				continue
+			}
+			return Result{}, fmt.Errorf("curator: chat: %w", err)
 		}
 
 		var action curatorAction
@@ -237,10 +273,6 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 			messages = append(messages, llm.Message{Role: "user", Content: `{"ok":true}`})
 
 		case "finish":
-			ids := make([]uuid.UUID, len(raw))
-			for i, m := range raw {
-				ids[i] = m.ID
-			}
 			if err := r.RawMistakes.MarkRawMistakesProcessed(ctx, ids); err != nil {
 				return Result{}, fmt.Errorf("curator: marking raw mistakes processed: %w", err)
 			}

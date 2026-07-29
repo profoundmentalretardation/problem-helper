@@ -57,6 +57,12 @@ var ErrDuplicateRequest = errors.New("store: help request already exists")
 // that has no help_requests row.
 var ErrUnknownRequest = errors.New("store: unknown request")
 
+// ErrClaimLost is returned when a worker tries to write a terminal status
+// onto a request that has since been reclaimed by another worker. It is
+// deliberately distinct from ErrIllegalTransition: the transition was legal,
+// the row simply is not this worker's to finish any more.
+var ErrClaimLost = errors.New("store: request claim lost to another worker")
+
 // ErrIllegalTransition is returned when a status transition is not allowed
 // by the graph in the plan's Technical Details.
 type ErrIllegalTransition struct {
@@ -74,6 +80,8 @@ type dbtx interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 // Store is the persistence layer, bound to either a pool or a transaction.
@@ -231,6 +239,68 @@ func (s *Store) CreateHelpRequest(ctx context.Context, in HelpRequestInput) erro
 	return nil
 }
 
+// CreateHelpRequestWithinDailyLimit inserts a new pending help_requests row
+// only if the user has fewer than limit rows created at or after since,
+// reporting whether the row was actually inserted (false = over the limit).
+//
+// The count and the insert run inside one transaction, behind a per-user
+// advisory lock taken first. Counting and inserting as two unsynchronized
+// round trips lets N concurrent POST /help for the same user all read the
+// same pre-insert count and all pass — and daily_requests_per_user is the
+// only thing standing between one caller and both the whole LLM budget and a
+// flood of judge submissions under the shared system login. No unusual
+// timing is needed; any burst from a frontend defeats it.
+//
+// A single `INSERT ... SELECT ... WHERE (SELECT count(*) ...) < limit` does
+// not fix that either, which is the non-obvious part: under READ COMMITTED
+// the subquery reads the statement's own snapshot, so concurrent inserts are
+// invisible to it and every racing statement still sees the same count. The
+// lock has to be held across a fresh snapshot, which means an explicit
+// transaction with the count as its own statement.
+func (s *Store) CreateHelpRequestWithinDailyLimit(
+	ctx context.Context, in HelpRequestInput, since time.Time, limit int,
+) (bool, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("store: beginning rate-limit tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Scoped to the user, so one student's burst never blocks another's.
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, in.UserID,
+	); err != nil {
+		return false, fmt.Errorf("store: taking rate-limit lock: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM help_requests WHERE user_id = $1 AND created_at >= $2`,
+		in.UserID, since,
+	).Scan(&count); err != nil {
+		return false, fmt.Errorf("store: counting requests since %s: %w", since, err)
+	}
+	if count >= limit {
+		return false, nil
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO help_requests (id, user_id, problem_id, platform, n_submissions_taken, status)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		in.ID, in.UserID, in.ProblemID, in.Platform, in.NSubmissionsTaken, StatusPending,
+	); err != nil {
+		if isUniqueViolation(err) {
+			return false, fmt.Errorf("%w: id %s", ErrDuplicateRequest, in.ID)
+		}
+		return false, fmt.Errorf("store: creating help request within daily limit: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("store: committing help request: %w", err)
+	}
+	return true, nil
+}
+
 // GetHelpRequest fetches a help_requests row by id.
 func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest, error) {
 	row := s.db.QueryRow(ctx, `
@@ -267,24 +337,37 @@ func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest,
 // separate SELECT ... FOR UPDATE would release its lock immediately and the
 // pair would not be atomic — two workers racing over a reclaimed row could
 // both read a legal source status and both write.
-func (s *Store) TransitionStatus(ctx context.Context, id uuid.UUID, to Status) error {
+// workerID scopes the write to the row's current claimant, for the same
+// reason Heartbeat does: a worker whose heartbeats lapsed long enough to be
+// reclaimed only learns it lost the claim on its next heartbeat tick, and in
+// that window it can finish its pipeline and write a terminal status onto a
+// row the new claimant is actively processing. The transition itself is
+// legal, so nothing else would catch it — the old worker's hint gets
+// delivered and the healthy claimant fails on a row it no longer owns. An
+// empty workerID skips the check, for callers with no claim of their own.
+func (s *Store) TransitionStatus(ctx context.Context, id uuid.UUID, to Status, workerID string) error {
 	row := s.db.QueryRow(ctx, `
 		WITH upd AS (
 			UPDATE help_requests SET status = $2, updated_at = now()
 			WHERE id = $1 AND status = ANY($3)
+			  AND ($4 = '' OR claimed_by IS NULL OR claimed_by = $4)
 			RETURNING id
 		)
-		SELECT h.status, EXISTS (SELECT 1 FROM upd)
+		SELECT h.status, h.claimed_by, EXISTS (SELECT 1 FROM upd)
 		FROM help_requests h WHERE h.id = $1`,
-		id, to, transitionSources(to))
+		id, to, transitionSources(to), workerID)
 
 	var current string
+	var claimedBy *string
 	var updated bool
-	if err := row.Scan(&current, &updated); err != nil {
+	if err := row.Scan(&current, &claimedBy, &updated); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
 		}
 		return fmt.Errorf("store: updating status: %w", err)
+	}
+	if !updated && workerID != "" && claimedBy != nil && *claimedBy != workerID {
+		return fmt.Errorf("%w: id %s is claimed by %s", ErrClaimLost, id, *claimedBy)
 	}
 	if !updated {
 		// The outer SELECT sees the pre-UPDATE snapshot, so current is the
@@ -327,15 +410,22 @@ func (s *Store) ClaimNext(ctx context.Context, workerID string) (*HelpRequest, e
 		)
 		RETURNING id, user_id, problem_id, platform, n_submissions_taken, status,
 		          failure_reason, best_submission_id, hint_id, useless, error,
-		          claimed_by, heartbeat_at, resume_step, created_at, updated_at`,
+		          claimed_by, heartbeat_at, resume_step, repair_code, repair_run_id,
+		          created_at, updated_at`,
 		StatusRunning, workerID, StatusPending)
 
 	var hr HelpRequest
 	var status string
+	// repair_code / repair_run_id are returned here too, not just by
+	// GetHelpRequest: a claimed row that omitted them always read back
+	// RepairCode == nil, so any caller trusting the claimed row directly
+	// would see a resumed request as "checkpoint past repair with no code"
+	// and fail it as corrupt — or, worse, re-run loop 1.
 	if err := row.Scan(
 		&hr.ID, &hr.UserID, &hr.ProblemID, &hr.Platform, &hr.NSubmissionsTaken, &status,
 		&hr.FailureReason, &hr.BestSubmissionID, &hr.HintID, &hr.Useless, &hr.Error,
-		&hr.ClaimedBy, &hr.HeartbeatAt, &hr.ResumeStep, &hr.CreatedAt, &hr.UpdatedAt,
+		&hr.ClaimedBy, &hr.HeartbeatAt, &hr.ResumeStep, &hr.RepairCode, &hr.RepairRunID,
+		&hr.CreatedAt, &hr.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -633,26 +723,53 @@ type Submission struct {
 }
 
 // SnapshotSubmissions inserts the submissions pulled for one request.
+//
+// The whole batch is one batched round trip, and each insert is idempotent
+// against the (request_id, platform_submission_id) unique index added in
+// migration 0004. Both halves matter on the crash path: the pipeline
+// checkpoints StepSubmissions only *after* this returns, so a worker that
+// dies mid-snapshot is reclaimed and runs the step again. Row-at-a-time
+// inserts with no constraint left the earlier rows committed and then
+// duplicated every submission on the retry — with a second is_best=true and
+// an inflated snapshot size in HintEffectivenessInputs — once per reclaim,
+// up to maxClaimAttempts times.
 func (s *Store) SnapshotSubmissions(ctx context.Context, requestID uuid.UUID, subs []Submission) error {
+	if len(subs) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
 	for _, sub := range subs {
 		id := sub.ID
 		if id == uuid.Nil {
 			id = uuid.New()
 		}
-		_, err := s.db.Exec(ctx, `
+		batch.Queue(`
 			INSERT INTO submissions (
 				id, request_id, platform_submission_id, code, language,
 				tests_passed, tests_total, submitted_at, is_best
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			ON CONFLICT (request_id, platform_submission_id) DO NOTHING`,
 			id, requestID, sub.PlatformSubmissionID, sub.Code, sub.Language,
 			sub.TestsPassed, sub.TestsTotal, sub.SubmittedAt, sub.IsBest,
 		)
-		if err != nil {
-			if isForeignKeyViolation(err) {
-				return fmt.Errorf("%w: id %s", ErrUnknownRequest, requestID)
-			}
-			return fmt.Errorf("store: snapshotting submission: %w", err)
+	}
+
+	results := s.db.SendBatch(ctx, batch)
+	var firstErr error
+	for range subs {
+		if _, err := results.Exec(); err != nil && firstErr == nil {
+			firstErr = err
 		}
+	}
+	if err := results.Close(); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	if firstErr != nil {
+		if isForeignKeyViolation(firstErr) {
+			return fmt.Errorf("%w: id %s", ErrUnknownRequest, requestID)
+		}
+		return fmt.Errorf("store: snapshotting submissions: %w", firstErr)
 	}
 	return nil
 }

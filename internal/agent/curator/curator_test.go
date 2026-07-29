@@ -346,13 +346,59 @@ func TestRun_MaxCostPerLoop_StopsBeforeNextCall(t *testing.T) {
 		t.Errorf("calls = %d, want 1 (the cap is checked before each call, so it overshoots by at most one)", got.Calls)
 	}
 
-	// finish was never reached, so the batch stays for the next sweep.
+	// finish was never reached, but that first call's create_mistake is
+	// committed — CreateMistake writes as it goes. Leaving the batch
+	// unprocessed would make the next sweep re-send the identical raw
+	// mistakes and create the same mistake again, inflating mistakes.count
+	// (which drives the repair prompt's top-N) every night without bound.
+	if got.Created != 1 {
+		t.Fatalf("created = %d, want 1", got.Created)
+	}
 	unprocessed, err := s.ListUnprocessedRawMistakes(ctx, "user-1")
 	if err != nil {
 		t.Fatalf("list unprocessed: %v", err)
 	}
-	if len(unprocessed) != 3 {
-		t.Errorf("unprocessed = %d, want 3 (the batch is retried next sweep)", len(unprocessed))
+	if len(unprocessed) != 0 {
+		t.Errorf("unprocessed = %d, want 0 (a give-up that wrote something still consumes its batch)", len(unprocessed))
+	}
+}
+
+// The other half of the rule: a sweep that gave up without writing anything
+// leaves the batch alone, so pure garbage from the model costs a retry
+// rather than the student's whole backlog.
+func TestRun_GaveUpWithoutWriting_LeavesBatchUnprocessed(t *testing.T) {
+	s, ctx := withStore(t)
+	reqID := createRequest(t, s, ctx, "user-1")
+
+	if err := s.InsertRawMistake(ctx, store.RawMistake{
+		RequestID: reqID, UserID: "user-1", Text: "observation",
+	}); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+
+	// Budget is 1 raw + 1 slack = 2 calls, both of them unusable replies.
+	chat := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"nonsense"}`},
+		llm.ScriptedResponse{JSON: `{"action":"nonsense"}`},
+	)
+	runner := newRunner(s, chat, 1, t)
+
+	got, err := runner.Run(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != curator.StatusGaveUp {
+		t.Fatalf("status = %q, want %q", got.Status, curator.StatusGaveUp)
+	}
+	if got.Merged != 0 || got.Created != 0 {
+		t.Fatalf("merged/created = %d/%d, want 0/0", got.Merged, got.Created)
+	}
+	unprocessed, err := s.ListUnprocessedRawMistakes(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("list unprocessed: %v", err)
+	}
+	if len(unprocessed) != 1 {
+		t.Errorf("unprocessed = %d, want 1 (nothing was written, so the batch is retried next sweep)", len(unprocessed))
 	}
 }
 

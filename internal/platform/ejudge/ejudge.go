@@ -69,8 +69,10 @@ var (
 	ErrMalformedResponse = errors.New("ejudge: malformed response")
 
 	// ErrRunNotFound is returned when ejudge reports a run id as out of
-	// range for the contest (never submitted, or a different contest).
-	ErrRunNotFound = errors.New("ejudge: run not found")
+	// range for the contest (never submitted, or a different contest). It
+	// wraps platform.ErrRunNotFound so backend-agnostic callers (the repair
+	// loop's crash resume) can recognise it without importing this package.
+	ErrRunNotFound = fmt.Errorf("ejudge: %w", platform.ErrRunNotFound)
 
 	// ErrDuplicateSubmission is returned when ejudge refuses a submission
 	// because its content is byte-identical to an existing run
@@ -280,7 +282,7 @@ func (c *Client) submitWithSession(ctx context.Context, problemID, langID, code 
 	if err != nil {
 		return "", err
 	}
-	if !strings.Contains(body, "Error: Invalid session") {
+	if !hasErrorTitle(body, "Error: Invalid session") {
 		return body, nil
 	}
 
@@ -321,10 +323,10 @@ func (c *Client) RunResult(ctx context.Context, runID string) (platform.RunResul
 		return platform.RunResult{}, err
 	}
 
-	if strings.Contains(body, "Report is not available") {
+	if hasErrorTitle(body, "Report is not available") {
 		return platform.RunResult{ID: runID, Done: false}, nil
 	}
-	if strings.Contains(body, "is out of range") {
+	if hasErrorDetail(body, "is out of range") {
 		return platform.RunResult{}, fmt.Errorf("%w: run %s: %w", ErrRunNotFound, runID, ErrMalformedResponse)
 	}
 
@@ -353,7 +355,7 @@ func (c *Client) TestResult(ctx context.Context, runID string, testID int) (plat
 	if err != nil {
 		return platform.TestCase{}, err
 	}
-	if strings.Contains(body, "Report is not available") {
+	if hasErrorTitle(body, "Report is not available") {
 		return platform.TestCase{}, fmt.Errorf("ejudge: run %s test %d: %w", runID, testID, ErrMalformedResponse)
 	}
 
@@ -467,7 +469,7 @@ func (c *Client) masterGet(ctx context.Context, action int, params url.Values) (
 	if err != nil {
 		return "", err
 	}
-	if strings.Contains(body, "Error: Invalid session") {
+	if hasErrorTitle(body, "Error: Invalid session") {
 		c.mu.Lock()
 		c.masterSID = ""
 		c.mu.Unlock()
@@ -492,7 +494,7 @@ func (c *Client) clientGet(ctx context.Context, action int, params url.Values) (
 	if err != nil {
 		return "", err
 	}
-	if strings.Contains(body, "Error: Invalid session") {
+	if hasErrorTitle(body, "Error: Invalid session") {
 		c.mu.Lock()
 		c.clientSID = ""
 		c.mu.Unlock()
@@ -609,6 +611,16 @@ func (c *Client) doWithRetry(req *http.Request) (string, error) {
 			if errors.Is(req.Context().Err(), context.DeadlineExceeded) || errors.Is(req.Context().Err(), context.Canceled) {
 				return "", fmt.Errorf("ejudge: request to %s: %w", req.URL.Path, err)
 			}
+			// The server already received and acted on this request; the
+			// failure was in reading or in its status code, not in delivery.
+			// Retrying would re-POST a submission ejudge has already queued —
+			// either creating a second run under the shared system login (so
+			// the run-id floor now has two candidates) or drawing
+			// ErrDuplicateSubmission for an attempt that actually succeeded.
+			var responded *respondedError
+			if errors.As(err, &responded) {
+				return "", fmt.Errorf("ejudge: request to %s: %w", req.URL.Path, err)
+			}
 			continue // transient network error, retry
 		}
 		return body, nil
@@ -628,10 +640,27 @@ func (c *Client) doOnce(req *http.Request) (string, error) {
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", &respondedError{err}
+	}
+	// ejudge signals all of its own error conditions with a 200 and an error
+	// page, so a 4xx/5xx here is something in front of it — an nginx 502, a
+	// CGI 500. isErrorPage does not recognise those, so without this check a
+	// proxy error page flows on into the parsers: countReportTests finds no
+	// rows and reports (0, 0) with no error, every submission looks like a
+	// compile error, and pick.Best chooses on garbage.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", &respondedError{fmt.Errorf("%w: %s returned %s", ErrMalformedResponse, req.URL.Path, resp.Status)}
 	}
 	return string(data), nil
 }
+
+// respondedError marks a failure that happened after the server had already
+// received the request, so doWithRetry knows the request must not be
+// replayed. See the retry loop above for why that matters for submits.
+type respondedError struct{ err error }
+
+func (e *respondedError) Error() string { return e.err.Error() }
+func (e *respondedError) Unwrap() error { return e.err }
 
 // ---------------------------------------------------------------------
 // Page parsing
@@ -834,7 +863,7 @@ func (c *Client) fetchViewSource(ctx context.Context, runID string) (viewSourceI
 	if err != nil {
 		return viewSourceInfo{}, err
 	}
-	if strings.Contains(body, "is out of range") {
+	if hasErrorDetail(body, "is out of range") {
 		return viewSourceInfo{}, fmt.Errorf("%w: run %s", ErrRunNotFound, runID)
 	}
 
@@ -875,7 +904,7 @@ func (c *Client) fetchTestCounts(ctx context.Context, runID string) (passed, tot
 	if err != nil {
 		return 0, 0, err
 	}
-	if strings.Contains(body, "Report is not available") {
+	if hasErrorTitle(body, "Report is not available") {
 		return 0, 0, nil
 	}
 	// An error page has no test rows, so counting it would yield (0,0) —
@@ -903,6 +932,39 @@ func isErrorPage(body string) bool {
 	return strings.Contains(body, "Operation completed with errors") ||
 		strings.Contains(body, "<h2><font color=\"red\">Error:") ||
 		strings.Contains(body, "<h2><font color=\"red\">Permission denied</font></h2>")
+}
+
+var titleTagRe = regexp.MustCompile(`(?is)<title>(.*?)</title>`)
+
+// hasErrorTitle reports whether ejudge's own <title> for this page carries
+// msg.
+//
+// Every one of these sentinels used to be matched against the whole
+// document, which is wrong on pages that embed text we do not control: a
+// report page carries each test's stdout and stderr, and a view-source page
+// carries the student's entire source. A submission that prints or merely
+// comments "k is out of range" therefore reported itself as ErrRunNotFound
+// — turning an ordinary failing verification into status=failed instead of
+// no_fix, and collapsing exactly the split isErrorPage exists to protect.
+// The student writes that text, so it is also forgeable on purpose.
+//
+// The <title> is generated by ejudge from its own message catalogue and
+// never contains a submission's text, so it is the safe place to look.
+func hasErrorTitle(body, msg string) bool {
+	m := titleTagRe.FindStringSubmatch(body)
+	if m == nil {
+		return false
+	}
+	return strings.Contains(m[1], msg)
+}
+
+// hasErrorDetail reports whether body is an ejudge error page whose detail
+// block carries msg. Used for messages ejudge renders only in the
+// "Additional information about this error" section (its title there is the
+// generic "Operation completed with errors"), so the isErrorPage gate is
+// what keeps the match off ordinary report content.
+func hasErrorDetail(body, msg string) bool {
+	return isErrorPage(body) && strings.Contains(body, msg)
 }
 
 func parseReportVerdict(body string) (string, error) {
