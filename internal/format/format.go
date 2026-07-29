@@ -7,6 +7,7 @@ package format
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -64,10 +65,20 @@ func (r Runner) Format(ctx context.Context, code string) Result {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		if runCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return Result{Code: code, Warning: fmt.Sprintf("format: command timed out after %s", timeout)}
 		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return Result{Code: code, Warning: "format: canceled"}
+		}
 		return Result{Code: code, Warning: fmt.Sprintf("format: command failed: %v: %s", err, strings.TrimSpace(stderr.String()))}
+	}
+
+	// A formatter that exits 0 having printed nothing is broken, not
+	// unanimous: taking its output would submit an empty file for
+	// verification and diff the hint against nothing.
+	if strings.TrimSpace(stdout.String()) == "" {
+		return Result{Code: code, Warning: "format: command produced no output"}
 	}
 
 	return Result{Code: stdout.String()}

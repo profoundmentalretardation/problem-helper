@@ -6,6 +6,7 @@ package worker_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,6 +348,122 @@ func TestRunPipeline_CacheHit_ZeroModelCalls(t *testing.T) {
 	}
 	if !hasEventKind(events, "hint_cache_hit") {
 		t.Errorf("events = %+v, want a hint_cache_hit event", events)
+	}
+	// A cache re-delivery is still a delivery: HintEffectivenessInputs keys
+	// off hint_delivered, so without it the student's hint is invisible to
+	// the effectiveness analytics.
+	if !hasEventKind(events, "hint_delivered") {
+		t.Errorf("events = %+v, want a hint_delivered event on the cache-hit path too", events)
+	}
+}
+
+// TestRunPipeline_TopMistakesReachTheRepairPrompt is the read side of the
+// curator loop: the nightly metaloop's per-student mistake profile is only
+// worth building if it comes back into a prompt.
+func TestRunPipeline_TopMistakesReachTheRepairPrompt(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID:          uuid.New(),
+		UserID:      "user-1",
+		Title:       "off-by-one",
+		Description: "loop bound is one short",
+	}); err != nil {
+		t.Fatalf("create mistake: %v", err)
+	}
+
+	plat := mock.New()
+	plat.ScriptStatus("user-1", "problem-1", platform.Status{Solved: false})
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	plat.ScriptSubmissions("user-1", "problem-1", []platform.Submission{
+		{ID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now()},
+	})
+	plat.ScriptTestCase("sub-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-1", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 2, TestsTotal: 2})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("run-1", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+
+	repairChat := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"print(2)","mistakes":[]}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+	hintWriter := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"hint":"Think about your first print."}`,
+		Usage: llm.Usage{InputTokens: 50, OutputTokens: 10},
+	})
+	guardrail := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"approved":true,"reason":"makes them think"}`,
+		Usage: llm.Usage{InputTokens: 80, OutputTokens: 5},
+	})
+
+	pl := &worker.Pipeline{
+		Store:        s,
+		Platform:     plat,
+		Repair:       newRepairRunner(t, s, plat, repairChat),
+		Hint:         newHintRunner(t, hintWriter, guardrail),
+		TopNMistakes: 3,
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	system := repairChat.Calls()[0].Messages[0].Content
+	if !strings.Contains(system, "off-by-one: loop bound is one short (seen 1 times)") {
+		t.Errorf("curated mistake profile did not reach the repair prompt; system message:\n%s", system)
+	}
+}
+
+// TestRunPipeline_TopNMistakesZero_SkipsTheLookup pins the documented
+// "zero disables it" behavior: no mistakes are rendered even when the student
+// has a profile on file.
+func TestRunPipeline_TopNMistakesZero_SkipsTheLookup(t *testing.T) {
+	s, ctx := withStore(t)
+	id := newClaimedRequest(t, s, ctx, 10)
+
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID: uuid.New(), UserID: "user-1", Title: "off-by-one", Description: "loop bound is one short",
+	}); err != nil {
+		t.Fatalf("create mistake: %v", err)
+	}
+
+	plat := mock.New()
+	plat.ScriptStatus("user-1", "problem-1", platform.Status{Solved: false})
+	plat.ScriptStatement("problem-1", platform.Statement{ProblemID: "problem-1", Title: "t", Text: "solve it"})
+	plat.ScriptSubmissions("user-1", "problem-1", []platform.Submission{
+		{ID: "sub-1", Code: "print(1)", Language: "python", TestsPassed: 1, TestsTotal: 2, SubmittedAt: time.Now()},
+	})
+	plat.ScriptTestCase("sub-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-1", 2, platform.TestCase{Index: 2, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 2, TestsTotal: 2})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("run-1", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+
+	repairChat := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON:  `{"action":"submit","code":"print(2)","mistakes":[]}`,
+		Usage: llm.Usage{InputTokens: 100, OutputTokens: 20},
+	})
+	hintWriter := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON: `{"hint":"Think about your first print."}`, Usage: llm.Usage{InputTokens: 50, OutputTokens: 10},
+	})
+	guardrail := llm.NewScripted(s, testPricing(), llm.ScriptedResponse{
+		JSON: `{"approved":true,"reason":"makes them think"}`, Usage: llm.Usage{InputTokens: 80, OutputTokens: 5},
+	})
+
+	pl := &worker.Pipeline{
+		Store: s, Platform: plat,
+		Repair: newRepairRunner(t, s, plat, repairChat),
+		Hint:   newHintRunner(t, hintWriter, guardrail),
+		// TopNMistakes left at zero.
+	}
+	if err := pl.RunPipeline(ctx, id); err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+
+	system := repairChat.Calls()[0].Messages[0].Content
+	if strings.Contains(system, "off-by-one") {
+		t.Errorf("mistakes rendered despite TopNMistakes=0; system message:\n%s", system)
 	}
 }
 

@@ -112,6 +112,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 			Agent:             cfg.Agents.Hint,
 			GuardrailAgent:    cfg.Agents.Guardrail,
 		},
+		TopNMistakes: cfg.Agents.Repair.TopNMistakes,
 	}
 
 	metaloop := &worker.Metaloop{

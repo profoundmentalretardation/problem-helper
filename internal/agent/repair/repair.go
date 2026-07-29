@@ -22,6 +22,7 @@ package repair
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ type Reason string
 const (
 	ReasonMaxRetries Reason = "max_retries"
 	ReasonCostCap    Reason = "cost_cap"
+	// ReasonNoBaseline means the student's run reported no per-test results
+	// at all, so no verification run could ever be judged a fix.
+	ReasonNoBaseline Reason = "no_baseline"
 )
 
 // passVerdict is the platform.TestCase.Verdict value a test reports when it
@@ -59,8 +63,23 @@ const (
 const passVerdict = "OK"
 
 // defaultPollInterval paces RunResult polling when a verification run isn't
-// done yet. Tests script Done=true on the first poll, so it's never slept.
-const defaultPollInterval = 10 * time.Millisecond
+// done yet. Sized for a real judge scraping HTML pages, not for tests: any
+// test that scripts a not-yet-done run must set Params.PollInterval, or it
+// sleeps this long per poll.
+const defaultPollInterval = 2 * time.Second
+
+// defaultMaxPollWait bounds how long a single verification run may stay
+// unjudged before the attempt gives up. A run wedged in the judge queue must
+// not pin a worker slot forever: with Concurrency=1 that halts the whole
+// service, and the heartbeat keeps ticking so the reclaim sweep never frees
+// it. It is wall-clock, not accumulated sleep — the platform call inside each
+// poll has its own timeout (30s for ejudge), so summing only the sleeps would
+// let the real wait run many times over the bound.
+const defaultMaxPollWait = 5 * time.Minute
+
+// ErrVerificationTimeout is returned when a verification run never reaches a
+// terminal verdict within maxPollWait.
+var ErrVerificationTimeout = errors.New("repair: timed out waiting for verification run")
 
 // maxToolCallsPerAttempt backstops an unbounded tool loop when
 // max_cost_per_retry is 0 (unlimited) and a model never calls submit.
@@ -92,6 +111,9 @@ type Params struct {
 
 	// PollInterval overrides defaultPollInterval; zero uses the default.
 	PollInterval time.Duration
+	// MaxPollWait overrides defaultMaxPollWait, the wall-clock bound on
+	// waiting for one verification run to be judged; zero uses the default.
+	MaxPollWait time.Duration
 }
 
 // Result is a Run outcome.
@@ -170,10 +192,20 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 	if pollInterval == 0 {
 		pollInterval = defaultPollInterval
 	}
+	maxPollWait := p.MaxPollWait
+	if maxPollWait == 0 {
+		maxPollWait = defaultMaxPollWait
+	}
 
 	baseline, err := r.fetchTestCases(ctx, p.BaselineRunID, p.BaselineTestsTotal)
 	if err != nil {
 		return Result{}, fmt.Errorf("repair: fetching baseline test results: %w", err)
+	}
+	// success() can never hold against an empty baseline, so every attempt
+	// would be a guaranteed-failing model call plus a real platform
+	// submission. Deterministic checks run before any model call.
+	if len(baseline) == 0 {
+		return Result{Status: StatusNoFix, Reason: ReasonNoBaseline}, nil
 	}
 
 	currentRunID := p.BaselineRunID
@@ -222,7 +254,7 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			return Result{}, err
 		}
 
-		result, err := r.pollUntilDone(ctx, run, pollInterval)
+		result, err := r.pollUntilDone(ctx, run, pollInterval, maxPollWait)
 		if err != nil {
 			return Result{}, err
 		}
@@ -232,7 +264,7 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 			return Result{}, fmt.Errorf("repair: fetching verification test results: %w", err)
 		}
 
-		if success(baseline, current) {
+		if success(result, baseline, current) {
 			return Result{
 				Status: StatusFixed, Code: code, Mistakes: mistakes,
 				RunID: run.ID, Attempts: attempts,
@@ -398,12 +430,22 @@ func (r *Runner) fetchTestCases(ctx context.Context, runID string, total int) (m
 	return out, nil
 }
 
-// success reports whether every test the baseline run covers passes in
-// current. Because that includes tests the baseline already passed, a
-// verification run that "fixes" a previously-failing test while regressing
-// a previously-passing one still fails this check — it's caught by the
-// regressed test's own verdict, not by comparing pass counts.
-func success(baseline, current map[int]platform.TestCase) bool {
+// success reports whether the verification run is an accepted fix: the
+// platform must report the run itself as passed, and every test the baseline
+// run covers must pass in current.
+//
+// Both halves are load-bearing. The per-test comparison alone is not enough
+// because this course's ejudge runs acm scoring, which halts judging at the
+// first failure: a student's run that failed on test 5 has a baseline of
+// tests 1..5, so repaired code that passes 1..5 but fails test 9 would clear
+// the comparison and be delivered as a verified fix. The run's own verdict
+// alone is not enough either — it says nothing about regressions on tests the
+// baseline already passed, which the comparison catches by each regressed
+// test's own verdict rather than by comparing pass counts.
+func success(result platform.RunResult, baseline, current map[int]platform.TestCase) bool {
+	if !result.Passed {
+		return false
+	}
 	if len(baseline) == 0 {
 		return false
 	}
@@ -416,12 +458,37 @@ func success(baseline, current map[int]platform.TestCase) bool {
 	return true
 }
 
-func (r *Runner) pollUntilDone(ctx context.Context, run platform.RunResult, pollInterval time.Duration) (platform.RunResult, error) {
+// pollUntilDone polls run until the platform reports a terminal verdict,
+// giving up after maxPollWait and honoring ctx cancellation between polls.
+func (r *Runner) pollUntilDone(
+	ctx context.Context, run platform.RunResult, pollInterval, maxWait time.Duration,
+) (platform.RunResult, error) {
+	// The deadline goes on the context so it also bounds the platform call
+	// inside each poll, not just the sleeps between them. Distinguishing it
+	// from a caller-side cancellation needs the parent's own Err(), since a
+	// timeout here cancels ctx too.
+	pollCtx, cancel := context.WithTimeout(ctx, maxWait)
+	defer cancel()
+
 	result := run
 	for !result.Done {
-		time.Sleep(pollInterval)
-		next, err := r.Platform.RunResult(ctx, run.ID)
+		select {
+		case <-pollCtx.Done():
+			if ctx.Err() != nil {
+				return platform.RunResult{}, fmt.Errorf("repair: polling run result: %w", ctx.Err())
+			}
+			return platform.RunResult{}, fmt.Errorf("%w: run %s after %s", ErrVerificationTimeout, run.ID, maxWait)
+		case <-time.After(pollInterval):
+		}
+
+		next, err := r.Platform.RunResult(pollCtx, run.ID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return platform.RunResult{}, fmt.Errorf("repair: polling run result: %w", ctx.Err())
+			}
+			if pollCtx.Err() != nil {
+				return platform.RunResult{}, fmt.Errorf("%w: run %s after %s", ErrVerificationTimeout, run.ID, maxWait)
+			}
 			return platform.RunResult{}, fmt.Errorf("repair: polling run result: %w", err)
 		}
 		result = next

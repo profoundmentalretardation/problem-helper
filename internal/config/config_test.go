@@ -2,8 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -305,4 +307,53 @@ func joinLines(lines []string) string {
 		out += l
 	}
 	return out
+}
+
+// TestParseAgents_GuardrailFamily covers both directions of the
+// guardrail-independence rule: a guardrail sharing the hint writer's family
+// must be rejected (a model reviewing its own output is not an independent
+// check), and a genuinely different family must be accepted.
+func TestParseAgents_GuardrailFamily(t *testing.T) {
+	cases := []struct {
+		name       string
+		hint       string
+		guardrail  string
+		wantReject bool
+	}{
+		{"same family, different sizes", "gpt-4.1-mini", "gpt-4o", true},
+		{"same family, different case and spacing", "gpt-4.1-mini", " GPT-4o ", true},
+		// A routing prefix must not disguise the same family as two: the
+		// vendor segment differs textually, the model does not.
+		{"same family behind a provider prefix", "openai/gpt-4.1-mini", "gpt-4.1-mini", true},
+		{"different families", "gpt-4.1-mini", "claude-sonnet-5", false},
+		// Both behind one gateway, but genuinely different models — the
+		// shared prefix must not be mistaken for a shared family.
+		{"different families behind one gateway", "openrouter/openai/gpt-4.1", "openrouter/anthropic/claude-sonnet-5", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := strings.NewReplacer(
+				`model: "hint-model"`, fmt.Sprintf("model: %q", tc.hint),
+				`model: "guardrail-model"`, fmt.Sprintf("model: %q", tc.guardrail),
+				"  hint-model: {input: 1.0, cached_input: 0.5, output: 2.0}",
+				fmt.Sprintf("  %q: {input: 1.0, cached_input: 0.5, output: 2.0}", tc.hint),
+				"  guardrail-model: {input: 3.0, cached_input: 1.5, output: 6.0}",
+				fmt.Sprintf("  %q: {input: 3.0, cached_input: 1.5, output: 6.0}", tc.guardrail),
+			).Replace(validAgentsYAML)
+
+			_, err := ParseAgents([]byte(doc))
+			if tc.wantReject {
+				if err == nil {
+					t.Fatalf("hint %q + guardrail %q accepted, want rejected", tc.hint, tc.guardrail)
+				}
+				if !strings.Contains(err.Error(), "different model family") {
+					t.Errorf("err = %v, want it to name the different-family rule", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("hint %q + guardrail %q rejected: %v", tc.hint, tc.guardrail, err)
+			}
+		})
+	}
 }

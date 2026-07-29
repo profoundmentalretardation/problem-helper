@@ -270,3 +270,44 @@ func TestRun_HealthyGuardrailStillApproves(t *testing.T) {
 		t.Fatalf("status = %q, want %q", got.Status, hint.StatusApproved)
 	}
 }
+
+// TestRun_MaxCostPerRetry_SkipsGuardrailButNextAttemptGetsAFreshBudget pins
+// the per-retry cap's scope: it bounds one attempt's writer call, not the
+// loop's running total. An expensive first attempt must skip its guardrail
+// call (the last point at which spending can still be avoided) while a cheap
+// second attempt still reaches the guardrail and can be approved.
+func TestRun_MaxCostPerRetry_SkipsGuardrailButNextAttemptGetsAFreshBudget(t *testing.T) {
+	writer := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: hintJSON("expensive attempt"), Usage: llm.Usage{InputTokens: 1000, OutputTokens: 1000}},
+		llm.ScriptedResponse{JSON: hintJSON("cheap attempt"), Usage: llm.Usage{InputTokens: 1, OutputTokens: 1}},
+	)
+	// Exactly one scripted verdict: if the first attempt consulted the
+	// guardrail, the second would find the script exhausted and panic.
+	guardrail := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: verdictJSON(true, "makes them think"), Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
+	)
+
+	runner := newRunner(writer, guardrail, t)
+	runner.Agent.MaxRetries = 3
+	runner.Agent.MaxCostPerRetry = 0.001 // only the first attempt's writer call exceeds this
+
+	got, err := runner.Run(context.Background(), baseParams())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != hint.StatusApproved {
+		t.Fatalf("status = %q, want %q (a fresh attempt must get a fresh per-retry budget)", got.Status, hint.StatusApproved)
+	}
+	if got.Hint != "cheap attempt" {
+		t.Errorf("text = %q, want the second attempt's hint", got.Hint)
+	}
+	if got.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2 (the capped attempt still counts as used)", got.Attempts)
+	}
+	if guardrail.Remaining() != 0 {
+		t.Errorf("guardrail responses remaining = %d, want 0 (exactly one guardrail call)", guardrail.Remaining())
+	}
+	if writer.Remaining() != 0 {
+		t.Errorf("writer responses remaining = %d, want 0", writer.Remaining())
+	}
+}

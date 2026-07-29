@@ -5,7 +5,7 @@
 // HTML forms and numeric "action" query parameters — there is no usable
 // JSON API for this flow (the *_JSON actions exist in the protocol header
 // but proved unreliable/undocumented against a live 3.8.0 instance; see
-// docs/plans/completed/20260729-mvp-service.md Task 15 notes). This client scrapes
+// docs/plans/20260729-mvp-service.md Task 15 notes). This client scrapes
 // HTML instead, mirroring what a browser driving the CGI UI would do:
 //
 //   - cgi-bin/new-client (the "participant" role, role=0): problem
@@ -517,6 +517,12 @@ func (c *Client) submitMultipart(ctx context.Context, sid, probID, langID, code 
 // doWithRetry retries transient (network-level) failures a couple of
 // times with a short backoff; it never retries once the server has
 // responded, successfully or not — those are ejudge's real answer.
+//
+// A POST body is a one-shot reader: after the first attempt it is drained
+// and closed, so every retry rebuilds the body from req.GetBody (which
+// http.NewRequest populates for the in-memory body types this package
+// uses). A request whose body cannot be replayed is not retried — resending
+// it would silently submit an empty form.
 func (c *Client) doWithRetry(req *http.Request) (string, error) {
 	const maxAttempts = 3
 	backoff := 100 * time.Millisecond
@@ -530,9 +536,20 @@ func (c *Client) doWithRetry(req *http.Request) (string, error) {
 			case <-time.After(backoff):
 			}
 			backoff *= 2
+
+			if req.Body != nil {
+				if req.GetBody == nil {
+					return "", fmt.Errorf("ejudge: request to %s failed and its body cannot be replayed: %w", req.URL.Path, lastErr)
+				}
+				body, err := req.GetBody()
+				if err != nil {
+					return "", fmt.Errorf("ejudge: rebuilding request body for %s: %w", req.URL.Path, err)
+				}
+				req.Body = body
+			}
 		}
 
-		resp, err := c.httpClient.Do(req)
+		body, err := c.doOnce(req)
 		if err != nil {
 			lastErr = err
 			if errors.Is(req.Context().Err(), context.DeadlineExceeded) || errors.Is(req.Context().Err(), context.Canceled) {
@@ -540,16 +557,26 @@ func (c *Client) doWithRetry(req *http.Request) (string, error) {
 			}
 			continue // transient network error, retry
 		}
-		defer func() { _ = resp.Body.Close() }()
-
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return string(data), nil
+		return body, nil
 	}
 	return "", fmt.Errorf("ejudge: request to %s failed after %d attempts: %w", req.URL.Path, maxAttempts, lastErr)
+}
+
+// doOnce performs a single attempt, closing the response body before it
+// returns — a defer inside doWithRetry's loop would hold every attempt's
+// connection open until the whole retry sequence finished.
+func (c *Client) doOnce(req *http.Request) (string, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 // ---------------------------------------------------------------------
@@ -685,11 +712,22 @@ func parseProblemStats(body string) map[string]string {
 	return out
 }
 
+// loginRe is the character set an ejudge login may use. userID reaches us
+// from the untrusted POST /help body and is interpolated into a filter
+// expression that ejudge parses and evaluates server-side; Go's %q escaping
+// is not ejudge's, so a crafted login could otherwise break out of the
+// string literal and widen the filter to another student's runs.
+var loginRe = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,64}$`)
+
 func (c *Client) listMasterSubmissions(ctx context.Context, userID, problemID string) ([]masterSubmissionRow, error) {
+	if !loginRe.MatchString(userID) {
+		return nil, fmt.Errorf("ejudge: invalid user id %q", userID)
+	}
 	short, err := c.resolveProblemShortName(ctx, problemID)
 	if err != nil {
 		return nil, err
 	}
+	// short comes from ejudge's own problem table, not from the caller.
 	filter := fmt.Sprintf(`login==%q && prob==%q`, userID, short)
 	body, err := c.masterGet(ctx, actionMainPage, url.Values{"filter_expr": {filter}})
 	if err != nil {

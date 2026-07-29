@@ -104,9 +104,22 @@ type helpRequestBody struct {
 	NSubmissions *int   `json:"n_submissions"`
 }
 
+// maxHelpBodyBytes caps POST /help's body. The endpoint takes two short
+// identifiers and an integer; anything larger is not a request we serve.
+const maxHelpBodyBytes = 8 << 10
+
+// maxIdentifierLen bounds user_id and problem_id. Both are forwarded to the
+// judging platform (ejudge interpolates user_id into a server-side filter
+// expression) and stored in unbounded TEXT columns.
+const maxIdentifierLen = 128
+
+// maxNSubmissions caps how many submissions one request may pull, so a
+// caller can't turn a single /help into an unbounded platform scrape.
+const maxNSubmissions = 200
+
 func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 	var body helpRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxHelpBodyBytes)).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -114,14 +127,26 @@ func (s *Server) handleHelp(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is required"})
 		return
 	}
+	if len(body.UserID) > maxIdentifierLen {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is too long"})
+		return
+	}
 	if body.ProblemID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "problem_id is required"})
+		return
+	}
+	if len(body.ProblemID) > maxIdentifierLen {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "problem_id is too long"})
 		return
 	}
 	nSubmissions := s.defaultNSubmissions
 	if body.NSubmissions != nil {
 		if *body.NSubmissions <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "n_submissions must be positive"})
+			return
+		}
+		if *body.NSubmissions > maxNSubmissions {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "n_submissions is too large"})
 			return
 		}
 		nSubmissions = *body.NSubmissions
@@ -198,8 +223,12 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 			resp["hint"] = hint.Text
 		}
 	case store.StatusFailed:
+		// help_requests.error holds a wrapped Go error, which can carry the
+		// LLM provider's raw response body, ejudge URLs, or DB error text.
+		// Callers get a fixed message; the detail stays in the row and the
+		// events log for operators.
 		if hr.Error != nil {
-			resp["error"] = *hr.Error
+			resp["error"] = "internal error while processing this request"
 		}
 	default:
 		if msg, ok := statusMessages[hr.Status]; ok {
@@ -286,6 +315,12 @@ func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
 			"problem_id": hr.ProblemID,
 			"status":     string(hr.Status),
 			"useless":    hr.Useless,
+		}
+		// The real failure detail, redacted from the caller-facing
+		// GET /requests/{id}, stays available here — this route is behind
+		// ADMIN_TOKEN, so operators keep an HTTP path to it.
+		if hr.Error != nil {
+			resp[i]["error"] = *hr.Error
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

@@ -227,36 +227,52 @@ func (s *Store) GetHelpRequest(ctx context.Context, id uuid.UUID) (*HelpRequest,
 // transition against the graph in the plan's Technical Details. Illegal
 // transitions (including any transition out of a terminal status) return
 // *ErrIllegalTransition and do not modify the row.
+//
+// The check and the write are one statement on purpose. A Store bound to
+// the pool (production) runs each call in its own implicit transaction, so a
+// separate SELECT ... FOR UPDATE would release its lock immediately and the
+// pair would not be atomic — two workers racing over a reclaimed row could
+// both read a legal source status and both write.
 func (s *Store) TransitionStatus(ctx context.Context, id uuid.UUID, to Status) error {
-	row := s.db.QueryRow(ctx, `SELECT status FROM help_requests WHERE id = $1 FOR UPDATE`, id)
+	row := s.db.QueryRow(ctx, `
+		WITH upd AS (
+			UPDATE help_requests SET status = $2, updated_at = now()
+			WHERE id = $1 AND status = ANY($3)
+			RETURNING id
+		)
+		SELECT h.status, EXISTS (SELECT 1 FROM upd)
+		FROM help_requests h WHERE h.id = $1`,
+		id, to, transitionSources(to))
+
 	var current string
-	if err := row.Scan(&current); err != nil {
+	var updated bool
+	if err := row.Scan(&current, &updated); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: id %s", ErrUnknownRequest, id)
 		}
-		return fmt.Errorf("store: reading status for transition: %w", err)
-	}
-	from := Status(current)
-
-	if !isLegalTransition(from, to) {
-		return &ErrIllegalTransition{From: from, To: to}
-	}
-
-	if _, err := s.db.Exec(ctx,
-		`UPDATE help_requests SET status = $1, updated_at = now() WHERE id = $2`, to, id,
-	); err != nil {
 		return fmt.Errorf("store: updating status: %w", err)
+	}
+	if !updated {
+		// The outer SELECT sees the pre-UPDATE snapshot, so current is the
+		// status the transition was rejected from.
+		return &ErrIllegalTransition{From: Status(current), To: to}
 	}
 	return nil
 }
 
-func isLegalTransition(from, to Status) bool {
-	for _, allowed := range legalTransitions[from] {
-		if allowed == to {
-			return true
+// transitionSources returns every status that may legally transition to to,
+// as the SQL predicate for the atomic update above.
+func transitionSources(to Status) []string {
+	var from []string
+	for src, allowed := range legalTransitions {
+		for _, dst := range allowed {
+			if dst == to {
+				from = append(from, string(src))
+				break
+			}
 		}
 	}
-	return false
+	return from
 }
 
 // ClaimNext atomically claims one pending help_requests row for workerID,
@@ -844,8 +860,13 @@ func (s *Store) CreateMistake(ctx context.Context, m Mistake) error {
 // last_seen to the current time — the curator's merge_into tool, called
 // when a raw mistake is judged the same underlying habit as one already on
 // file. See CreateMistake for why this uses clock_timestamp(), not now().
-func (s *Store) MergeMistake(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.db.Exec(ctx, `UPDATE mistakes SET count = count + 1, last_seen = clock_timestamp() WHERE id = $1`, id)
+// The user_id predicate is not redundant: the id comes from a model that
+// can hallucinate a well-formed uuid, and without it a curator sweep for one
+// student could bump a different student's tally.
+func (s *Store) MergeMistake(ctx context.Context, userID string, id uuid.UUID) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE mistakes SET count = count + 1, last_seen = clock_timestamp() WHERE id = $1 AND user_id = $2`,
+		id, userID)
 	if err != nil {
 		return fmt.Errorf("store: merging mistake: %w", err)
 	}

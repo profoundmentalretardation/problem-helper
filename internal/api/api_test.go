@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,10 @@ func TestHandleHelp_Validation(t *testing.T) {
 		{"missing problem_id", map[string]any{"user_id": "alice"}},
 		{"zero n_submissions", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 0}},
 		{"negative n_submissions", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": -1}},
+		{"n_submissions over cap", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 201}},
+		{"user_id too long", map[string]any{"user_id": strings.Repeat("a", 129), "problem_id": "p1"}},
+		{"problem_id too long", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 129)}},
+		{"body over cap", map[string]any{"user_id": "alice", "problem_id": "p1", "padding": strings.Repeat("x", 9<<10)}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -231,6 +236,33 @@ func TestHandleHelp_Validation(t *testing.T) {
 			}
 			if len(fs.created) != 0 {
 				t.Fatal("expected no help request created on validation failure")
+			}
+		})
+	}
+}
+
+// TestHandleHelp_LimitBoundariesAreAccepted pins the accept side of the
+// limits, so tightening one without meaning to fails here rather than
+// silently rejecting legitimate callers.
+func TestHandleHelp_LimitBoundariesAreAccepted(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"user_id at max length", map[string]any{"user_id": strings.Repeat("a", 128), "problem_id": "p1"}},
+		{"problem_id at max length", map[string]any{"user_id": "alice", "problem_id": strings.Repeat("p", 128)}},
+		{"n_submissions at cap", map[string]any{"user_id": "alice", "problem_id": "p1", "n_submissions": 200}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := newFakeStore()
+			h := newTestServer(t, fs)
+			w := doRequest(h, http.MethodPost, "/help", "api-secret", tc.body)
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202, body = %s", w.Code, w.Body.String())
+			}
+			if len(fs.created) != 1 {
+				t.Fatalf("created %d help requests, want 1", len(fs.created))
 			}
 		})
 	}
@@ -354,10 +386,18 @@ func TestHandleGetRequest_PerStatusPayloads(t *testing.T) {
 		},
 		{
 			name: "failed",
-			hr:   store.HelpRequest{Status: store.StatusFailed, Error: strPtr("platform unreachable")},
+			// help_requests.error carries wrapped Go errors — provider
+			// response bodies, ejudge URLs, DB text. Callers get a fixed
+			// message and none of that detail.
+			hr: store.HelpRequest{Status: store.StatusFailed, Error: strPtr("pgx: dial tcp 10.0.0.7:5432: refused")},
 			check: func(t *testing.T, body map[string]any) {
-				if body["error"] != "platform unreachable" {
+				if body["error"] != "internal error while processing this request" {
 					t.Fatalf("unexpected error: %v", body["error"])
+				}
+				for _, leak := range []string{"pgx", "10.0.0.7", "5432"} {
+					if strings.Contains(fmt.Sprint(body["error"]), leak) {
+						t.Fatalf("internal detail %q leaked to the caller: %v", leak, body["error"])
+					}
 				}
 			},
 		},
@@ -628,3 +668,34 @@ func TestHandleListRequests_StoreError(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestHandleListRequests_ExposesErrorToOperators is the counterpart to the
+// caller-facing redaction on GET /requests/{id}: the real failure detail must
+// still be reachable over HTTP, behind the admin token.
+func TestHandleListRequests_ExposesErrorToOperators(t *testing.T) {
+	fs := newFakeStore()
+	id := uuid.New()
+	fs.listResult = []store.HelpRequest{
+		{ID: id, UserID: "alice", ProblemID: "p1", Status: store.StatusFailed, Error: strPtr("pgx: dial tcp 10.0.0.7:5432: refused")},
+		{ID: uuid.New(), UserID: "bob", ProblemID: "p2", Status: store.StatusDone},
+	}
+	h := newTestServer(t, fs)
+
+	w := doRequest(h, http.MethodGet, "/admin/requests", "admin-secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("len(resp) = %d, want 2", len(resp))
+	}
+	if resp[0]["error"] != "pgx: dial tcp 10.0.0.7:5432: refused" {
+		t.Errorf("error = %v, want the full stored detail", resp[0]["error"])
+	}
+	if _, ok := resp[1]["error"]; ok {
+		t.Errorf("error present on a request that has none: %v", resp[1]["error"])
+	}
+}

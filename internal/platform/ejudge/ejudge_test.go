@@ -574,3 +574,58 @@ func TestFixtureServer_ProblemStatsRoundTrip(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
+
+// TestSubmissions_RejectsLoginsThatCouldBreakOutOfTheFilter is the must-catch
+// half of the filter_expr injection guard: userID reaches us from the
+// untrusted POST /help body and is interpolated into an expression ejudge
+// parses server-side, where Go's %q escaping does not apply. A crafted login
+// must be refused before any request goes out, not merely quoted.
+func TestSubmissions_RejectsLoginsThatCouldBreakOutOfTheFilter(t *testing.T) {
+	cases := []struct {
+		name  string
+		login string
+	}{
+		{"quote and boolean widening", `ejudge"||1==1||"`},
+		{"quote then always-true tail", `ejudge" || login=="victim`},
+		{"embedded backslash", `ejudge\"`},
+		{"whitespace and operators", `ejudge || 1`},
+		{"empty", ``},
+		{"over the length limit", strings.Repeat("a", 65)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var reached bool
+			srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				reached = true
+			}))
+			t.Cleanup(srv.Close)
+
+			_, err := ejudge.New(srv.URL, "ejudge", "ejudge").
+				Submissions(context.Background(), tc.login, "1", 2)
+			if err == nil {
+				t.Fatalf("Submissions(%q) succeeded, want rejection", tc.login)
+			}
+			if reached {
+				t.Errorf("Submissions(%q) issued an HTTP request; the login must be refused first", tc.login)
+			}
+		})
+	}
+}
+
+// TestSubmissions_AcceptsLegitimateLogins is the must-pass half: the guard
+// must not reject the login shapes ejudge actually issues.
+func TestSubmissions_AcceptsLegitimateLogins(t *testing.T) {
+	for _, login := range []string{"ejudge", "first.last@example.org", "user-1", "user_1", strings.Repeat("a", 64)} {
+		t.Run(login, func(t *testing.T) {
+			srv := newFixtureServer(t)
+			c := newClient(t, srv)
+
+			// The fixture server only knows the "ejudge" login's runs, so a
+			// non-matching login legitimately yields no rows — what matters
+			// is that the call is not rejected out of hand.
+			if _, err := c.Submissions(context.Background(), login, "1", 2); err != nil {
+				t.Errorf("Submissions(%q): %v, want the login accepted", login, err)
+			}
+		})
+	}
+}

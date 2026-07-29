@@ -264,11 +264,13 @@ func TestRun_Garbage_NothingWrittenStaysUnprocessed(t *testing.T) {
 		t.Fatalf("insert raw mistake: %v", err)
 	}
 
-	// Every reply is unparseable prose; the budget (2) is exhausted before
+	// Every reply is unparseable prose; the budget — one call per raw
+	// mistake (1) plus MaxRetries (2) of slack, so 3 — is exhausted before
 	// any tool ever runs.
 	chat := llm.NewScripted(nil, testPricing(),
 		llm.ScriptedResponse{JSON: `not json at all`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
 		llm.ScriptedResponse{JSON: `still not json`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
+		llm.ScriptedResponse{JSON: `prose to the very end`, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}},
 	)
 	runner := newRunner(s, chat, 2, t)
 
@@ -339,5 +341,63 @@ func TestRun_RendersRawAndExistingMistakesIntoThePrompt(t *testing.T) {
 	}
 	if !strings.Contains(system, "off-by-one") || !strings.Contains(system, existingID.String()) {
 		t.Errorf("system prompt missing the existing mistake or its id: %q", system)
+	}
+}
+
+// TestRun_MergeInto_OtherUsersMistake_FedBackNotFatal covers the model
+// naming a mistake that isn't this student's — a hallucinated uuid, or one
+// belonging to another student. It must come back as a tool error the model
+// can recover from, not abort the sweep (which would strand the batch, since
+// the next sweep re-sends the same prompt), and it must not touch the other
+// student's tally.
+func TestRun_MergeInto_OtherUsersMistake_FedBackNotFatal(t *testing.T) {
+	s, ctx := withStore(t)
+	reqID := createRequest(t, s, ctx, "user-1")
+
+	othersID := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID: othersID, UserID: "user-2", Title: "theirs", Description: "not user-1's habit",
+	}); err != nil {
+		t.Fatalf("create other user's mistake: %v", err)
+	}
+	if err := s.InsertRawMistake(ctx, store.RawMistake{
+		RequestID: reqID, UserID: "user-1", Text: "loop stops one iteration early",
+	}); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+
+	chat := llm.NewScripted(nil, testPricing(),
+		// First the model reaches for a mistake that isn't user-1's...
+		llm.ScriptedResponse{JSON: mergeJSON(othersID), Usage: llm.Usage{InputTokens: 40, OutputTokens: 10}},
+		// ...then recovers by creating one, and finishes.
+		llm.ScriptedResponse{
+			JSON:  `{"action":"create_mistake","title":"off-by-one","description":"loop bound is one short"}`,
+			Usage: llm.Usage{InputTokens: 40, OutputTokens: 10},
+		},
+		llm.ScriptedResponse{JSON: finishJSON, Usage: llm.Usage{InputTokens: 20, OutputTokens: 5}},
+	)
+	runner := newRunner(s, chat, 4, t)
+
+	got, err := runner.Run(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("Run: %v (an unknown mistake id must not fail the sweep)", err)
+	}
+	if got.Status != curator.StatusCurated {
+		t.Fatalf("status = %q, want %q", got.Status, curator.StatusCurated)
+	}
+	if got.Merged != 0 || got.Created != 1 {
+		t.Errorf("merged=%d created=%d, want merged=0 created=1", got.Merged, got.Created)
+	}
+
+	theirs, err := s.ListMistakes(ctx, "user-2")
+	if err != nil {
+		t.Fatalf("list user-2 mistakes: %v", err)
+	}
+	if len(theirs) != 1 || theirs[0].Count != 1 {
+		t.Errorf("user-2 mistakes = %+v, want count unchanged at 1", theirs)
+	}
+
+	if chat.Remaining() != 0 {
+		t.Errorf("scripted responses left unused: %d", chat.Remaining())
 	}
 }

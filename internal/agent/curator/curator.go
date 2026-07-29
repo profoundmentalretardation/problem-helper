@@ -15,6 +15,7 @@ package curator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -58,7 +59,7 @@ type RawMistakeStore interface {
 type MistakeStore interface {
 	ListMistakes(ctx context.Context, userID string) ([]store.Mistake, error)
 	CreateMistake(ctx context.Context, m store.Mistake) error
-	MergeMistake(ctx context.Context, id uuid.UUID) error
+	MergeMistake(ctx context.Context, userID string, id uuid.UUID) error
 }
 
 // Result is a Run outcome.
@@ -102,10 +103,14 @@ var responseSchema = map[string]any{
 }
 
 // Run folds userID's unprocessed raw mistakes into their mistakes tally.
-// The call budget is Agent.MaxRetries: every tool call, including a
-// malformed reply, counts against it, so a model that never calls finish
-// leaves the batch unprocessed (retried on the next sweep) rather than
-// looping forever.
+// The call budget is one call per raw mistake in the batch (each may need
+// its own merge_into or create_mistake) plus Agent.MaxRetries of slack for
+// the closing finish and any malformed replies. Sizing it from MaxRetries
+// alone would make any batch needing more actions than that permanently
+// unfinishable: finish is never reached, the batch is never marked
+// processed, and every later sweep re-sends an ever-growing batch.
+// Exhausting the budget leaves the batch unprocessed (retried next sweep)
+// rather than looping forever.
 func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 	raw, err := r.RawMistakes.ListUnprocessedRawMistakes(ctx, userID)
 	if err != nil {
@@ -136,9 +141,10 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 
 	messages := []llm.Message{{Role: "system", Content: rendered}}
 	var merged, created, calls int
+	callBudget := len(raw) + r.Agent.MaxRetries
 
 	for {
-		if calls >= r.Agent.MaxRetries {
+		if calls >= callBudget {
 			return Result{Status: StatusGaveUp, Merged: merged, Created: created, Calls: calls}, nil
 		}
 		calls++
@@ -175,7 +181,16 @@ func (r *Runner) Run(ctx context.Context, userID string) (Result, error) {
 				messages = append(messages, llm.Message{Role: "user", Content: `{"ok":false,"error":"mistake_id must be a valid uuid"}`})
 				continue
 			}
-			if err := r.Mistakes.MergeMistake(ctx, id); err != nil {
+			if err := r.Mistakes.MergeMistake(ctx, userID, id); err != nil {
+				// A hallucinated (or another user's) id is the model's
+				// mistake, not an infrastructure failure — feed it back and
+				// let it retry, the same as an unparseable id. Failing the
+				// whole run here would strand the batch forever, since the
+				// next sweep re-sends the same prompt.
+				if errors.Is(err, store.ErrUnknownMistake) {
+					messages = append(messages, llm.Message{Role: "user", Content: `{"ok":false,"error":"no mistake with that id"}`})
+					continue
+				}
 				return Result{}, fmt.Errorf("curator: merging mistake: %w", err)
 			}
 			merged++

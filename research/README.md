@@ -1,7 +1,7 @@
 # research/ — frozen Python prototypes
 
 Read-only reference. These are the course prototypes the Go service (see `../AGENTS.md` and
-`../docs/plans/completed/20260729-mvp-service.md`) is built from. Where the plan and a notebook disagree,
+`../docs/plans/20260729-mvp-service.md`) is built from. Where the plan and a notebook disagree,
 the plan is the priority.
 
 ## Notebook → Go package map

@@ -156,3 +156,30 @@ func TestHashCode_DifferentCodeDiffers(t *testing.T) {
 		t.Error("HashCode: different code hashed to the same value")
 	}
 }
+
+// queueLockKey / lockQueueTable mirror internal/store/store_test.go. This
+// package's claim tests commit a pending row (a claim race can't be observed
+// inside one transaction), which is visible to internal/store's
+// ClaimNext/Heartbeat/ReclaimStale tests — those range over the whole
+// help_requests table, and `go test ./...` runs the two package binaries
+// concurrently against the same TEST_DATABASE_URL. Both sides take this lock
+// so they interleave instead of overlapping. Keep the key in sync.
+const queueLockKey = 0x70726F626C656D01
+
+func lockQueueTable(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+
+	conn, err := testPool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire conn for queue lock: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, int64(queueLockKey)); err != nil {
+		conn.Release()
+		t.Fatalf("take queue lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, int64(queueLockKey))
+		conn.Release()
+	})
+}

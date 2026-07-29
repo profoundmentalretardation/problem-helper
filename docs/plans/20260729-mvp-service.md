@@ -657,7 +657,71 @@ package doc for full detail):
 
 - [x] update `AGENTS.md` with patterns/conventions discovered during implementation
 - [x] write `README.md` (what it is, how to run, config reference incl. auth tokens)
-- [x] move this plan to `docs/plans/completed/`
+- [ ] move this plan to `docs/plans/completed/` — un-archived for the post-implementation
+      code review (Task 20); re-archive once that review is closed out
+
+### ➕ Task 20: Post-review hardening
+
+Found during code review of the completed implementation. Every item ships with tests.
+
+- [x] **atomic status transition** — `store.TransitionStatus` was a `SELECT ... FOR UPDATE`
+      followed by a separate `UPDATE`; on a pool-bound `Store` each runs in its own implicit
+      transaction, so the lock was released between them and two workers racing over a reclaimed
+      row could both win. Rewritten as one CTE statement; `ErrIllegalTransition.From` now comes
+      from the pre-`UPDATE` snapshot.
+- [x] **`POST /help` input limits** — 8 KiB body, 128-char `user_id`/`problem_id`, `n_submissions`
+      in `1..200`, all returning `400`. Boundary-accept cases are tested too.
+- [x] **ejudge `filter_expr` injection guard** — `user_id` reaches us untrusted and is
+      interpolated into an expression ejudge parses server-side, where Go's `%q` is not ejudge's
+      escaping. `loginRe` rejects anything outside `[A-Za-z0-9._@-]{1,64}` before any request
+      goes out. Tested both directions.
+- [x] **`MergeMistake` is user-scoped** — the `mistake_id` comes from a model that can
+      hallucinate a well-formed uuid; without the `user_id` predicate a sweep for one student
+      could bump another's tally. A miss is fed back to the model as a tool error rather than
+      failing the sweep, which would strand the batch forever.
+- [x] **guardrail-independence enforced at startup** — `config.ParseAgents` rejects a guardrail
+      whose model family matches the hint writer's. Families compare on the id's *last* path
+      segment, so `openai/gpt-4.1-mini` vs `gpt-4.1-mini` is caught as the same model written
+      two ways, while two models behind one gateway prefix are not falsely collapsed.
+- [x] **repair verification requires the judge's accept verdict** — `success` compared only the
+      baseline run's tests. Under `acm` scoring the judge halts at the first failure, so a
+      student's failing run has results only up to that point: code passing exactly those and
+      failing a later test cleared the check and was delivered as a "verified" fix.
+      `RunResult.Passed` is now required as well.
+- [x] **verification polling is bounded and cancellable** — wall-clock `MaxPollWait` (default
+      5 min) on a derived context, so it bounds the platform call inside each poll and not just
+      the sleeps between them; a wedged judge run can no longer pin a worker slot. Also added
+      `ReasonNoBaseline`: an empty baseline can never satisfy `success`, so it short-circuits
+      before any model call or verification submission.
+- [x] **curator call budget sized from the batch** — was `max_retries` alone, which made any
+      batch needing more actions than that permanently unfinishable. Now one call per raw
+      mistake plus `max_retries` of slack.
+- [x] **shield comment-stripper apostrophe handling** — C++14 digit separators (`1'000'000`) were
+      read as char-literal quotes, and the fix for that then swallowed encoding prefixes
+      (`L'"'`, `u8'"'`), opening a phantom string that hid the rest of the line from the shield.
+      A separator is now recognized only between two hex digits. Unterminated literals no longer
+      cross a newline.
+- [x] **`shield.Canonical` language aliases** — platforms name languages after the compiler
+      (`g++`, `python3`, `java8`), so `Submission.Language` almost never equalled a `Lang*`
+      constant and real submissions routed to "unsupported language".
+- [x] **formatter empty-output guard** — a formatter exiting 0 having printed nothing would
+      submit an empty file for verification; caller cancellation is now reported distinctly from
+      a timeout.
+- [x] **`hint_delivered` on the cache-hit path** — `HintEffectivenessInputs` keys off that event,
+      so cached re-deliveries were invisible to the analytics.
+- [x] **`top_n_mistakes` wired through** — `Pipeline.TopNMistakes` is set from `agents.yaml` in
+      `cmd/helper/main.go` and rendered into the repair prompt. This is the read side of the
+      curator loop; without it the nightly sweep built a profile nothing consumed.
+- [x] **failure detail redacted from callers, kept for operators** — `GET /requests/{id}` returns
+      a fixed message for `status=failed` (`help_requests.error` can carry provider response
+      bodies, ejudge URLs, DB text); the full string is exposed on `GET /admin/requests`, behind
+      `ADMIN_TOKEN`.
+- [x] **cross-package test isolation for queue tests** — `internal/worker`'s claim-race test
+      commits a pending row, which `internal/store`'s `ClaimNext`/`Heartbeat`/`ReclaimStale`
+      tests could see (they range over the whole table, and `go test ./...` runs package
+      binaries concurrently against one database). Both sides now take a Postgres advisory
+      lock; the suite was run repeatedly to confirm the flake is gone.
+- [x] `go test ./...` and `golangci-lint run` clean
 
 ## Post-Completion
 

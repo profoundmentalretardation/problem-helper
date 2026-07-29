@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -125,6 +126,26 @@ type rawAgentsConfig struct {
 	Formatter FormatterConfig          `yaml:"formatter"`
 }
 
+// modelFamily reduces a model id to the family prefix comparisons should
+// use: "gpt-4.1-mini" and "gpt-4o" are the same family, "gpt-4.1-mini" and
+// "claude-sonnet-5" are not.
+//
+// Routing prefixes are stripped rather than compared. Comparing the vendor
+// segment of "openai/gpt-4.1-mini" would make it a different family from a
+// bare "gpt-4.1-mini" — the same model written two ways would pass the
+// guardrail-independence check — and would collapse every model behind a
+// single gateway ("openrouter/openai/...", "openrouter/anthropic/...") into
+// one family, rejecting a genuinely independent pair. Only the last path
+// segment names the model, so that is what the family is taken from.
+func modelFamily(model string) string {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if i := strings.LastIndex(m, "/"); i >= 0 {
+		m = m[i+1:]
+	}
+	family, _, _ := strings.Cut(m, "-")
+	return family
+}
+
 // ParseAgents parses and validates an agents.yaml document.
 func ParseAgents(data []byte) (AgentsConfig, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -161,6 +182,16 @@ func ParseAgents(data []byte) (AgentsConfig, error) {
 		if _, ok := raw.Pricing[agent.Model]; !ok {
 			return AgentsConfig{}, fmt.Errorf("config: agents.yaml: model %q (agent %q) has no pricing entry", agent.Model, name)
 		}
+	}
+
+	// The guardrail exists to catch what the hint writer got wrong; a model
+	// asked to review its own output is not an independent check. Enforced
+	// here so a config edit can't silently degrade the gate to
+	// self-approval — the invariant is otherwise only a convention.
+	if modelFamily(raw.Hint.Model) == modelFamily(raw.Guardrail.Model) {
+		return AgentsConfig{}, fmt.Errorf(
+			"config: agents.yaml: guardrail model %q must be a different model family than the hint model %q",
+			raw.Guardrail.Model, raw.Hint.Model)
 	}
 
 	return AgentsConfig{

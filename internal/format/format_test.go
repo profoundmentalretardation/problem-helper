@@ -86,3 +86,41 @@ func TestFormat_EnabledEmptyCommand_OriginalCodeAndWarning(t *testing.T) {
 		t.Error("warning = \"\", want non-empty when enabled with an empty command")
 	}
 }
+
+// TestFormat_EmptyOutput_OriginalCodeAndWarning covers a formatter that exits
+// 0 having printed nothing. Taking its output would submit an empty file for
+// verification and diff the hint against nothing.
+func TestFormat_EmptyOutput_OriginalCodeAndWarning(t *testing.T) {
+	r := format.Runner{Enabled: true, Command: "true"}
+
+	got := r.Format(context.Background(), "original code")
+
+	if got.Code != "original code" {
+		t.Errorf("code = %q, want original code preserved when the formatter prints nothing", got.Code)
+	}
+	if !strings.Contains(got.Warning, "no output") {
+		t.Errorf("warning = %q, want it to mention the empty output", got.Warning)
+	}
+}
+
+// TestFormat_CallerCanceled_ReportsCancellationNotTimeout distinguishes a
+// shutting-down worker from a formatter that hung: both kill the command, but
+// only one is the formatter's fault.
+func TestFormat_CallerCanceled_ReportsCancellationNotTimeout(t *testing.T) {
+	r := format.Runner{Enabled: true, Command: "sleep 5", Timeout: time.Minute}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	got := r.Format(ctx, "original code")
+
+	if got.Code != "original code" {
+		t.Errorf("code = %q, want original code preserved on cancellation", got.Code)
+	}
+	if !strings.Contains(got.Warning, "canceled") {
+		t.Errorf("warning = %q, want it to mention cancellation", got.Warning)
+	}
+	if strings.Contains(got.Warning, "timed out") {
+		t.Errorf("warning = %q, want cancellation reported distinctly from a timeout", got.Warning)
+	}
+}

@@ -265,3 +265,141 @@ main()
 		})
 	}
 }
+
+// TestCanonical_PlatformReportedNames covers the alias table: platforms name
+// languages after the compiler they invoke, so a submission's Language is
+// almost never one of the Lang* constants. A dropped alias routes real
+// submissions to "unsupported language" without failing any other test.
+func TestCanonical_PlatformReportedNames(t *testing.T) {
+	cases := []struct {
+		in   string
+		want shield.Language
+	}{
+		{"c", shield.LangC},
+		{"gcc", shield.LangC},
+		{"clang", shield.LangC},
+		{"cpp", shield.LangCPP},
+		{"c++", shield.LangCPP},
+		{"g++", shield.LangCPP},
+		{"clang++", shield.LangCPP},
+		{"java", shield.LangJava},
+		{"java8", shield.LangJava},
+		{"go", shield.LangGo},
+		{"golang", shield.LangGo},
+		{"python", shield.LangPython},
+		{"python3", shield.LangPython},
+		{"pypy3", shield.LangPython},
+		// trimmed and case-folded before lookup
+		{" G++ ", shield.LangCPP},
+		{"PYTHON3", shield.LangPython},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, ok := shield.Canonical(tc.in)
+			if !ok {
+				t.Fatalf("Canonical(%q) reported unsupported, want %q", tc.in, tc.want)
+			}
+			if got != tc.want {
+				t.Errorf("Canonical(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	for _, in := range []string{"basic", "rust", "", "  "} {
+		if got, ok := shield.Canonical(in); ok {
+			t.Errorf("Canonical(%q) = %q, true; want unsupported", in, got)
+		}
+	}
+}
+
+// TestStrip_PlatformLanguageNameActuallyStrips is the end-to-end half of the
+// alias table: a compiler name must reach the right stripper, not just map to
+// the right constant.
+func TestStrip_PlatformLanguageNameActuallyStrips(t *testing.T) {
+	cases := []struct{ lang, code string }{
+		{"g++", "int main() { return 0; } // injected instruction\n"},
+		{"gcc", "int main(void) { return 0; } // injected instruction\n"},
+		{"java8", "class A { void f() {} } // injected instruction\n"},
+		{"python3", "def f():\n    pass  # injected instruction\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.lang, func(t *testing.T) {
+			got, err := shield.Strip(tc.code, tc.lang)
+			if err != nil {
+				t.Fatalf("Strip(%q): %v", tc.lang, err)
+			}
+			if strings.Contains(got.CodeAfter, "injected instruction") {
+				t.Errorf("comment survived for %q:\n%s", tc.lang, got.CodeAfter)
+			}
+		})
+	}
+}
+
+// TestStrip_ApostropheEdgeCases pins both halves of the C-family apostrophe
+// handling. A digit separator misread as a quote, or a char-literal encoding
+// prefix misread as a separator, both leave skipEscaped hunting for a closing
+// quote — and every comment after that point survives the shield.
+func TestStrip_ApostropheEdgeCases(t *testing.T) {
+	cases := []struct {
+		name string
+		lang string
+		code string
+		// keep is text that must survive (real code); drop is the payload.
+		keep string
+	}{
+		{
+			name: "cpp14 digit separator",
+			lang: "cpp",
+			code: "int main() {\n    int n = 1'000'000;\n    return 0; // injected instruction\n}\n",
+			keep: "1'000'000",
+		},
+		{
+			name: "odd number of digit separators",
+			lang: "cpp",
+			code: "int main() {\n    long h = 0xFF'FF;\n    return 0; // injected instruction\n}\n",
+			keep: "0xFF'FF",
+		},
+		{
+			// The payload sits on the same line as the literal: an
+			// encoding prefix misread as a digit separator leaves the
+			// literal's quotes unrecognized, so the embedded double quote
+			// opens a phantom string that hides the rest of the line.
+			name: "wide char literal containing a double quote",
+			lang: "cpp",
+			code: "int main() {\n    if (c == L'\"') { } // injected instruction\n    return 0;\n}\n",
+			keep: "L'\"'",
+		},
+		{
+			name: "u8 char literal",
+			lang: "cpp",
+			code: "int main() {\n    if (c == u8'\"') { } // injected instruction\n    return 0;\n}\n",
+			keep: "u8'\"'",
+		},
+		{
+			name: "unterminated char literal does not cross the newline",
+			lang: "c",
+			code: "int main(void) {\n    char c = 'a;\n    return 0; // injected instruction\n}\n",
+			keep: "'a;",
+		},
+		{
+			name: "escaped apostrophe char literal",
+			lang: "c",
+			code: "int main(void) {\n    char q = '\\'';\n    return 0; // injected instruction\n}\n",
+			keep: "'\\''",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := shield.Strip(tc.code, tc.lang)
+			if err != nil {
+				t.Fatalf("Strip: %v", err)
+			}
+			if strings.Contains(got.CodeAfter, "injected instruction") {
+				t.Errorf("comment survived the shield:\n%s", got.CodeAfter)
+			}
+			if !strings.Contains(got.CodeAfter, tc.keep) {
+				t.Errorf("literal %q was mangled:\n%s", tc.keep, got.CodeAfter)
+			}
+		})
+	}
+}

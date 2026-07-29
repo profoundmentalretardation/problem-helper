@@ -87,6 +87,7 @@ func (f *fakeQueueStore) ReclaimStale(_ context.Context, _ time.Time) ([]uuid.UU
 }
 
 func TestWorker_ClaimNext_ExactlyOneWins(t *testing.T) {
+	lockQueueTable(t)
 	ctx := context.Background()
 
 	committed := store.New(testPool)
@@ -150,6 +151,7 @@ func TestWorker_ClaimNext_ExactlyOneWins(t *testing.T) {
 }
 
 func TestWorker_ReclaimedRequest_IsReClaimedAndRun(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := uuid.New()
 	if err := s.CreateHelpRequest(ctx, store.HelpRequestInput{

@@ -61,7 +61,7 @@ func stripCLikeComments(code string, protectPreprocessor bool) (string, []string
 			out.WriteString(code[i:end])
 			i = end
 
-		case c == '\'':
+		case c == '\'' && !isDigitSeparator(code, i):
 			end := skipEscaped(code, i, '\'')
 			out.WriteString(code[i:end])
 			i = end
@@ -106,16 +106,46 @@ func preprocessorLineEnd(code string, i int) (int, bool) {
 	return n, true
 }
 
+// isDigitSeparator reports whether the apostrophe at position i is a C++14
+// digit separator (1'000'000, 0xFF'FF) rather than the opening quote of a
+// char literal. A separator only ever appears between two digits of the same
+// numeric literal, so requiring a hex digit on both sides is the whole test.
+//
+// The narrow rule matters in both directions. Accepting any identifier
+// character before the quote would swallow the encoding prefixes of a char
+// literal — L'x', u'x', U'x', u8'x' — leaving the literal's own quotes
+// unrecognized, so `if (c == L'"') {} // injected` would open a phantom
+// string at the `"` and hide every comment after it from the shield.
+// Rejecting a real separator is just as bad: an odd number of them on a line
+// sends skipEscaped hunting for a closing quote that never comes.
+func isDigitSeparator(code string, i int) bool {
+	if i == 0 || i+1 >= len(code) {
+		return false
+	}
+	return isHexDigit(code[i-1]) && isHexDigit(code[i+1])
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') ||
+		(c >= 'a' && c <= 'f') ||
+		(c >= 'A' && c <= 'F')
+}
+
 // skipEscaped returns the index just past the literal opened by quote at
-// position i, honoring backslash escapes and never crossing that logical
-// boundary — an unterminated literal runs to end of input.
+// position i, honoring backslash escapes. The scan stops at an unescaped
+// newline: no C-family string or char literal spans a raw line break, so a
+// literal left unterminated by a stray quote must not swallow the rest of
+// the file — that would hide every comment after it from the shield.
 func skipEscaped(code string, i int, quote byte) int {
 	n := len(code)
 	j := i + 1
 	for j < n && code[j] != quote {
 		if code[j] == '\\' && j+1 < n {
-			j += 2
+			j += 2 // backslash escape, incl. a line continuation
 			continue
+		}
+		if code[j] == '\n' {
+			return j // unterminated literal, don't cross the line
 		}
 		j++
 	}

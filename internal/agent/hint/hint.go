@@ -135,7 +135,13 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("hint: chat: %w", err)
 		}
-		loopCost += parseCost(resp.Cost)
+		// retryCost is this attempt's writer call only, unlike loopCost which
+		// bounds the whole loop. The cap is checked here, before the
+		// guardrail call, because that is the last point at which spending
+		// can still be avoided — so the guardrail's own cost is never part of
+		// the amount compared against it (it lands in loopCost at :167).
+		retryCost := parseCost(resp.Cost)
+		loopCost += retryCost
 
 		var out hintResponse
 		if err := json.Unmarshal(resp.JSON, &out); err != nil {
@@ -149,7 +155,10 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		}
 		seen[hintText] = true
 
-		if r.Agent.MaxCostPerRetry > 0 && loopCost >= r.Agent.MaxCostPerRetry {
+		if r.Agent.MaxCostPerRetry > 0 && retryCost >= r.Agent.MaxCostPerRetry {
+			// This attempt has already spent its budget; skip the guardrail
+			// call and let the next attempt start with a fresh one. Same
+			// enforcement point as the repair loop's per-retry cap.
 			continue
 		}
 

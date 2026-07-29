@@ -3,8 +3,10 @@ package repair_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -219,7 +221,7 @@ func TestRun_ToolLoop_ListTestResultsTruncated_AndGetTest(t *testing.T) {
 func TestRun_GetTest_OutOfRangeIsGracefullyReported(t *testing.T) {
 	plat := mock.New()
 	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
-	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
 	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
 
 	scripted := llm.NewScripted(nil, testPricing(),
@@ -271,7 +273,7 @@ func TestRun_RegressionIsNotSuccess_ThenFixedOnRetry(t *testing.T) {
 	plat.ScriptTestCase("run-1", 4, platform.TestCase{Index: 4, Verdict: "WA"})
 
 	// attempt 2: everything passes.
-	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, TestsPassed: 4, TestsTotal: 4})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-2", Done: true, Passed: true, TestsPassed: 4, TestsTotal: 4})
 	for i := 1; i <= 4; i++ {
 		plat.ScriptTestCase("run-2", i, platform.TestCase{Index: i, Verdict: "OK"})
 	}
@@ -386,7 +388,7 @@ func TestRun_MaxCostPerLoop_StopsBeforeNextAttempt(t *testing.T) {
 func TestRun_Formatter_Enabled_FormatsCodeBeforeSubmitAndResult(t *testing.T) {
 	plat := mock.New()
 	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
-	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
 	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
 
 	scripted := llm.NewScripted(nil, testPricing(),
@@ -416,7 +418,7 @@ func TestRun_Formatter_Enabled_FormatsCodeBeforeSubmitAndResult(t *testing.T) {
 func TestRun_Formatter_Failure_DoesNotKillLoop_RecordsWarning(t *testing.T) {
 	plat := mock.New()
 	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
-	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
 	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
 
 	scripted := llm.NewScripted(nil, testPricing(),
@@ -458,7 +460,7 @@ func TestRun_Formatter_Failure_DoesNotKillLoop_RecordsWarning(t *testing.T) {
 func TestRun_MaxCostPerRetry_AbortsAttemptButRetryIsUsed(t *testing.T) {
 	plat := mock.New()
 	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
-	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
 	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
 
 	// Attempt 1 asks for the test list; its cost alone already meets the
@@ -490,5 +492,183 @@ func TestRun_MaxCostPerRetry_AbortsAttemptButRetryIsUsed(t *testing.T) {
 	}
 	if scripted.Remaining() != 0 {
 		t.Errorf("scripted responses remaining = %d, want 0", scripted.Remaining())
+	}
+}
+
+// TestRun_PassingOnlyBaselineTestsIsNotAFix pins the acm-scoring hazard: the
+// judge halts at the first failure, so a student's run that died on test 3
+// has a baseline covering only tests 1..3. Code that passes those but fails a
+// later test must not be reported as a verified fix just because it clears
+// every test the baseline happened to cover.
+func TestRun_PassingOnlyBaselineTestsIsNotAFix(t *testing.T) {
+	plat := mock.New()
+	// baseline: judged 1,2,3 then halted on the failure at 3.
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+	plat.ScriptTestCase("sub-best", 2, platform.TestCase{Index: 2, Verdict: "OK"})
+	plat.ScriptTestCase("sub-best", 3, platform.TestCase{Index: 3, Verdict: "WA"})
+
+	// attempt 1: gets further (1..4 pass) but fails at test 5, so the run is
+	// not accepted. Every baseline test passes, so only Passed=false catches it.
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: false, TestsPassed: 4, TestsTotal: 5})
+	for i := 1; i <= 4; i++ {
+		plat.ScriptTestCase("run-1", i, platform.TestCase{Index: i, Verdict: "OK"})
+	}
+	plat.ScriptTestCase("run-1", 5, platform.TestCase{Index: 5, Verdict: "WA"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"passes more tests, still wrong","mistakes":[]}`},
+	)
+
+	agent := testAgent()
+	agent.MaxRetries = 1
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: agent}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 3
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusNoFix {
+		t.Fatalf("status = %q, want %q (a run the judge did not accept is not a fix)", got.Status, repair.StatusNoFix)
+	}
+	if got.Code != "" {
+		t.Errorf("code = %q, want empty (unverified code must never be returned)", got.Code)
+	}
+}
+
+func TestRun_NoBaselineTestResults_ShortCircuitsBeforeAnyModelCall(t *testing.T) {
+	plat := mock.New()
+	// No ScriptTestCase for sub-best and BaselineTestsTotal 0: the student's
+	// run reported no per-test results at all.
+
+	// Zero scripted responses: any Chat call panics, which is the assertion
+	// that no model call and no platform submission happen.
+	scripted := llm.NewScripted(nil, testPricing())
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 0
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusNoFix || got.Reason != repair.ReasonNoBaseline {
+		t.Fatalf("status/reason = %q/%q, want %q/%q", got.Status, got.Reason, repair.StatusNoFix, repair.ReasonNoBaseline)
+	}
+	if got.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0", got.Attempts)
+	}
+}
+
+func TestRun_PollsUntilVerificationRunIsDone(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: false})
+	// Two "still judging" polls, then the terminal verdict.
+	plat.ScriptRunResultSequence("run-1",
+		platform.RunResult{ID: "run-1", Done: false},
+		platform.RunResult{ID: "run-1", Done: false},
+		platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1},
+	)
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	p.PollInterval = time.Millisecond
+
+	got, err := runner.Run(context.Background(), p)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != repair.StatusFixed {
+		t.Fatalf("status = %q, want %q", got.Status, repair.StatusFixed)
+	}
+	if got.RunID != "run-1" {
+		t.Errorf("run id = %q, want run-1", got.RunID)
+	}
+}
+
+func TestRun_VerificationRunNeverDone_TimesOut(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: false})
+	// Sticky last entry: the run stays wedged in the judge queue forever.
+	plat.ScriptRunResultSequence("run-1", platform.RunResult{ID: "run-1", Done: false})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	p.PollInterval = time.Millisecond
+	p.MaxPollWait = 20 * time.Millisecond
+
+	_, err := runner.Run(context.Background(), p)
+	if !errors.Is(err, repair.ErrVerificationTimeout) {
+		t.Fatalf("err = %v, want wrapping ErrVerificationTimeout", err)
+	}
+}
+
+func TestRun_PollingHonorsContextCancellation(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: false})
+	plat.ScriptRunResultSequence("run-1", platform.RunResult{ID: "run-1", Done: false})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	p.PollInterval = time.Minute // long enough that cancellation, not the tick, wins
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runner.Run(ctx, p)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want wrapping context.Canceled", err)
+	}
+}
+
+func TestRun_MistakeProfileRendersIntoPrompt(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+	plat.ScriptSubmitResult("problem-1", platform.RunResult{ID: "run-1", Done: true, Passed: true, TestsPassed: 1, TestsTotal: 1})
+	plat.ScriptTestCase("run-1", 1, platform.TestCase{Index: 1, Verdict: "OK"})
+
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{JSON: `{"action":"submit","code":"fixed","mistakes":[]}`},
+	)
+
+	runner := &repair.Runner{Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: testAgent()}
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+	p.Mistakes = []string{"- off-by-one: loops one past the end (seen 3 times)"}
+
+	if _, err := runner.Run(context.Background(), p); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	system := scripted.Calls()[0].Messages[0].Content
+	if !strings.Contains(system, "MISTAKES: - off-by-one: loops one past the end (seen 3 times)") {
+		t.Errorf("mistake profile did not reach the prompt; system message:\n%s", system)
 	}
 }

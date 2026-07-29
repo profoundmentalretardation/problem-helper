@@ -36,19 +36,24 @@ type Platform struct {
 	submissions map[pairKey][]platform.Submission
 	submitQueue map[string][]submitItem
 	runResults  map[string]platform.RunResult
-	testCases   map[testKey]platform.TestCase
+	// runResultQueue holds sequenced RunResult answers for a run id; it
+	// takes precedence over runResults so a test can script a poll sequence
+	// for a run that SubmitAsSystem also registered.
+	runResultQueue map[string][]platform.RunResult
+	testCases      map[testKey]platform.TestCase
 }
 
 // New returns an empty scriptable mock.
 func New() *Platform {
 	return &Platform{
-		statements:  map[string]platform.Statement{},
-		statuses:    map[pairKey]platform.Status{},
-		statusErrs:  map[pairKey]error{},
-		submissions: map[pairKey][]platform.Submission{},
-		submitQueue: map[string][]submitItem{},
-		runResults:  map[string]platform.RunResult{},
-		testCases:   map[testKey]platform.TestCase{},
+		statements:     map[string]platform.Statement{},
+		statuses:       map[pairKey]platform.Status{},
+		statusErrs:     map[pairKey]error{},
+		submissions:    map[pairKey][]platform.Submission{},
+		submitQueue:    map[string][]submitItem{},
+		runResults:     map[string]platform.RunResult{},
+		runResultQueue: map[string][]platform.RunResult{},
+		testCases:      map[testKey]platform.TestCase{},
 	}
 }
 
@@ -95,6 +100,18 @@ func (p *Platform) ScriptSubmitError(problemID string, err error) {
 // already-submitted run.
 func (p *Platform) ScriptRunResult(runID string, r platform.RunResult) {
 	p.runResults[runID] = r
+}
+
+// ScriptRunResultSequence scripts consecutive RunResult(runID) answers, so a
+// test can drive a caller's polling loop through "not done yet" states. The
+// last entry is sticky: once the sequence is exhausted every further poll
+// returns it, which keeps a never-done sequence (a run wedged in the judge
+// queue) from panicking as an unscripted call.
+func (p *Platform) ScriptRunResultSequence(runID string, results ...platform.RunResult) {
+	if len(results) == 0 {
+		panic("mock: ScriptRunResultSequence needs at least one result")
+	}
+	p.runResultQueue[runID] = results
 }
 
 // ScriptTestCase scripts the result of TestResult(runID, testID).
@@ -147,6 +164,13 @@ func (p *Platform) SubmitAsSystem(_ context.Context, problemID, _, _ string) (pl
 }
 
 func (p *Platform) RunResult(_ context.Context, runID string) (platform.RunResult, error) {
+	if q := p.runResultQueue[runID]; len(q) > 0 {
+		r := q[0]
+		if len(q) > 1 {
+			p.runResultQueue[runID] = q[1:]
+		}
+		return r, nil
+	}
 	r, ok := p.runResults[runID]
 	if !ok {
 		panic(fmt.Sprintf("mock: unscripted RunResult(%q)", runID))

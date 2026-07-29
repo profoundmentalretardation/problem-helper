@@ -83,6 +83,7 @@ type Store interface {
 	SetHintID(ctx context.Context, id, hintID uuid.UUID) error
 	SetFailureReason(ctx context.Context, id uuid.UUID, reason string) error
 	SetError(ctx context.Context, id uuid.UUID, message string) error
+	TopMistakes(ctx context.Context, userID string, limit int) ([]store.Mistake, error)
 }
 
 // RepairRunner runs loop 1; *repair.Runner satisfies it.
@@ -101,6 +102,11 @@ type Pipeline struct {
 	Platform platform.Platform
 	Repair   RepairRunner
 	Hint     HintRunner
+
+	// TopNMistakes caps how many of the student's curated mistakes are fed
+	// into the repair prompt (agents.yaml repair.top_n_mistakes). Zero
+	// disables the lookup, so the prompt renders no mistakes at all.
+	TopNMistakes int
 }
 
 // RunPipeline drives one help_requests row (already claimed, status=running)
@@ -257,6 +263,12 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 			if err := pl.event(ctx, requestID, "hint_cache_hit", map[string]any{"hint_id": cached.ID}); err != nil {
 				return err
 			}
+			// A cache re-delivery is still a delivery: HintEffectivenessInputs
+			// keys off hint_delivered, so without this the student's hint is
+			// invisible to the effectiveness analytics.
+			if err := pl.event(ctx, requestID, "hint_delivered", map[string]any{"hint_id": cached.ID, "cached": true}); err != nil {
+				return err
+			}
 			return pl.finish(ctx, requestID, store.StatusDone)
 		}
 		if err := pl.checkpoint(ctx, requestID, StepCache); err != nil {
@@ -267,6 +279,14 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 	// before its last checkpoint — a hit would have finished the pipeline
 	// terminally, never leaving a later checkpoint to resume from.
 
+	// The curated per-student mistake profile the nightly metaloop builds is
+	// only worth anything if it comes back into a prompt — this is the read
+	// side of that loop.
+	mistakes, err := pl.topMistakes(ctx, hr.UserID)
+	if err != nil {
+		return pl.infraFail(ctx, requestID, err)
+	}
+
 	repairResult, err := pl.Repair.Run(ctx, repair.Params{
 		RequestID:          requestID,
 		UserID:             hr.UserID,
@@ -274,6 +294,7 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		Language:           best.Language,
 		ProblemStatement:   statement.Text,
 		UserCode:           shielded.CodeAfter,
+		Mistakes:           mistakes,
 		BaselineRunID:      best.ID,
 		BaselineTestsTotal: best.TestsTotal,
 	})
@@ -330,6 +351,23 @@ func (pl *Pipeline) RunPipeline(ctx context.Context, requestID uuid.UUID) error 
 		return err
 	}
 	return pl.finish(ctx, requestID, store.StatusDone)
+}
+
+// topMistakes loads the student's curated mistake profile, rendered one
+// mistake per line for the repair prompt's {{mistakes}} placeholder.
+func (pl *Pipeline) topMistakes(ctx context.Context, userID string) ([]string, error) {
+	if pl.TopNMistakes <= 0 {
+		return nil, nil
+	}
+	rows, err := pl.Store.TopMistakes(ctx, userID, pl.TopNMistakes)
+	if err != nil {
+		return nil, fmt.Errorf("loading top mistakes: %w", err)
+	}
+	lines := make([]string, len(rows))
+	for i, m := range rows {
+		lines[i] = fmt.Sprintf("- %s: %s (seen %d times)", m.Title, m.Description, m.Count)
+	}
+	return lines, nil
 }
 
 // snapshotSubmissions converts and stores every pulled submission, marking

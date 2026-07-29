@@ -67,6 +67,39 @@ func withStore(t *testing.T) (*store.Store, context.Context) {
 	return store.WithTx(tx), ctx
 }
 
+// queueLockKey guards the tests whose assertions range over the whole
+// help_requests table — ClaimNext/Heartbeat/ReclaimStale all pick "some
+// pending/running row" rather than one named by argument, so a committed row
+// from anywhere else in the database breaks them.
+//
+// The per-test transaction isolates this package from itself, but not from
+// other packages: `go test ./...` runs package binaries concurrently against
+// the same TEST_DATABASE_URL, and internal/worker's TestWorker_ClaimNext_*
+// deliberately commits a pending row (a claim race can't be observed inside
+// one transaction). Both sides take this advisory lock, so they interleave
+// instead of overlapping. Keep the key in sync across packages.
+const queueLockKey = 0x70726F626C656D01
+
+// lockQueueTable takes queueLockKey for the duration of the test on its own
+// connection, so it is not tied to the test's rolled-back transaction.
+func lockQueueTable(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+
+	conn, err := testPool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire conn for queue lock: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, int64(queueLockKey)); err != nil {
+		conn.Release()
+		t.Fatalf("take queue lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, int64(queueLockKey))
+		conn.Release()
+	})
+}
+
 func createRequest(t *testing.T, s *store.Store, ctx context.Context) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
@@ -189,6 +222,15 @@ func TestTransitionStatus_Illegal(t *testing.T) {
 			var illegal *store.ErrIllegalTransition
 			if !errors.As(err, &illegal) {
 				t.Errorf("err = %v, want *ErrIllegalTransition", err)
+			} else {
+				// From comes from the atomic statement's pre-UPDATE
+				// snapshot; a regression there would otherwise be silent.
+				if illegal.From != tt.from {
+					t.Errorf("illegal.From = %q, want %q", illegal.From, tt.from)
+				}
+				if illegal.To != tt.to {
+					t.Errorf("illegal.To = %q, want %q", illegal.To, tt.to)
+				}
 			}
 
 			got, getErr := s.GetHelpRequest(ctx, id)
@@ -807,7 +849,7 @@ func TestCreateMistakeAndMergeMistake(t *testing.T) {
 	firstSeen, lastSeen := got[0].FirstSeen, got[0].LastSeen
 
 	time.Sleep(5 * time.Millisecond)
-	if err := s.MergeMistake(ctx, id); err != nil {
+	if err := s.MergeMistake(ctx, "user-1", id); err != nil {
 		t.Fatalf("merge mistake: %v", err)
 	}
 
@@ -828,7 +870,7 @@ func TestCreateMistakeAndMergeMistake(t *testing.T) {
 
 func TestMergeMistake_UnknownID(t *testing.T) {
 	s, ctx := withStore(t)
-	err := s.MergeMistake(ctx, uuid.New())
+	err := s.MergeMistake(ctx, "user-1", uuid.New())
 	if !errors.Is(err, store.ErrUnknownMistake) {
 		t.Errorf("err = %v, want wrapping ErrUnknownMistake", err)
 	}
@@ -853,7 +895,7 @@ func TestTopMistakes_OrderedByCountDescThenLastSeenDesc(t *testing.T) {
 	if err := s.CreateMistake(ctx, store.Mistake{ID: topCount, UserID: "user-1", Title: "top-count", Description: "d"}); err != nil {
 		t.Fatalf("create top-count: %v", err)
 	}
-	if err := s.MergeMistake(ctx, topCount); err != nil {
+	if err := s.MergeMistake(ctx, "user-1", topCount); err != nil {
 		t.Fatalf("merge top-count: %v", err)
 	}
 
@@ -881,6 +923,7 @@ func TestTopMistakes_OrderedByCountDescThenLastSeenDesc(t *testing.T) {
 }
 
 func TestClaimNext_ClaimsPendingRow(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 
@@ -906,6 +949,7 @@ func TestClaimNext_ClaimsPendingRow(t *testing.T) {
 }
 
 func TestClaimNext_NoPendingRows(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 
 	got, err := s.ClaimNext(ctx, "worker-1")
@@ -918,6 +962,7 @@ func TestClaimNext_NoPendingRows(t *testing.T) {
 }
 
 func TestClaimNext_SkipsAlreadyRunningRow(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 	if err := s.TransitionStatus(ctx, id, store.StatusRunning); err != nil {
@@ -934,6 +979,7 @@ func TestClaimNext_SkipsAlreadyRunningRow(t *testing.T) {
 }
 
 func TestHeartbeat_UpdatesRunningRow(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
@@ -957,6 +1003,7 @@ func TestHeartbeat_UpdatesRunningRow(t *testing.T) {
 }
 
 func TestHeartbeat_NoopWhenNotRunning(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx) // still pending, never claimed
 
@@ -974,6 +1021,7 @@ func TestHeartbeat_NoopWhenNotRunning(t *testing.T) {
 }
 
 func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
@@ -1010,6 +1058,7 @@ func TestReclaimStale_MovesStaleRunningRowToPending_PreservesResumeStep(t *testi
 }
 
 func TestReclaimStale_LeavesFreshHeartbeatAlone(t *testing.T) {
+	lockQueueTable(t)
 	s, ctx := withStore(t)
 	id := createRequest(t, s, ctx)
 	if _, err := s.ClaimNext(ctx, "worker-1"); err != nil {
@@ -1086,5 +1135,36 @@ func TestGetShieldRecordByRequest_Unknown(t *testing.T) {
 	id := createRequest(t, s, ctx)
 	if _, err := s.GetShieldRecordByRequest(ctx, id); err == nil {
 		t.Fatal("want error when no shield record exists for the request")
+	}
+}
+
+// TestMergeMistake_OtherUsersMistakeIsNotBumped pins the user_id predicate.
+// The id reaches MergeMistake from a model that can hallucinate a well-formed
+// uuid, so without the scoping a curator sweep for one student could bump a
+// different student's tally.
+func TestMergeMistake_OtherUsersMistakeIsNotBumped(t *testing.T) {
+	s, ctx := withStore(t)
+
+	victim := uuid.New()
+	if err := s.CreateMistake(ctx, store.Mistake{
+		ID: victim, UserID: "user-2", Title: "theirs", Description: "d",
+	}); err != nil {
+		t.Fatalf("create victim mistake: %v", err)
+	}
+
+	err := s.MergeMistake(ctx, "user-1", victim)
+	if !errors.Is(err, store.ErrUnknownMistake) {
+		t.Fatalf("err = %v, want wrapping ErrUnknownMistake", err)
+	}
+
+	got, err := s.ListMistakes(ctx, "user-2")
+	if err != nil {
+		t.Fatalf("list mistakes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("mistakes = %+v, want 1", got)
+	}
+	if got[0].Count != 1 {
+		t.Errorf("count = %d, want 1 (another user's merge must not bump it)", got[0].Count)
 	}
 }

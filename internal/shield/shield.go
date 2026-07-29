@@ -28,6 +28,39 @@ const (
 // not know how to tokenize.
 var ErrUnsupportedLanguage = errors.New("shield: unsupported language")
 
+// languageAliases maps the language names platforms actually report onto the
+// shield's own vocabulary. Platforms name languages after the compiler they
+// invoke, not after the language: ejudge's run list reports its language
+// short_name ("gcc", "g++", "python3", "java8"), so a submission's Language
+// field almost never equals one of the Lang* constants. Strip consults this
+// table before giving up, keeping the platform's original string intact for
+// callers that need it back (SubmitAsSystem wants the short_name).
+var languageAliases = map[string]Language{
+	// C
+	"c": LangC, "gcc": LangC, "cc": LangC, "clang": LangC, "c11": LangC,
+	"c17": LangC, "gcc-vg": LangC, "c99": LangC,
+	// C++
+	"cpp": LangCPP, "c++": LangCPP, "g++": LangCPP, "gpp": LangCPP,
+	"clang++": LangCPP, "clang-pp": LangCPP, "g++-vg": LangCPP,
+	"cpp11": LangCPP, "cpp17": LangCPP, "cpp20": LangCPP,
+	// Java
+	"java": LangJava, "java7": LangJava, "java8": LangJava,
+	"java11": LangJava, "java17": LangJava, "java21": LangJava,
+	// Go
+	"go": LangGo, "golang": LangGo, "gccgo": LangGo,
+	// Python
+	"python": LangPython, "python2": LangPython, "python3": LangPython,
+	"py": LangPython, "py3": LangPython, "pypy": LangPython,
+	"pypy3": LangPython, "cpython": LangPython, "cpython3": LangPython,
+}
+
+// Canonical maps a platform-reported language name onto the shield's own
+// Language vocabulary, reporting whether the language is supported at all.
+func Canonical(language string) (Language, bool) {
+	lang, ok := languageAliases[strings.ToLower(strings.TrimSpace(language))]
+	return lang, ok
+}
+
 // UnicodeRemoval is one invalid/confusable character stripped from the code.
 type UnicodeRemoval struct {
 	Name      string `json:"name"`
@@ -54,7 +87,10 @@ type Result struct {
 // code, returning the cleaned text alongside a diff and a structured report
 // of what was removed.
 func Strip(code string, language string) (Result, error) {
-	lang := Language(strings.ToLower(strings.TrimSpace(language)))
+	lang, ok := Canonical(language)
+	if !ok {
+		return Result{}, fmt.Errorf("%w: %q", ErrUnsupportedLanguage, language)
+	}
 
 	var withoutComments string
 	var comments []string
