@@ -398,20 +398,29 @@ against `platform/mock`).
 **Files:**
 - Create: `internal/agent/repair/repair.go`, `internal/agent/repair/repair_test.go`
 
-- [ ] write failing tests (scripted LLM + mock platform): happy path — agent returns
+- [x] write failing tests (scripted LLM + mock platform): happy path — agent returns
       {code, mistakes}, platform run passes, loop ends with working code and raw_mistakes rows
-- [ ] write failing test for the success rule: previously-failed tests pass **but a
+- [x] write failing test for the success rule: previously-failed tests pass **but a
       previously-passing test regresses → NOT success**, retry continues
-- [ ] write failing tests for bounds per the Cost caps section: max_retries exhausted →
+- [x] write failing tests for bounds per the Cost caps section: max_retries exhausted →
       `no_fix`; per-loop cap checked before an attempt; per-retry cap checked between
       tool-loop calls; 0 = unlimited
-- [ ] write failing tests for tools: `list_test_results` truncated to n_tests_shown,
+- [x] write failing tests for tools: `list_test_results` truncated to n_tests_shown,
       `get_test` returns the current run's {input, expected, actual}, run/problem ids injected
       programmatically (model never chooses them)
-- [ ] implement: prompt assembly via `internal/prompt` (statement, cleaned code, top-N
+- [x] implement: prompt assembly via `internal/prompt` (statement, cleaned code, top-N
       mistakes, previous agent code), JSON schema `{code, mistakes[]}`, tool loop,
       success rule, run-id persisted before polling
-- [ ] run tests + lint - must pass before task 9
+- [x] run tests + lint - must pass before task 9
+
+  ⚠️ `llm.ChatClient` has no native tool-calling channel (schema-validated JSON only), so the
+  repair "tools" (`list_test_results`, `get_test`) are emulated with one response schema
+  carrying a discriminated `action` field (`list_test_results` | `get_test` | `submit`)
+  instead of the OpenAI-style `tools`/`tool_calls` wire format the Python prototype used.
+  `EventRecorder`/`MistakeRecorder` are narrow interfaces satisfied by `*store.Store`
+  (`AppendEvent`, and a new `InsertRawMistake`/`ListRawMistakes` pair added to
+  `internal/store`); repair-loop tests use in-memory fakes, store tests use real Postgres,
+  per the plan's testing conventions.
 
 ### Task 9: Optional formatter step
 

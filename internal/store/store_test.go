@@ -381,3 +381,55 @@ func TestInsertShieldRecord_UnknownRequest(t *testing.T) {
 		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
 	}
 }
+
+func TestInsertRawMistake(t *testing.T) {
+	s, ctx := withStore(t)
+	id := createRequest(t, s, ctx)
+
+	if err := s.InsertRawMistake(ctx, store.RawMistake{
+		RequestID: id,
+		UserID:    "user-1",
+		Text:      "off by one in the window loop",
+	}); err != nil {
+		t.Fatalf("insert raw mistake: %v", err)
+	}
+	if err := s.InsertRawMistake(ctx, store.RawMistake{
+		RequestID: id,
+		UserID:    "user-1",
+		Text:      "forgets to flush stdout",
+	}); err != nil {
+		t.Fatalf("insert second raw mistake: %v", err)
+	}
+
+	got, err := s.ListRawMistakes(ctx, id)
+	if err != nil {
+		t.Fatalf("list raw mistakes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d raw mistakes, want 2", len(got))
+	}
+	texts := map[string]bool{got[0].Text: true, got[1].Text: true}
+	if !texts["off by one in the window loop"] || !texts["forgets to flush stdout"] {
+		t.Errorf("unexpected raw mistakes: %+v", got)
+	}
+	for _, m := range got {
+		if m.Processed {
+			t.Errorf("raw mistake %+v: processed = true, want false (fresh row)", m)
+		}
+		if m.UserID != "user-1" {
+			t.Errorf("user_id = %q, want %q", m.UserID, "user-1")
+		}
+	}
+}
+
+func TestInsertRawMistake_UnknownRequest(t *testing.T) {
+	s, ctx := withStore(t)
+	err := s.InsertRawMistake(ctx, store.RawMistake{
+		RequestID: uuid.New(),
+		UserID:    "user-1",
+		Text:      "x",
+	})
+	if !errors.Is(err, store.ErrUnknownRequest) {
+		t.Errorf("err = %v, want wrapping ErrUnknownRequest", err)
+	}
+}

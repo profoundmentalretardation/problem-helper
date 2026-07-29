@@ -487,6 +487,62 @@ func (s *Store) GetShieldRecord(ctx context.Context, id uuid.UUID) (*ShieldRecor
 	return &r, nil
 }
 
+// RawMistake is one raw_mistakes row: an unprocessed observation from a
+// repair-loop attempt, later folded into a user's mistakes tally by the
+// curator (Task 16).
+type RawMistake struct {
+	ID        uuid.UUID
+	RequestID uuid.UUID
+	UserID    string
+	Text      string
+	Processed bool
+	CreatedAt time.Time
+}
+
+// InsertRawMistake inserts one raw_mistakes row with processed=false.
+func (s *Store) InsertRawMistake(ctx context.Context, m RawMistake) error {
+	id := m.ID
+	if id == uuid.Nil {
+		id = uuid.New()
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO raw_mistakes (id, request_id, user_id, text)
+		VALUES ($1, $2, $3, $4)`,
+		id, m.RequestID, m.UserID, m.Text,
+	)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("%w: id %s", ErrUnknownRequest, m.RequestID)
+		}
+		return fmt.Errorf("store: inserting raw mistake: %w", err)
+	}
+	return nil
+}
+
+// ListRawMistakes returns every raw_mistakes row for a request, oldest first.
+func (s *Store) ListRawMistakes(ctx context.Context, requestID uuid.UUID) ([]RawMistake, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, request_id, user_id, text, processed, created_at
+		FROM raw_mistakes WHERE request_id = $1 ORDER BY created_at, id`, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing raw mistakes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []RawMistake
+	for rows.Next() {
+		var m RawMistake
+		if err := rows.Scan(&m.ID, &m.RequestID, &m.UserID, &m.Text, &m.Processed, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("store: scanning raw mistake: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterating raw mistakes: %w", err)
+	}
+	return out, nil
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
