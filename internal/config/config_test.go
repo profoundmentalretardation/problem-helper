@@ -327,6 +327,48 @@ formatter: {enabled: false, command: ""}
 	}
 }
 
+// TestParseAgents_PricingValuesMustBeUsable pins that a pricing entry's
+// *values* are validated, not merely its presence. They fail open exactly the
+// way the cost caps do: KnownFields rejects unknown keys but not missing ones,
+// so a block that omits `output` parses cleanly, llm.Cost prices every output
+// token at zero, and max_cost_per_retry/max_cost_per_loop never bind — the
+// model spend ceilings silently become unlimited. That has to fail at startup,
+// not at first traffic.
+func TestParseAgents_PricingValuesMustBeUsable(t *testing.T) {
+	cases := []struct{ name, entry string }{
+		{"output_missing", `{input: 1.0, cached_input: 0.5}`},
+		{"output_zero", `{input: 1.0, cached_input: 0.5, output: 0}`},
+		{"input_missing", `{cached_input: 0.5, output: 2.0}`},
+		{"input_zero", `{input: 0, cached_input: 0.5, output: 2.0}`},
+		{"input_negative", `{input: -1.0, cached_input: 0.5, output: 2.0}`},
+		{"cached_input_negative", `{input: 1.0, cached_input: -0.5, output: 2.0}`},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := strings.Replace(validAgentsYAML,
+				`repair-model: {input: 1.0, cached_input: 0.5, output: 2.0}`,
+				`repair-model: `+tt.entry, 1)
+			if doc == validAgentsYAML {
+				t.Fatal("fixture changed: repair-model pricing line not found")
+			}
+			if _, err := ParseAgents([]byte(doc)); err == nil {
+				t.Fatalf("expected error for pricing %s", tt.entry)
+			}
+		})
+	}
+}
+
+// The other direction: cached_input at zero is a legitimate price (a provider
+// that does not bill cached input at all), not a fail-open hole.
+func TestParseAgents_ZeroCachedInputPriceIsAccepted(t *testing.T) {
+	doc := strings.Replace(validAgentsYAML,
+		`repair-model: {input: 1.0, cached_input: 0.5, output: 2.0}`,
+		`repair-model: {input: 1.0, cached_input: 0, output: 2.0}`, 1)
+	if _, err := ParseAgents([]byte(doc)); err != nil {
+		t.Fatalf("ParseAgents: %v", err)
+	}
+}
+
 func TestParseAgents_DefaultsBlockRequired(t *testing.T) {
 	doc := removeYAMLTopLevelKey(t, validAgentsYAML, "defaults")
 	_, err := ParseAgents([]byte(doc))

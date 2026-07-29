@@ -1014,6 +1014,44 @@ func TestTestResult_TestDataContainingHTMLSpecialCharacters(t *testing.T) {
 	}
 }
 
+// TestTestResult_ForgedTestMarkerInProgramOutput pins that a test's section is
+// located by ejudge's own <b>…</b> markup, not by the bare marker text. The
+// report embeds each test's stdout HTML-escaped, and "====== Test #2 ======="
+// contains no HTML-special characters — so a student's program can print it
+// and reproduce it byte-for-byte inside test 1's Output block. Anchoring on
+// the bare text made TestResult(run, 2) start scanning inside test 1 and hand
+// the repair model test 1's fields (here, a "FORGED" expected value) as test
+// 2's. Same rule as hasErrorTitle/isErrorPage: read sentinels off markup the
+// judge generates, never off text the submission controls.
+func TestTestResult_ForgedTestMarkerInProgramOutput(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cgi-bin/new-master", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Method == http.MethodPost && r.FormValue("login") != "" {
+			serveFixture(w, fixture(t, "login_master_ok.html"))
+			return
+		}
+		serveFixture(w, fixture(t, "run_report_forged_test_marker.html"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := ejudge.New(srv.URL, "ejudge", "ejudge")
+	got, err := c.TestResult(context.Background(), "6", 2)
+	if err != nil {
+		t.Fatalf("TestResult: %v", err)
+	}
+	if strings.Contains(got.Expected, "FORGED") || strings.Contains(got.Input, "FORGED") {
+		t.Fatalf("student-forged marker redirected the parse into test 1: %+v", got)
+	}
+	if want := "18\n"; got.Expected != want {
+		t.Errorf("Expected = %q, want %q", got.Expected, want)
+	}
+	if want := "9\n9\n"; got.Input != want {
+		t.Errorf("Input = %q, want %q", got.Input, want)
+	}
+}
+
 // --- Timeout -------------------------------------------------------------
 
 func TestProblemStatement_Timeout(t *testing.T) {

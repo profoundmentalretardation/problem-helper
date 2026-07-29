@@ -534,6 +534,51 @@ research/              frozen Python prototypes (reference only, see research/RE
 - **A guardrail reply that half-matches the schema is not a verdict** (`checkGuardrail`):
   `llm.Chat` only asserts the schema's keys are *present*, so `{"approved":true,"reason":42}`
   reached the parser intact. Every field is type-checked, and any mismatch fails closed.
+- **The fail-closed rule for unterminated multi-line literals is language-wide, not C-family
+  only** (`pythonStringEnd`): Python's triple-quoted literals had the same
+  run-to-`len(code)` bypass `unterminatedEnd` was introduced for, so `s = """abc` handed the
+  rest of the file to a phantom literal and every later `#` comment reached the model as
+  ordinary code with `Removed.Comments` empty. Both Python cases now sit in
+  `TestStrip_UnterminatedOrForeignLiteralsCannotSwallowTheFile` beside the C/Java/Go ones — a
+  new multi-line literal form in any language belongs there too.
+- **A report sentinel that contains no HTML-special characters is student-forgeable**
+  (`reportTestDetail`): the per-test section was located by the bare text
+  `====== Test #N =======`, which survives ejudge's escaping byte-for-byte, so a program that
+  simply *prints* it planted a second anchor inside its own stdout and made `TestResult(run, N)`
+  read a different test's Input/Correct. Anchoring on ejudge's `<b>…</b>` wrapper is the same
+  rule `hasErrorTitle`/`isErrorPage` already follow: read sentinels off markup the judge
+  generates, never off text the submission controls.
+- **The append-a-turn-before-retrying rule covers loop 1's abandoned attempts too**
+  (`repair.runAttempt`'s `priorNote`): `runAttempt` rebuilds its conversation from the template
+  out of inputs that do not change when nothing was proposed — `previousCode` only advances on
+  a real submit — so the cost-cap, `ErrInvalidResponse` and tool-backstop exits resent a
+  byte-identical single system message and the model repeated itself until `max_retries` ran
+  out. The reason is now carried forward as a tool-result-shaped user turn, matching what the
+  hint loop already does on both of its equivalent paths.
+- **A pricing entry's values fail open, so they are validated like the caps are**
+  (`config.ParseAgents`): only the entry's *presence* was checked, and
+  `yaml.Decoder.KnownFields(true)` rejects unknown keys but not missing ones — so a block
+  omitting `output` parsed cleanly, `llm.Cost` priced every output token at zero, and
+  `max_cost_per_retry`/`max_cost_per_loop` never bound. `input`/`output` must be positive and
+  `cached_input` non-negative, checked at startup for the same reason `validateCaps` is. Zero
+  `cached_input` is a real price and stays legal.
+- **Shutdown needs two budgets, and the pool outlives the ones it may still be serving**
+  (`cmd/helper/main.go`): `handleMetaloopRun` deliberately holds its connection for up to
+  `metaloopRunTimeout` (30 minutes against a 30-second grace period), so a single shared
+  `shutdownCtx` let `httpServer.Shutdown` burn the whole budget and left the worker drain with
+  none — every in-flight pipeline abandoned instantly on an ordinary deploy and handed straight
+  back to the reclaim sweep, which re-spends both model budgets and re-submits under the shared
+  system login. `pgxpool.Close` is also not a `defer`: it blocks until every checked-out
+  connection is returned and rejects new acquires, so closing it while an abandoned pipeline
+  still runs both defeats that budget and fails the pipeline's final `TransitionStatus`/
+  `SetError`. It closes only when the workers actually drained, or never started.
+- **`PLATFORM=mock` uses `mock.NewDefaulting`, not `mock.New`** (`newPlatform`): nothing scripts
+  the binary's instance, so the panicking test double panicked on the pipeline's very first
+  step — `runPipelineRecovered` turned that into a failed step and the row cycled through every
+  reclaim until `maxClaimAttempts` failed it. Defaulting answers unscripted *reads* benignly
+  (no statement, unsolved, no submissions), so the documented local/dev backend terminates
+  cleanly at `no_submissions`. `New` keeps panicking, because in a test an unscripted call is a
+  test bug that must fail loudly.
 
 ## Reference material
 

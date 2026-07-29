@@ -204,7 +204,14 @@ func pythonStringEnd(code string, quoteStart int, quote byte, triple bool) int {
 			}
 			i++
 		}
-		return n
+		// Unterminated: fail closed at the opening line, exactly as the
+		// C-family scanner does for raw strings, Java text blocks and Go
+		// backtick strings (see unterminatedEnd). Running to len(code)
+		// instead handed the entire rest of the file to a phantom literal,
+		// so every later # comment — the payloads the shield exists to
+		// remove — was emitted as ordinary code with Removed.Comments empty,
+		// i.e. a bypass with no signal that anything was missed.
+		return unterminatedEnd(code, quoteStart)
 	}
 
 	i := quoteStart + 1

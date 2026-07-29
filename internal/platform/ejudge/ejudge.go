@@ -1252,14 +1252,23 @@ func reportTestVerdict(body string, testID int) (string, bool) {
 // rather than by a delimiter regex — robust even when a test's content
 // happens to contain "<a name=" or similar marker-shaped text.
 func reportTestDetail(body string, testID int) (input, output, correct string, ok bool) {
-	marker := fmt.Sprintf("====== Test #%d =======", testID)
+	// Anchored on ejudge's own <b>…</b> markup, never on the bare text. The
+	// report embeds each test's stdout HTML-escaped, and this marker contains
+	// no HTML-special characters, so a program that simply prints
+	// "====== Test #2 =======" reproduces it byte-for-byte inside test 1's
+	// Output block — a student-forged anchor that made TestResult(run, 2)
+	// read test 1's fields and hand the repair model test data for a test it
+	// was not diagnosing. Same rule as hasErrorTitle/isErrorPage: sentinels
+	// come off markup the judge generates, not off text the submission
+	// controls.
+	marker := fmt.Sprintf("<b>====== Test #%d =======</b>", testID)
 	i := strings.Index(body, marker)
 	if i < 0 {
 		return "", "", "", false
 	}
 	section := body[i:]
 	// Bound the section to just before the next test marker, if any.
-	if next := strings.Index(section[len(marker):], "====== Test #"); next >= 0 {
+	if next := strings.Index(section[len(marker):], "<b>====== Test #"); next >= 0 {
 		section = section[:len(marker)+next]
 	}
 

@@ -65,7 +65,19 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	if err != nil {
 		return fmt.Errorf("store: connecting: %w", err)
 	}
-	defer pool.Close()
+	// pgxpool.Close blocks until every checked-out connection is returned and
+	// rejects new acquires immediately, so closing it while an abandoned
+	// pipeline is still running would both defeat the shutdown budget
+	// enforced below and make that pipeline's final claim-scoped writes
+	// (TransitionStatus, SetError) fail against a closed pool. The process is
+	// exiting either way; only close when the workers actually drained, or
+	// when they never started.
+	workersRunning := false
+	defer func() {
+		if !workersRunning {
+			pool.Close()
+		}
+	}()
 
 	if err := store.Migrate(ctx, pool); err != nil {
 		return fmt.Errorf("store: migrating: %w", err)
@@ -158,6 +170,7 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 
 	var wg sync.WaitGroup
 	wg.Add(2)
+	workersRunning = true
 
 	// A bind failure must take the process down. Logging and carrying on
 	// leaves a worker-only process that answers no HTTP at all while every
@@ -188,9 +201,18 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 		stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+	// Two independent budgets, not one shared deadline. handleMetaloopRun
+	// deliberately holds its connection for up to metaloopRunTimeout (30
+	// minutes against this 30-second grace period), so Shutdown can burn the
+	// whole budget waiting on a single operator-triggered sweep — and a
+	// shared context would then leave the worker drain below with none at
+	// all, abandoning every in-flight pipeline instantly on an ordinary
+	// deploy and handing it straight back to the reclaim sweep, which
+	// re-spends both model budgets and re-submits under the shared system
+	// login. Each phase gets its own shutdownTimeout.
+	httpCtx, cancelHTTP := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelHTTP()
+	if err := httpServer.Shutdown(httpCtx); err != nil {
 		log.Printf("problem-helper: HTTP shutdown: %v", err)
 	}
 
@@ -202,6 +224,8 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	// leaves the request's heartbeat to lapse and the reclaim sweep to hand
 	// it to another worker, which is the path already designed for a
 	// worker that dies mid-pipeline.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelDrain()
 	drained := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -209,8 +233,9 @@ func run(agentsPath, promptsDir, addr string, shutdownTimeout time.Duration) err
 	}()
 	select {
 	case <-drained:
+		workersRunning = false
 		log.Print("problem-helper: shutdown complete")
-	case <-shutdownCtx.Done():
+	case <-drainCtx.Done():
 		log.Printf("problem-helper: workers still running after %s, exiting anyway; "+
 			"their requests will be reclaimed once their heartbeats lapse", shutdownTimeout)
 	}
@@ -226,7 +251,9 @@ func newPlatform(env config.Env) (platform.Platform, error) {
 		return ejudge.New(env.EjudgeURL, env.EjudgeSystemLogin, env.EjudgeSystemPassword,
 			ejudge.WithContestID(env.EjudgeContestID)), nil
 	case "mock":
-		return mock.New(), nil
+		// NewDefaulting, not New: nothing scripts this instance, and the
+		// panicking mock made every request fail through five reclaims.
+		return mock.NewDefaulting(), nil
 	default:
 		return nil, fmt.Errorf("config: unknown PLATFORM %q (want \"ejudge\" or \"mock\")", env.Platform)
 	}

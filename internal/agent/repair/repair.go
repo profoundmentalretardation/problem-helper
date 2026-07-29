@@ -85,6 +85,15 @@ var ErrVerificationTimeout = errors.New("repair: timed out waiting for verificat
 // max_cost_per_retry is 0 (unlimited) and a model never calls submit.
 const maxToolCallsPerAttempt = 20
 
+// Feedback fed to the next attempt as a user turn when this one was
+// abandoned without proposing code. Shaped like the tool-result replies the
+// model already sees, so the conversation stays in one format.
+const (
+	costCapNote         = `{"ok":false,"error":"your previous attempt exceeded its cost budget before it submitted a fix; investigate with fewer tool calls and submit sooner"}`
+	invalidResponseNote = `{"ok":false,"error":"your previous attempt did not return JSON matching the required schema; reply with a single JSON object in the documented shape"}`
+	toolBackstopNote    = `{"ok":false,"error":"your previous attempt used every allowed tool call without submitting a fix; investigate less and submit a fix"}`
+)
+
 // Mistake is one habit the model flagged as worth remembering about the
 // student, alongside a proposed fix — independent of whether that
 // particular fix went on to pass verification.
@@ -267,6 +276,11 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 	currentRunID := p.BaselineRunID
 	currentTestsTotal := p.BaselineTestsTotal
 	previousCode := ""
+	// priorNote carries the reason the previous attempt was abandoned into
+	// the next one, as a user turn. Empty on the first attempt and after any
+	// attempt that actually proposed code (previousCode is the feedback
+	// then).
+	priorNote := ""
 	loopCost := 0.0
 	attempts := 0
 
@@ -318,7 +332,8 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		}
 		attempts++
 
-		proposed, mistakes, cost, err := r.runAttempt(ctx, p, attempts, previousCode, currentRunID, currentTestsTotal)
+		proposed, mistakes, cost, abandoned, err := r.runAttempt(
+			ctx, p, attempts, previousCode, currentRunID, currentTestsTotal, priorNote)
 		loopCost += cost
 		if err != nil {
 			return Result{}, err
@@ -326,8 +341,17 @@ func (r *Runner) Run(ctx context.Context, p Params) (Result, error) {
 		if proposed == nil {
 			// Attempt aborted (per-retry cost cap or the step backstop)
 			// before ever proposing code; still counts as a used retry.
+			// Carry why into the next one: runAttempt rebuilds the
+			// conversation from the template out of unchanged inputs, so
+			// without this the next attempt sends a byte-identical single
+			// system message and the model simply repeats whatever it did —
+			// burning the whole max_retries budget on the same exchange.
+			// Same rule the hint loop follows on both of its equivalent
+			// paths.
+			priorNote = abandoned
 			continue
 		}
+		priorNote = ""
 
 		if err := r.recordMistakes(ctx, p, mistakes); err != nil {
 			return Result{}, err
@@ -440,10 +464,17 @@ func (r *Runner) resumePendingRun(
 // runAttempt runs the tool sub-loop for one attempt: repeated Chat calls
 // until the model submits code, the per-retry cost cap is hit, or the step
 // backstop is reached. Returns a nil proposal (not an error) when the
-// attempt was aborted without a proposal.
+// attempt was aborted without a proposal, along with the note explaining why
+// that the caller must feed into the next attempt.
+//
+// priorNote, when non-empty, is why the *previous* attempt was abandoned; it
+// is appended as a user turn because everything else here is rebuilt from
+// unchanged inputs, so an attempt that got no feedback would resend a
+// byte-identical request.
 func (r *Runner) runAttempt(
 	ctx context.Context, p Params, attempt int, previousCode, currentRunID string, currentTestsTotal int,
-) (*modelAction, []Mistake, float64, error) {
+	priorNote string,
+) (*modelAction, []Mistake, float64, string, error) {
 	rendered, err := r.Template.Render(map[string]string{
 		"problem_statement": p.ProblemStatement,
 		"user_code":         p.UserCode,
@@ -451,15 +482,18 @@ func (r *Runner) runAttempt(
 		"previous_code":     previousCode,
 	})
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("repair: rendering prompt: %w", err)
+		return nil, nil, 0, "", fmt.Errorf("repair: rendering prompt: %w", err)
 	}
 
 	messages := []llm.Message{{Role: "system", Content: rendered}}
+	if priorNote != "" {
+		messages = append(messages, llm.Message{Role: "user", Content: priorNote})
+	}
 	retryCost := 0.0
 
 	for calls := 0; calls < maxToolCallsPerAttempt; calls++ {
 		if r.Agent.MaxCostPerRetry > 0 && retryCost >= r.Agent.MaxCostPerRetry {
-			return nil, nil, retryCost, nil
+			return nil, nil, retryCost, costCapNote, nil
 		}
 
 		resp, err := r.Chat.Chat(ctx, llm.Request{
@@ -486,9 +520,9 @@ func (r *Runner) runAttempt(
 			// reporting an internal error to a caller whose request was
 			// processed exactly as designed.
 			if errors.Is(err, llm.ErrInvalidResponse) {
-				return nil, nil, retryCost, nil
+				return nil, nil, retryCost, invalidResponseNote, nil
 			}
-			return nil, nil, retryCost, fmt.Errorf("repair: chat: %w", err)
+			return nil, nil, retryCost, "", fmt.Errorf("repair: chat: %w", err)
 		}
 
 		var action modelAction
@@ -503,19 +537,19 @@ func (r *Runner) runAttempt(
 
 		reply, done, err := r.handleAction(ctx, action, currentRunID, currentTestsTotal)
 		if err != nil {
-			return nil, nil, retryCost, err
+			return nil, nil, retryCost, "", err
 		}
 		if done {
 			mistakes := make([]Mistake, 0, len(action.Mistakes))
 			for _, m := range action.Mistakes {
 				mistakes = append(mistakes, Mistake{Text: m.Text})
 			}
-			return &action, mistakes, retryCost, nil
+			return &action, mistakes, retryCost, "", nil
 		}
 		messages = append(messages, llm.Message{Role: "user", Content: reply})
 	}
 
-	return nil, nil, retryCost, nil
+	return nil, nil, retryCost, toolBackstopNote, nil
 }
 
 // handleAction executes one non-submit tool call, or reports done=true for

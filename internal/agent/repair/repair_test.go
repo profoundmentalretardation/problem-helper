@@ -963,6 +963,55 @@ func TestRun_InvalidModelResponseBurnsRetryNotTheRequest(t *testing.T) {
 	}
 }
 
+// TestRun_AbandonedAttemptFeedsTheReasonIntoTheNextOne pins that an attempt
+// abandoned without proposing code tells the next attempt why. runAttempt
+// rebuilds its conversation from the template out of inputs that did not
+// change (previousCode only advances when code was actually proposed), so
+// without that turn attempt N+1 sends a byte-identical single system message
+// at a low temperature — the model repeats itself and the whole max_retries
+// budget burns on the same exchange. Same rule the hint loop already follows
+// on both of its equivalent paths.
+func TestRun_AbandonedAttemptFeedsTheReasonIntoTheNextOne(t *testing.T) {
+	plat := mock.New()
+	plat.ScriptTestCase("sub-best", 1, platform.TestCase{Index: 1, Verdict: "WA"})
+
+	agent := testAgent()
+	agent.MaxRetries = 2
+	scripted := llm.NewScripted(nil, testPricing(),
+		llm.ScriptedResponse{Usage: llm.Usage{InputTokens: 100, OutputTokens: 20}, Err: llm.ErrInvalidResponse},
+		llm.ScriptedResponse{Usage: llm.Usage{InputTokens: 100, OutputTokens: 20}, Err: llm.ErrInvalidResponse},
+	)
+	r := &repair.Runner{
+		Chat: scripted, Platform: plat, Template: testTemplate(t), Agent: agent,
+	}
+
+	p := baseParams()
+	p.BaselineRunID = "sub-best"
+	p.BaselineTestsTotal = 1
+
+	if _, err := r.Run(context.Background(), p); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	calls := scripted.Calls()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want 2", len(calls))
+	}
+	if len(calls[0].Messages) != 1 {
+		t.Errorf("attempt 1 messages = %d, want 1 (system only)", len(calls[0].Messages))
+	}
+	if len(calls[1].Messages) < 2 {
+		t.Fatalf("attempt 2 resent a byte-identical message list: %+v", calls[1].Messages)
+	}
+	last := calls[1].Messages[len(calls[1].Messages)-1]
+	if last.Role != "user" {
+		t.Errorf("attempt 2's last message role = %q, want %q", last.Role, "user")
+	}
+	if !strings.Contains(last.Content, "schema") {
+		t.Errorf("attempt 2 was not told why attempt 1 was abandoned: %q", last.Content)
+	}
+}
+
 // TestRun_VerificationRunWithNoTestsIsNotAdoptedAsTheCurrentRun pins that a
 // verification run judged on no tests at all — a compilation error, the most
 // common outcome of model-proposed code — is not carried as the run the tools

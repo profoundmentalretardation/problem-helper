@@ -963,6 +963,16 @@ func TestStrip_UnterminatedOrForeignLiteralsCannotSwallowTheFile(t *testing.T) {
 			lang: "java",
 			code: "class A { String s = R + \"(x\"; }\n// " + payload + "\n",
 		},
+		{
+			name: "python_unterminated_triple_double_quote",
+			lang: "python",
+			code: "s = \"\"\"abc\n# " + payload + "\nprint(1)\n",
+		},
+		{
+			name: "python_unterminated_triple_single_quote",
+			lang: "python",
+			code: "def f():\n    s = '''abc\n# " + payload + "\n    return s\n",
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

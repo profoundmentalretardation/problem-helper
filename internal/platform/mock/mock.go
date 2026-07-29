@@ -1,7 +1,9 @@
 // Package mock is a scriptable fake implementing platform.Platform, the test
 // double every other package's tests run against until Task 15 wires up the
 // real ejudge client. Every call must be scripted in advance; an unscripted
-// call panics so a test fails loudly instead of silently getting a zero value.
+// call panics so a test fails loudly instead of silently getting a zero
+// value. NewDefaulting relaxes that for unscripted reads — see its doc
+// comment — and is for the PLATFORM=mock binary, not for tests.
 package mock
 
 import (
@@ -41,10 +43,33 @@ type Platform struct {
 	// for a run that SubmitAsSystem also registered.
 	runResultQueue map[string][]platform.RunResult
 	testCases      map[testKey]platform.TestCase
+	// answerDefaults makes unscripted *read* calls return a benign zero-ish
+	// answer instead of panicking. Off for tests (an unscripted call there is
+	// a test bug that must fail loudly); on for the PLATFORM=mock binary,
+	// where nothing is scripted at all.
+	answerDefaults bool
 }
 
 // New returns an empty scriptable mock.
 func New() *Platform {
+	return newPlatform()
+}
+
+// NewDefaulting returns a mock that answers unscripted reads with benign
+// defaults rather than panicking: no statement text, problem unsolved, no
+// submissions. It exists for PLATFORM=mock, the local/dev backend documented
+// in the README — with the panicking New, the very first pipeline step
+// panicked, runPipelineRecovered turned that into a failed step, and the row
+// cycled through every reclaim until maxClaimAttempts marked it failed. With
+// defaults the pipeline instead terminates cleanly at no_submissions, and a
+// caller that wants a full run scripts the data explicitly.
+func NewDefaulting() *Platform {
+	p := newPlatform()
+	p.answerDefaults = true
+	return p
+}
+
+func newPlatform() *Platform {
 	return &Platform{
 		statements:     map[string]platform.Statement{},
 		statuses:       map[pairKey]platform.Status{},
@@ -122,6 +147,9 @@ func (p *Platform) ScriptTestCase(runID string, testID int, tc platform.TestCase
 func (p *Platform) ProblemStatement(_ context.Context, problemID string) (platform.Statement, error) {
 	s, ok := p.statements[problemID]
 	if !ok {
+		if p.answerDefaults {
+			return platform.Statement{ProblemID: problemID}, nil
+		}
 		panic(fmt.Sprintf("mock: unscripted ProblemStatement(%q)", problemID))
 	}
 	return s, nil
@@ -133,6 +161,9 @@ func (p *Platform) ProblemStatus(_ context.Context, userID, problemID string) (p
 	}
 	s, ok := p.statuses[pairKey{userID, problemID}]
 	if !ok {
+		if p.answerDefaults {
+			return platform.Status{}, nil
+		}
 		panic(fmt.Sprintf("mock: unscripted ProblemStatus(%q, %q)", userID, problemID))
 	}
 	return s, nil
@@ -141,6 +172,9 @@ func (p *Platform) ProblemStatus(_ context.Context, userID, problemID string) (p
 func (p *Platform) Submissions(_ context.Context, userID, problemID string, limit int) ([]platform.Submission, error) {
 	subs, ok := p.submissions[pairKey{userID, problemID}]
 	if !ok {
+		if p.answerDefaults {
+			return nil, nil
+		}
 		panic(fmt.Sprintf("mock: unscripted Submissions(%q, %q)", userID, problemID))
 	}
 	if limit > 0 && limit < len(subs) {

@@ -208,8 +208,29 @@ func ParseAgents(data []byte) (AgentsConfig, error) {
 	}
 
 	for name, agent := range agents {
-		if _, ok := raw.Pricing[agent.Model]; !ok {
+		p, ok := raw.Pricing[agent.Model]
+		if !ok {
 			return AgentsConfig{}, fmt.Errorf("config: agents.yaml: model %q (agent %q) has no pricing entry", agent.Model, name)
+		}
+		// The values are validated, not merely the entry's presence, for the
+		// same reason validateCaps exists: they fail *open*. KnownFields
+		// rejects unknown keys but not missing ones, so a pricing block that
+		// omits `output` parses cleanly, llm.Cost then prices every output
+		// token at zero, and max_cost_per_retry/max_cost_per_loop never bind
+		// — the model spend caps silently become unlimited. Fail at startup
+		// instead, before serving traffic.
+		if p.Input <= 0 {
+			return AgentsConfig{}, fmt.Errorf(
+				"config: agents.yaml: pricing[%q].%s must be positive, got %g", agent.Model, "input", p.Input)
+		}
+		if p.Output <= 0 {
+			return AgentsConfig{}, fmt.Errorf(
+				"config: agents.yaml: pricing[%q].%s must be positive, got %g", agent.Model, "output", p.Output)
+		}
+		if p.CachedInput < 0 {
+			return AgentsConfig{}, fmt.Errorf(
+				"config: agents.yaml: pricing[%q].%s must not be negative, got %g",
+				agent.Model, "cached_input", p.CachedInput)
 		}
 	}
 
