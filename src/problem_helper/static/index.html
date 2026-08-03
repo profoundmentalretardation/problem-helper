@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>problem-helper</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #dfe3e8;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --accent: #2f6feb;
+    --ok: #1a7f37;
+    --bad: #b42318;
+    --warn: #9a6700;
+    --code-bg: #f2f4f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --panel: #1b1f26;
+      --border: #2c323c;
+      --text: #e6e9ee;
+      --muted: #98a2b3;
+      --accent: #6ea1ff;
+      --ok: #4ac26b;
+      --bad: #ff7b72;
+      --warn: #d8a657;
+      --code-bg: #10131a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  textarea, input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--code-bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  textarea { resize: vertical; }
+  textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .tests { display: grid; gap: 10px; }
+  .test {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: start;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px;
+  }
+  .test textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .test .head { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  button {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.icon { padding: 6px 10px; align-self: center; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .row .spacer { flex: 1; }
+  .small { width: 90px; }
+  .inline { display: flex; gap: 10px; align-items: center; }
+  .inline label { margin: 0; font-weight: 500; color: var(--muted); }
+  pre {
+    margin: 0;
+    padding: 10px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    white-space: pre;
+  }
+  .status { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.running { background: var(--warn); animation: pulse 1s infinite; }
+  .dot.succeeded { background: var(--ok); }
+  .dot.failed { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .hint {
+    border-left: 3px solid var(--accent);
+    padding: 10px 12px;
+    background: var(--code-bg);
+    border-radius: 0 6px 6px 0;
+    font-size: 15px;
+    white-space: pre-wrap;
+  }
+  .mistake { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .mistake b { display: block; }
+  .mistake span { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .tag.ok { color: var(--ok); border-color: var(--ok); }
+  .tag.bad { color: var(--bad); border-color: var(--bad); }
+  .diff .add { color: var(--ok); }
+  .diff .del { color: var(--bad); }
+  .diff .meta { color: var(--muted); }
+  .attempt { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-top: 10px; }
+  .attempt h4 { margin: 0 0 6px; font-size: 13px; }
+  ul { margin: 6px 0 0; padding-left: 18px; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  th, td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td pre { border: 0; padding: 0; background: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>problem-helper</h1>
+    <p>Paste a problem statement, the student's broken Python code and the tests. The service
+       repairs the code in the background and returns a hint — not the solution.</p>
+  </header>
+
+  <div class="grid">
+    <section>
+      <h2>Request</h2>
+      <label for="task">Problem statement</label>
+      <textarea id="task" rows="4"></textarea>
+
+      <label for="code">Student's code</label>
+      <textarea id="code" class="code" rows="12"></textarea>
+
+      <label>Tests (stdin → expected stdout)</label>
+      <div class="tests" id="tests"></div>
+      <div class="row">
+        <button type="button" id="add-test">+ test</button>
+        <div class="spacer"></div>
+        <div class="inline">
+          <label for="fix-attempts">fix</label>
+          <input class="small" id="fix-attempts" type="number" min="1" max="10" value="3">
+          <label for="hint-attempts">hint</label>
+          <input class="small" id="hint-attempts" type="number" min="1" max="10" value="3">
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="submit">Analyze</button>
+        <button type="button" id="reset">Reset example</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Result</h2>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="status-text" class="muted">Nothing sent yet.</span>
+      </div>
+      <div id="session-line" class="muted" style="font-size:13px;margin-top:6px"></div>
+      <div id="result"></div>
+      <div class="row" id="debug-row" hidden>
+        <button type="button" id="toggle-debug">Show internals</button>
+      </div>
+      <div id="debug"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const EXAMPLE = {
+  task: "Given a list of N integers, print the sum of the even ones. The first line holds N, the second line holds N integers separated by spaces.",
+  code: "n = int(input())\nnums = list(map(int, input().split()))\ntotal = 0\nfor i in range(n):\n    if nums[i] % 2 == 1:\n        total += nums[i]\nprint(total)\n",
+  tests: [
+    { input: "5\n1 2 3 4 5\n", expected_output: "6" },
+    { input: "4\n2 4 6 8\n", expected_output: "20" },
+    { input: "3\n1 3 5\n", expected_output: "0" },
+  ],
+};
+
+const $ = (id) => document.getElementById(id);
+let pollTimer = null;
+let currentId = null;
+let debugVisible = false;
+
+function addTest(test = { input: "", expected_output: "" }) {
+  const box = document.createElement("div");
+  box.className = "test";
+  box.innerHTML = `
+    <div class="head">stdin / expected stdout</div>
+    <textarea rows="3" class="t-in"></textarea>
+    <textarea rows="3" class="t-out"></textarea>
+    <button type="button" class="icon" title="remove">✕</button>`;
+  box.querySelector(".t-in").value = test.input;
+  box.querySelector(".t-out").value = test.expected_output;
+  box.querySelector("button").onclick = () => box.remove();
+  $("tests").append(box);
+}
+
+function loadExample() {
+  $("task").value = EXAMPLE.task;
+  $("code").value = EXAMPLE.code;
+  $("tests").innerHTML = "";
+  EXAMPLE.tests.forEach(addTest);
+}
+
+function collectTests() {
+  return [...document.querySelectorAll(".test")].map((box) => ({
+    input: box.querySelector(".t-in").value,
+    expected_output: box.querySelector(".t-out").value,
+  }));
+}
+
+function setStatus(state, text) {
+  $("dot").className = "dot " + (state || "");
+  $("status-text").className = state === "failed" ? "error" : "";
+  $("status-text").textContent = text;
+}
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function renderDiff(diff) {
+  return diff
+    .split("\n")
+    .map((line) => {
+      const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@") ? "meta" : "";
+      return `<span class="${cls}">${escapeHtml(line)}</span>`;
+    })
+    .join("\n");
+}
+
+async function submit() {
+  const tests = collectTests();
+  if (!$("task").value.trim() || !$("code").value.trim() || !tests.length) {
+    setStatus("failed", "Fill in the statement, the code and at least one test.");
+    return;
+  }
+  clearTimeout(pollTimer);
+  $("submit").disabled = true;
+  $("result").innerHTML = "";
+  $("debug").innerHTML = "";
+  $("debug-row").hidden = true;
+  debugVisible = false;
+  $("toggle-debug").textContent = "Show internals";
+  setStatus("running", "Sending…");
+
+  const payload = {
+    task: $("task").value,
+    code: $("code").value,
+    tests,
+    max_fix_attempts: Number($("fix-attempts").value) || 3,
+    max_hint_attempts: Number($("hint-attempts").value) || 3,
+  };
+
+  try {
+    const response = await fetch("/v1/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(JSON.stringify(body.detail ?? body));
+    currentId = body.session_id;
+    location.hash = currentId;
+    $("session-line").textContent = "session " + currentId;
+    poll();
+  } catch (err) {
+    $("submit").disabled = false;
+    setStatus("failed", "Request failed: " + err.message);
+  }
+}
+
+const STAGES = {
+  queued: "queued",
+  running_tests: "running the student's code",
+  fixing: "repairing the code",
+  hinting: "writing and validating the hint",
+  done: "done",
+};
+
+async function poll() {
+  try {
+    const response = await fetch("/v1/sessions/" + currentId);
+    if (!response.ok) throw new Error("session not found");
+    const body = await response.json();
+
+    if (body.status === "succeeded" || body.status === "failed") {
+      $("submit").disabled = false;
+      render(body);
+      return;
+    }
+    setStatus("running", STAGES[body.stage] || body.stage);
+    pollTimer = setTimeout(poll, 1000);
+  } catch (err) {
+    $("submit").disabled = false;
+    setStatus("failed", "Polling failed: " + err.message);
+  }
+}
+
+function render(body) {
+  const box = $("result");
+  $("debug-row").hidden = false;
+
+  if (body.status === "failed") {
+    setStatus("failed", body.error ? body.error.code : "failed");
+    box.innerHTML = `<p class="error">${escapeHtml(body.error?.message || "unknown error")}</p>`;
+    if (debugVisible) loadDebug();
+    return;
+  }
+
+  const result = body.result || {};
+  if (result.outcome === "already_correct") {
+    setStatus("succeeded", "the code already passes all tests");
+    box.innerHTML = `<p>All ${result.tests_total} tests pass — nothing to hint about.</p>`;
+    if (debugVisible) loadDebug();
+    return;
+  }
+
+  setStatus("succeeded", `hint ready · ${result.tests_passed_before}/${result.tests_total} tests passed before`);
+  const mistakes = (result.mistakes || [])
+    .map((m) => `<div class="mistake"><b>${escapeHtml(m.title)}</b>
+        <span>${m.line ? "line " + m.line + " · " : ""}${escapeHtml(m.detail)}</span></div>`)
+    .join("");
+  box.innerHTML = `<div class="hint">${escapeHtml(result.hint)}</div>
+    <details open><summary>Mistakes found by the reviewer (not shown to the student)</summary>${mistakes}</details>`;
+  if (debugVisible) loadDebug();
+}
+
+async function loadDebug() {
+  const response = await fetch("/v1/sessions/" + currentId + "/debug");
+  const body = await response.json();
+  const internals = body.internals || {};
+  const parts = [];
+
+  if (internals.diff) {
+    parts.push(`<h2>Diff</h2><pre class="diff">${renderDiff(internals.diff)}</pre>`);
+  }
+  if (internals.fixed_code) {
+    parts.push(`<h2>Model's solution</h2><pre>${escapeHtml(internals.fixed_code)}</pre>`);
+  }
+  if (internals.baseline_tests) {
+    const rows = internals.baseline_tests.outcomes
+      .map(
+        (o) => `<tr><td>#${o.index + 1}</td>
+          <td>${o.passed ? '<span class="tag ok">pass</span>' : '<span class="tag bad">fail</span>'}${
+            o.timed_out ? ' <span class="tag bad">timeout</span>' : ""
+          }</td>
+          <td><pre>${escapeHtml(o.expected_output)}</pre></td>
+          <td><pre>${escapeHtml(o.actual_output || o.stderr)}</pre></td></tr>`
+      )
+      .join("");
+    parts.push(`<h2>Student's code on the tests</h2>
+      <table><tr><th>#</th><th>result</th><th>expected</th><th>actual</th></tr>${rows}</table>`);
+  }
+
+  const attempts = (body.attempts || [])
+    .map((a) => {
+      const p = a.payload;
+      if (a.kind === "fix") {
+        const tag = p.passed ? '<span class="tag ok">green</span>' : '<span class="tag bad">red</span>';
+        return `<div class="attempt"><h4>fix #${a.attempt_no} ${tag}
+            <span class="muted">${p.tests.passed}/${p.tests.total} tests</span></h4>
+          <div class="muted">${escapeHtml(p.summary)}</div>
+          <details><summary>code</summary><pre>${escapeHtml(p.fixed_code)}</pre></details></div>`;
+      }
+      const tag = p.approved ? '<span class="tag ok">approved</span>' : '<span class="tag bad">rejected</span>';
+      const issues = (p.issues || []).map((i) => `<li>${escapeHtml(i)}</li>`).join("");
+      return `<div class="attempt"><h4>hint #${a.attempt_no} ${tag}</h4>
+        <div>${escapeHtml(p.hint)}</div>${issues ? "<ul>" + issues + "</ul>" : ""}</div>`;
+    })
+    .join("");
+  if (attempts) parts.push(`<h2>Attempts</h2>${attempts}`);
+
+  $("debug").innerHTML = parts.join("");
+}
+
+$("add-test").onclick = () => addTest();
+$("submit").onclick = submit;
+$("reset").onclick = loadExample;
+$("toggle-debug").onclick = async () => {
+  debugVisible = !debugVisible;
+  $("toggle-debug").textContent = debugVisible ? "Hide internals" : "Show internals";
+  if (debugVisible) await loadDebug();
+  else $("debug").innerHTML = "";
+};
+
+loadExample();
+
+// Reopening a session by URL hash: /#<session_id>
+if (location.hash.length > 1) {
+  currentId = location.hash.slice(1);
+  $("session-line").textContent = "session " + currentId;
+  setStatus("running", "loading…");
+  $("submit").disabled = true;
+  poll();
+}
+</script>
+</body>
+</html>

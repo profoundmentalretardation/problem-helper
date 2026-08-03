@@ -5,3 +5,8 @@ __pycache__/
 state/
 slides/
 docs/
+.ruff_cache/
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
