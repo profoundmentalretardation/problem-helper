@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # --- Storage ---
     db_path: str = "problem_helper.db"
+    checkpoint_db_path: str = "problem_helper_checkpoints.db"
 
     # --- HTTP ---
     host: str = "127.0.0.1"

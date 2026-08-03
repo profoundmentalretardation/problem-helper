@@ -1,9 +1,11 @@
 import pytest
-from conftest import FakeLLM
+from conftest import FakeLLM, tool_turn
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 from problem_helper.config import Settings
 from problem_helper.db import Database
-from problem_helper.orchestrator import process_session
+from problem_helper.orchestrator import process_session, resume_session
 from problem_helper.schemas import (
     ErrorCode,
     FixResult,
@@ -54,9 +56,18 @@ async def run(db, llm, req: SolveRequest | None = None) -> dict:
 
 def good_llm(approved: bool = True) -> FakeLLM:
     return FakeLLM(
-        {
+        turns=[
+            tool_turn("search_learning_materials", query="even numbers sum"),
+            AIMessage("ready to write"),
+        ],
+        script={
             FixResult: [FixResult(mistakes=[MISTAKE], fixed_code=CORRECT, summary="sign")],
-            HintResult: [HintResult(hint="compare the operator on line 2 with the statement")],
+            HintResult: [
+                HintResult(
+                    hint="compare the operator on line 2 with the statement",
+                    related_material_ids=["algo-parity-filters"],
+                )
+            ],
             ValidationResult: [
                 ValidationResult(approved=approved, issues=[] if approved else ["too vague"])
             ],
@@ -88,21 +99,27 @@ async def test_happy_path_produces_hint_and_diff(db):
     assert result["mistakes"][0]["line"] == 2
     assert result["tests_passed_before"] == 0
 
+    assert [m["id"] for m in result["materials"]] == ["algo-parity-filters"]
+
     internals = record["internals"]
     assert internals["fixed_code"] == CORRECT
     assert "-print(a - b)" in internals["diff"]
     assert internals["fix_attempts_used"] == 1
+    assert internals["tool_calls"] == [
+        {"name": "search_learning_materials", "args": {"query": "even numbers sum"}}
+    ]
 
     attempts = await db.get_attempts("s1")
     assert [a["kind"] for a in attempts] == ["fix", "hint"]
     assert attempts[0]["payload"]["passed"] is True
+    assert attempts[1]["payload"]["materials"] == ["algo-parity-filters"]
 
 
 async def test_fix_failed_when_model_never_repairs_code(db):
     llm = FakeLLM(
         {
             FixResult: [FixResult(mistakes=[MISTAKE], fixed_code=BROKEN, summary="nothing")],
-            HintResult: [HintResult(hint="should never be reached")],
+            HintResult: [HintResult(hint="should never be reached", related_material_ids=[])],
             ValidationResult: [ValidationResult(approved=True, issues=[])],
         }
     )
@@ -140,11 +157,42 @@ async def test_llm_failure_is_recorded_as_internal_error(db):
     assert "provider is down" in record["error_message"]
 
 
+async def test_crashed_session_resumes_from_its_checkpoint(db):
+    saver = InMemorySaver()
+    flaky = good_llm()
+    original = flaky.structured
+
+    async def fail_on_the_hint(*, schema, **kwargs):
+        if schema is HintResult:
+            raise RuntimeError("provider is down")
+        return await original(schema=schema, **kwargs)
+
+    flaky.structured = fail_on_the_hint
+    req = request()
+    await db.create_session("s1", req.model_dump())
+    await process_session(
+        "s1", req, db=db, llm=flaky, settings=settings(), checkpointer=saver
+    )
+    crashed = await db.get_session("s1")
+    assert crashed["error_code"] == ErrorCode.internal_error
+
+    healthy = good_llm()
+    await resume_session(
+        "s1", req, db=db, llm=healthy, settings=settings(), checkpointer=saver
+    )
+
+    record = await db.get_session("s1")
+    assert record["status"] == SessionStatus.succeeded
+    assert record["result"]["hint"].startswith("compare the operator")
+    # the repair was checkpointed: resuming only redid the hint half
+    assert [c.schema for c in healthy.calls] == [HintResult, ValidationResult]
+
+
 async def test_request_overrides_attempt_limits(db):
     llm = FakeLLM(
         {
             FixResult: [FixResult(mistakes=[MISTAKE], fixed_code=BROKEN, summary="nothing")],
-            HintResult: [HintResult(hint="x")],
+            HintResult: [HintResult(hint="x", related_material_ids=[])],
             ValidationResult: [ValidationResult(approved=True, issues=[])],
         }
     )

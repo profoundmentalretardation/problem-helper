@@ -99,6 +99,11 @@ class TestReport:
         return "\n".join(lines)
 
 
+def report_from_dict(payload: dict) -> TestReport:
+    """Rebuilds a report out of `as_dict()` — the graph state keeps plain dicts."""
+    return TestReport(outcomes=[TestOutcome(**item) for item in payload.get("outcomes", [])])
+
+
 def normalize_output(text: str) -> str:
     """Right-strip every line and drop blank lines at both ends."""
     lines = [line.rstrip() for line in text.splitlines()]

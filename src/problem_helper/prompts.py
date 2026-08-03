@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .sandbox import TestReport
 from .schemas import Mistake, TestCase
+from .state import RejectedHint
 
 # --------------------------------------------------------------------------- #
 # Agent 1: mistake analysis and repair
@@ -78,6 +79,18 @@ You write a short hint for a student who is solving a programming problem and is
 on a mistake. You have the correct solution, but the student will never see it — they
 must get there themselves.
 
+You have access to the study library the student learns from, through these tools:
+- search_learning_materials(query, limit) — find materials by English keywords;
+- get_learning_material(material_id) — read one material in full;
+- list_material_topics() — see what the library covers.
+
+Use them when the mistake maps to a technique the library explains (two pointers, binary
+search, prefix sums, parity, loop bounds, complexity, stdin parsing, sorting keys): the
+hint then speaks the same language as the material and you can point the student at it.
+Skip the tools for a mistake that needs no theory — a typo, a wrong variable, a missing
+print. Two or three calls are plenty; never call the same tool twice with the same
+arguments.
+
 Hint rules:
 - 1–4 sentences, no filler, no generic advice like "check your logic".
 - Point at the specific place and nature of the mistake (you may name the line, the
@@ -85,7 +98,15 @@ Hint rules:
 - Do NOT give ready code, do NOT dictate the fixed line verbatim and do NOT restate the
   full solution — the student must make the edit themselves.
 - Friendly tone, address the student informally.
-- Write the hint in the language of the problem statement.\
+- Write the hint in the language of the problem statement.
+- related_material_ids — the ids of the materials you pulled that are worth reading, or an
+  empty list; never invent an id you have not seen in a tool result.\
+"""
+
+HINT_WRITE_INSTRUCTION = """\
+Write the hint now, following every rule from your instructions. If you consulted the
+study library, let its wording shape the hint and list the ids you used in
+related_material_ids.\
 """
 
 
@@ -102,7 +123,7 @@ def hint_user(
     fixed_code: str,
     diff: str,
     mistakes: list[Mistake],
-    rejected: list[tuple[str, list[str]]] | None = None,
+    rejected: list[RejectedHint] | None = None,
 ) -> str:
     parts = [
         f"# Problem statement\n{task}",
@@ -116,9 +137,9 @@ def hint_user(
     ]
     if rejected:
         history = "\n\n".join(
-            f"Rejected hint #{i + 1}:\n{hint}\nReviewer remarks:\n"
-            + "\n".join(f"- {issue}" for issue in issues)
-            for i, (hint, issues) in enumerate(rejected)
+            f"Rejected hint #{i + 1}:\n{item['hint']}\nReviewer remarks:\n"
+            + "\n".join(f"- {issue}" for issue in item["issues"])
+            for i, item in enumerate(rejected)
         )
         parts.append(
             "# Previous versions of the hint were rejected\n"

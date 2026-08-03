@@ -357,7 +357,12 @@ function render(body) {
     .map((m) => `<div class="mistake"><b>${escapeHtml(m.title)}</b>
         <span>${m.line ? "line " + m.line + " · " : ""}${escapeHtml(m.detail)}</span></div>`)
     .join("");
+  const materials = (result.materials || [])
+    .map((m) => `<div class="mistake"><b>${escapeHtml(m.title)}</b>
+        <span>${escapeHtml(m.topic)} · ${escapeHtml(m.summary)}</span></div>`)
+    .join("");
   box.innerHTML = `<div class="hint">${escapeHtml(result.hint)}</div>
+    ${materials ? `<details open><summary>What to read next</summary>${materials}</details>` : ""}
     <details open><summary>Mistakes found by the reviewer (not shown to the student)</summary>${mistakes}</details>`;
   if (debugVisible) loadDebug();
 }
@@ -387,6 +392,13 @@ async function loadDebug() {
       .join("");
     parts.push(`<h2>Student's code on the tests</h2>
       <table><tr><th>#</th><th>result</th><th>expected</th><th>actual</th></tr>${rows}</table>`);
+  }
+
+  if ((internals.tool_calls || []).length) {
+    const calls = internals.tool_calls
+      .map((c) => `<li><code>${escapeHtml(c.name)}</code>(${escapeHtml(JSON.stringify(c.args))})</li>`)
+      .join("");
+    parts.push(`<h2>Tools the hint agent called</h2><ul>${calls}</ul>`);
   }
 
   const attempts = (body.attempts || [])

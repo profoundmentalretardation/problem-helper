@@ -10,13 +10,16 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import aiosqlite
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from . import tools
 from .config import Settings, get_settings
 from .db import Database
 from .llm import LLMClient
-from .orchestrator import process_session
+from .orchestrator import process_session, resume_session
 from .schemas import (
     SessionCreated,
     SessionDebugView,
@@ -37,25 +40,53 @@ def create_app(
     *,
     db: Database | None = None,
     processor: Processor | None = None,
+    resumer: Processor | None = None,
 ) -> FastAPI:
-    """Application factory. `db`/`processor` are replaced in tests."""
+    """Application factory. `db`/`processor`/`resumer` are replaced in tests."""
     settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         owns_db = db is None
         database = db or await Database(settings.db_path).connect()
-        llm = LLMClient(settings) if processor is None else None
+        real_work = processor is None
+        llm = LLMClient(settings) if real_work else None
+        # The graph checkpoints into its own SQLite file: the session tables stay readable
+        # while LangGraph owns the layout of the checkpoint tables.
+        checkpoint_conn = (
+            await aiosqlite.connect(settings.checkpoint_db_path) if real_work else None
+        )
+        checkpointer = None
+        if checkpoint_conn is not None:
+            checkpointer = AsyncSqliteSaver(checkpoint_conn)
+            await checkpointer.setup()
 
         async def default_processor(session_id: str, request: SolveRequest) -> None:
-            assert llm is not None
+            assert llm is not None and checkpointer is not None
             await process_session(
-                session_id, request, db=database, llm=llm, settings=settings
+                session_id,
+                request,
+                db=database,
+                llm=llm,
+                settings=settings,
+                checkpointer=checkpointer,
+            )
+
+        async def default_resumer(session_id: str, request: SolveRequest) -> None:
+            assert llm is not None and checkpointer is not None
+            await resume_session(
+                session_id,
+                request,
+                db=database,
+                llm=llm,
+                settings=settings,
+                checkpointer=checkpointer,
             )
 
         app.state.settings = settings
         app.state.db = database
         app.state.processor = processor or default_processor
+        app.state.resumer = resumer or default_resumer
         app.state.tasks = set()
         try:
             yield
@@ -64,6 +95,8 @@ def create_app(
                 task.cancel()
             if llm is not None:
                 await llm.close()
+            if checkpoint_conn is not None:
+                await checkpoint_conn.close()
             if owns_db:
                 await database.close()
 
@@ -85,6 +118,22 @@ def create_app(
         _spawn(request.app, request.app.state.processor(session_id, payload))
         logger.info("session %s queued", session_id)
         return SessionCreated(session_id=session_id, status=SessionStatus.pending)
+
+    @app.get("/v1/tools")
+    async def list_tools() -> dict[str, Any]:
+        """The tools registered with the framework and bound to the hint agent."""
+        return {"tools": tools.specs()}
+
+    @app.post("/v1/sessions/{session_id}/resume", status_code=202, response_model=SessionCreated)
+    async def resume(session_id: str, request: Request) -> SessionCreated:
+        """Picks an unfinished session up from its last checkpoint."""
+        record = await _record(request, session_id)
+        if record["status"] == SessionStatus.succeeded:
+            raise HTTPException(status_code=409, detail="session already finished")
+        payload = SolveRequest.model_validate(record["request"])
+        _spawn(request.app, request.app.state.resumer(session_id, payload))
+        logger.info("session %s resumed", session_id)
+        return SessionCreated(session_id=session_id, status=SessionStatus.running)
 
     @app.get("/v1/sessions/{session_id}", response_model=SessionView)
     async def get_session(session_id: str, request: Request) -> SessionView:

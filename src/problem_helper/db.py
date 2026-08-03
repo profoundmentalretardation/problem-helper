@@ -98,9 +98,11 @@ class Database:
     async def finish_success(
         self, session_id: str, result: dict, internals: dict | None = None
     ) -> None:
+        # The error columns are cleared as well: a resumed session must not keep reporting
+        # the failure it was resumed from.
         await self._write(
             "UPDATE sessions SET status = ?, stage = ?, updated_at = ?, result_json = ?,"
-            " internals_json = ? WHERE id = ?",
+            " internals_json = ?, error_code = NULL, error_message = NULL WHERE id = ?",
             (
                 SessionStatus.succeeded,
                 SessionStage.done,
