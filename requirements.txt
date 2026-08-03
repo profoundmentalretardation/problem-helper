@@ -1,4 +1,0 @@
-openai==2.48.0
-python-dotenv==1.2.2
-Pygments==2.20.0
-ipykernel==7.3.0
