@@ -66,6 +66,19 @@ async def test_failure_is_stored_with_code(db):
     assert "3 attempts" in record["error_message"]
 
 
+async def test_success_after_a_failure_clears_the_error(db):
+    """A resumed session must not keep reporting the failure it was resumed from."""
+    await db.create_session("s1", {"task": "t"})
+    await db.finish_failure("s1", ErrorCode.internal_error, "provider is down")
+
+    await db.finish_success("s1", {"outcome": "hint_ready", "hint": "look at line 2"})
+
+    record = await db.get_session("s1")
+    assert record["status"] == SessionStatus.succeeded
+    assert record["error_code"] is None
+    assert record["error_message"] is None
+
+
 async def test_attempts_are_ordered(db):
     await db.create_session("s1", {"task": "t"})
 

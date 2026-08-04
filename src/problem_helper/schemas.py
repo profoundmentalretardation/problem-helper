@@ -75,12 +75,22 @@ class MistakeOut(BaseModel):
     line: int | None = None
 
 
+class MaterialRef(BaseModel):
+    """A study material the hint agent pulled through the tools."""
+
+    id: str
+    title: str
+    topic: str
+    summary: str
+
+
 class SessionResult(BaseModel):
     """The part of the result that may be shown to the student."""
 
     outcome: Outcome
     hint: str | None = None
     mistakes: list[MistakeOut] = Field(default_factory=list)
+    materials: list[MaterialRef] = Field(default_factory=list)
     tests_total: int
     tests_passed_before: int
 
@@ -127,6 +137,12 @@ class FixResult(BaseModel):
 
 class HintResult(BaseModel):
     hint: str = Field(description="Hint for the student, without the solution code")
+    related_material_ids: list[str] = Field(
+        description=(
+            "Ids of the study materials worth reading, taken from the tool results; "
+            "empty list when no material was pulled or none of them fits"
+        )
+    )
 
 
 class ValidationResult(BaseModel):

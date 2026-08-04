@@ -14,9 +14,13 @@ PAYLOAD = {
 }
 
 
-def make_client(tmp_path, processor):
-    settings = Settings(llm_api_key="test", db_path=str(tmp_path / "api.db"))
-    app = create_app(settings, processor=processor)
+def make_client(tmp_path, processor, resumer=None):
+    settings = Settings(
+        llm_api_key="test",
+        db_path=str(tmp_path / "api.db"),
+        checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+    )
+    app = create_app(settings, processor=processor, resumer=resumer)
     return TestClient(app), app
 
 
@@ -121,6 +125,75 @@ def test_failed_session_exposes_error(tmp_path, holder):
             "message": "could not repair the code",
         }
         assert body["result"] is None
+
+
+def test_tools_are_listed(tmp_path, holder):
+    client, _ = make_client(tmp_path, lambda *a: _noop())
+    with client:
+        body = client.get("/v1/tools").json()
+
+        names = [t["name"] for t in body["tools"]]
+        assert "search_learning_materials" in names
+        assert len(names) >= 2
+        assert all(t["description"] for t in body["tools"])
+
+
+def test_unfinished_session_can_be_resumed(tmp_path, holder):
+    async def processor(session_id, request):
+        await holder["app"].state.db.finish_failure(
+            session_id, ErrorCode.internal_error, "provider is down"
+        )
+
+    async def resumer(session_id, request):
+        holder["resumed"] = request
+        await holder["app"].state.db.finish_success(
+            session_id,
+            {
+                "outcome": Outcome.hint_ready,
+                "hint": "look at line 2",
+                "mistakes": [],
+                "materials": [],
+                "tests_total": 1,
+                "tests_passed_before": 0,
+            },
+        )
+
+    client, app = make_client(tmp_path, processor, resumer=resumer)
+    holder["app"] = app
+    with client:
+        session_id = client.post("/v1/sessions", json=PAYLOAD).json()["session_id"]
+        wait_for(client, session_id, SessionStatus.failed)
+
+        response = client.post(f"/v1/sessions/{session_id}/resume")
+
+        assert response.status_code == 202
+        body = wait_for(client, session_id, SessionStatus.succeeded)
+        assert body["result"]["hint"] == "look at line 2"
+
+    assert holder["resumed"].task == "Sum of two numbers"
+
+
+def test_resume_of_a_finished_session_is_rejected(tmp_path, holder):
+    async def processor(session_id, request):
+        await holder["app"].state.db.finish_success(
+            session_id,
+            {
+                "outcome": Outcome.already_correct,
+                "mistakes": [],
+                "materials": [],
+                "tests_total": 1,
+                "tests_passed_before": 1,
+            },
+        )
+
+    client, app = make_client(tmp_path, processor)
+    holder["app"] = app
+    with client:
+        session_id = client.post("/v1/sessions", json=PAYLOAD).json()["session_id"]
+        wait_for(client, session_id, SessionStatus.succeeded)
+
+        assert client.post(f"/v1/sessions/{session_id}/resume").status_code == 409
+        assert client.post("/v1/sessions/missing/resume").status_code == 404
 
 
 def test_unknown_session_is_404(tmp_path, holder):
