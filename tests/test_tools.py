@@ -14,7 +14,7 @@ def test_every_tool_is_registered_with_the_framework():
     assert len(tools.TOOLS) >= 2
     assert all(isinstance(t, BaseTool) for t in tools.TOOLS)
     assert {t.name for t in tools.TOOLS} == {
-        "search_learning_materials",
+        "search_corpus",
         "get_learning_material",
         "list_material_topics",
     }
@@ -23,21 +23,31 @@ def test_every_tool_is_registered_with_the_framework():
 def test_tool_schemas_describe_their_arguments():
     spec = {s["name"]: s for s in tools.specs()}
 
-    assert "query" in spec["search_learning_materials"]["args"]
-    assert spec["search_learning_materials"]["description"]
+    assert "query" in spec["search_corpus"]["args"]
+    assert spec["search_corpus"]["description"]
     assert spec["get_learning_material"]["args"]["material_id"]["type"] == "string"
 
 
-def test_search_ranks_the_matching_material_first():
-    found = call(tools.search_learning_materials, query="binary search off-by-one", limit=2)
+def test_search_returns_passages_with_their_rank_and_material():
+    found = call(tools.search_corpus, query="binary search off-by-one", k=3)
 
-    assert found[0]["id"] == "algo-binary-search"
-    assert len(found) == 2
-    assert found[0]["summary"]
+    assert len(found) == 3
+    assert {item["rank"] for item in found} == {1, 2, 3}
+    first = next(item for item in found if item["rank"] == 1)
+    assert first["material_id"] == "algo-prefix-sums"
+    assert first["excerpt"]
+    assert first["heading"] == "Building the array"
 
 
-def test_search_without_a_match_returns_an_empty_list():
-    assert call(tools.search_learning_materials, query="quantum entanglement") == []
+def test_search_hands_the_model_a_lim_packed_list():
+    found = call(tools.search_corpus, query="anything", k=3)
+
+    # strongest at the edges, weakest in the middle — the rank field keeps the truth
+    assert [item["rank"] for item in found] == [1, 3, 2]
+
+
+def test_search_clamps_k_to_the_supported_range():
+    assert len(call(tools.search_corpus, query="anything", k=99)) == 3
 
 
 def test_get_returns_the_full_material():
@@ -58,18 +68,18 @@ def test_topics_cover_the_whole_catalog():
     grouped = call(tools.list_material_topics)
 
     assert set(grouped) == set(materials.topics())
-    assert sum(len(ids) for ids in grouped.values()) == len(materials.CATALOG)
+    assert sum(len(ids) for ids in grouped.values()) == len(materials.all())
 
 
 def test_read_materials_reconstructs_what_the_agent_pulled():
     conversation = [
         AIMessage("thinking"),
         ToolMessage(
-            content=tools.search_learning_materials.invoke({"query": "prefix sums", "limit": 1}),
+            content=tools.search_corpus.invoke({"query": "prefix sums", "k": 1}),
             tool_call_id="1",
         ),
         ToolMessage(
-            content=tools.get_learning_material.invoke({"material_id": "algo-prefix-sums"}),
+            content=tools.get_learning_material.invoke({"material_id": "algo-binary-search"}),
             tool_call_id="2",
         ),
         ToolMessage(content="not json at all", tool_call_id="3"),
@@ -77,11 +87,11 @@ def test_read_materials_reconstructs_what_the_agent_pulled():
 
     refs = tools.read_materials(conversation)
 
-    assert [ref.id for ref in refs] == ["algo-prefix-sums"]
+    assert [ref.id for ref in refs] == ["algo-prefix-sums", "algo-binary-search"]
     assert refs[0].title == "Prefix sums for range queries"
 
 
 def test_read_materials_ignores_ids_that_are_not_in_the_catalog():
-    message = ToolMessage(content=json.dumps([{"id": "made-up"}]), tool_call_id="1")
+    message = ToolMessage(content=json.dumps([{"material_id": "made-up"}]), tool_call_id="1")
 
     assert tools.read_materials([message]) == []

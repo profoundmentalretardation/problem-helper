@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     max_fix_attempts: int = 3
     max_hint_attempts: int = 3
 
+    # --- Retrieval (see retrieval/service.py for what the depths buy) ---
+    retrieval_embed_model: str = "BAAI/bge-small-en-v1.5"
+    retrieval_rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    retrieval_top_k: int = 5
+    retrieval_candidates: int = 20
+    retrieval_rerank_depth: int = 20
+    retrieval_rrf_k: int = 60
+    retrieval_rerank: bool = True
+    retrieval_cache_dir: str = ".rag_cache"
+
     # --- Sandbox ---
     sandbox_timeout_sec: float = 5.0
     sandbox_memory_mb: int = 256

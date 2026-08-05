@@ -161,6 +161,9 @@
   <div class="grid">
     <section>
       <h2>Request</h2>
+      <label for="sample">Load a sample problem</label>
+      <select id="sample"></select>
+
       <label for="task">Problem statement</label>
       <textarea id="task" rows="4"></textarea>
 
@@ -181,7 +184,7 @@
       </div>
       <div class="row">
         <button type="button" class="primary" id="submit">Analyze</button>
-        <button type="button" id="reset">Reset example</button>
+        <button type="button" id="reset">Reload sample</button>
       </div>
     </section>
 
@@ -202,7 +205,11 @@
 </main>
 
 <script>
-const EXAMPLE = {
+// Kept only as the fallback for a page opened while /v1/samples is unreachable; the real
+// catalog lives in samples.py, where the tests prove each broken program actually fails.
+const FALLBACK = {
+  id: "even-sum",
+  title: "Sum of the even numbers",
   task: "Given a list of N integers, print the sum of the even ones. The first line holds N, the second line holds N integers separated by spaces.",
   code: "n = int(input())\nnums = list(map(int, input().split()))\ntotal = 0\nfor i in range(n):\n    if nums[i] % 2 == 1:\n        total += nums[i]\nprint(total)\n",
   tests: [
@@ -213,6 +220,7 @@ const EXAMPLE = {
 };
 
 const $ = (id) => document.getElementById(id);
+let samples = [FALLBACK];
 let pollTimer = null;
 let currentId = null;
 let debugVisible = false;
@@ -232,10 +240,26 @@ function addTest(test = { input: "", expected_output: "" }) {
 }
 
 function loadExample() {
-  $("task").value = EXAMPLE.task;
-  $("code").value = EXAMPLE.code;
+  const sample = samples.find((s) => s.id === $("sample").value) || samples[0];
+  $("task").value = sample.task;
+  $("code").value = sample.code;
   $("tests").innerHTML = "";
-  EXAMPLE.tests.forEach(addTest);
+  sample.tests.forEach(addTest);
+}
+
+async function loadSamples() {
+  try {
+    const response = await fetch("/v1/samples");
+    const body = await response.json();
+    if (body.samples && body.samples.length) samples = body.samples;
+  } catch (err) {
+    /* keep the fallback; the page still works offline */
+  }
+  $("sample").innerHTML = samples
+    .map((s) => `<option value="${s.id}">${escapeHtml(s.title)}</option>`)
+    .join("");
+  $("sample").onchange = loadExample;
+  loadExample();
 }
 
 function collectTests() {
@@ -432,7 +456,7 @@ $("toggle-debug").onclick = async () => {
   else $("debug").innerHTML = "";
 };
 
-loadExample();
+loadSamples();
 
 // Reopening a session by URL hash: /#<session_id>
 if (location.hash.length > 1) {

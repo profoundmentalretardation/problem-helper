@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
 
+import pytest
 from langchain_core.messages import AIMessage, AnyMessage
 from pydantic import BaseModel
 
+from problem_helper import materials, retrieval
+from problem_helper.retrieval import Chunk, Hit
 from problem_helper.sandbox import TestOutcome, TestReport
 from problem_helper.schemas import TestCase
 
@@ -89,3 +92,56 @@ def report(passed: bool, total: int = 2) -> TestReport:
 
 def sample_tests() -> list[TestCase]:
     return [TestCase(input="3 4\n", expected_output="7")]
+
+
+def chunk(material_id: str, section: int = 0, heading: str = "Pitfalls") -> Chunk:
+    """A chunk carrying real catalog metadata, without building an index."""
+    material = materials.get(material_id)
+    assert material is not None, material_id
+    return Chunk(
+        id=f"{material_id}#{section}.0",
+        material_id=material_id,
+        title=material.title,
+        topic=material.topic,
+        heading=heading,
+        text=f"{heading}: excerpt of {material.title}.",
+        tags=tuple(material.tags),
+    )
+
+
+@dataclass
+class StubRetriever:
+    """Stands in for `RetrievalService` so unit tests never load the ONNX models.
+
+    The real pipeline is covered by the pure-python tests over BM25/RRF/chunking and by the
+    evaluation harness, which runs it against the whole corpus.
+    """
+
+    chunks: list[Chunk]
+    queries: list[tuple[str, int]] = field(default_factory=list)
+
+    def search(self, query: str, *, k: int | None = None, rerank: bool | None = None):
+        self.queries.append((query, k or len(self.chunks)))
+        return [
+            Hit(chunk=c, score=1.0 - i / 10, stage="rerank", rrf_rank=i + 1)
+            for i, c in enumerate(self.chunks[: k or len(self.chunks)])
+        ]
+
+
+@pytest.fixture(autouse=True)
+def stub_retriever():
+    """Every test runs against the stub: no ONNX model is loaded by the unit suite.
+
+    The real pipeline is covered by the pure-python tests over chunking/BM25/RRF and end to
+    end by the evaluation harness, which runs it against the whole corpus.
+    """
+    retriever = StubRetriever(
+        [
+            chunk("algo-prefix-sums", 0, "Building the array"),
+            chunk("algo-binary-search", 2, "Insertion points instead of membership"),
+            chunk("algo-parity-filters", 3, "Summing the wrong thing"),
+        ]
+    )
+    retrieval.set_retriever(retriever)
+    yield retriever
+    retrieval.set_retriever(None)
