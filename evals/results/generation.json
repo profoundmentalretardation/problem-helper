@@ -1,0 +1,2243 @@
+{
+  "answer_model": "google/gemini-3.5-flash-lite",
+  "judge_model": "anthropic/claude-haiku-4.5",
+  "top_k": 5,
+  "runs": {
+    "rerank": {
+      "cases": [
+        "bisect-left-vs-right",
+        "list-pop-zero-queue",
+        "heapq-max-heap",
+        "counter-most-common",
+        "bfs-visits-node-twice",
+        "dp-knapsack-loop-direction",
+        "gcd-to-lcm",
+        "lifo-vs-fifo",
+        "lis-efficient",
+        "even-sum-adds-wrong-thing",
+        "judge-says-too-slow",
+        "grid-rows-change-together",
+        "negative-floor-division",
+        "two-pointers-or-sliding-window",
+        "set-or-counter-for-duplicates",
+        "dijkstra-negative-weights",
+        "greedy-coin-change-valid",
+        "binary-search-hangs",
+        "recursion-error-deep-input",
+        "sort-desc-score-asc-name",
+        "output-has-brackets",
+        "string-building-slow",
+        "prefix-sum-leading-zero",
+        "make-it-faster",
+        "segment-tree-lazy",
+        "red-black-tree",
+        "which-web-framework"
+      ],
+      "summary": {
+        "faithfulness": 0.9135802469135803,
+        "answer_relevance": 0.7777777777777778,
+        "context_precision": 0.7892489711934156,
+        "context_recall": 0.8716931216931216
+      },
+      "summary_answerable": {
+        "faithfulness": 0.9444444444444445,
+        "answer_relevance": 0.875,
+        "context_precision": 0.8879050925925926,
+        "context_recall": 0.9181547619047619
+      },
+      "answerable": 24,
+      "by_category": {
+        "acronym": {
+          "n": 5,
+          "faithfulness": 0.9333333333333333,
+          "answer_relevance": 0.8,
+          "context_precision": 0.8911111111111112,
+          "context_recall": 1.0
+        },
+        "ambiguous": {
+          "n": 1,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 1.0,
+          "context_recall": 0.5
+        },
+        "exact_term": {
+          "n": 4,
+          "faithfulness": 0.75,
+          "answer_relevance": 0.75,
+          "context_precision": 0.8083333333333333,
+          "context_recall": 0.875
+        },
+        "long_tail_detail": {
+          "n": 4,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.9375,
+          "context_recall": 0.9375
+        },
+        "multi_hop": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 1.0,
+          "context_recall": 1.0
+        },
+        "near_duplicate": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 0.5,
+          "context_precision": 0.9333333333333333,
+          "context_recall": 1.0
+        },
+        "negation": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 1.0,
+          "context_recall": 1.0
+        },
+        "out_of_corpus": {
+          "n": 3,
+          "faithfulness": 0.6666666666666666,
+          "answer_relevance": 0.0,
+          "context_precision": 0.0,
+          "context_recall": 0.5
+        },
+        "paraphrase": {
+          "n": 4,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.7510416666666666,
+          "context_recall": 0.8214285714285714
+        }
+      },
+      "per_case": [
+        {
+          "case": "bisect-left-vs-right",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-binary-search#2.1",
+            "algo-two-pointers#1.0",
+            "algo-sliding-window#0.0",
+            "algo-dynamic-programming#4.0",
+            "algo-binary-search#2.0"
+          ],
+          "answer": "bisect_left and bisect_right differ only in how they treat equal elements. Specifically, bisect_left finds the lower bound as the first index with a[i] >= x, while bisect_right finds the upper bound as the first index with a[i] > x.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.7,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses the two-pointer technique for finding pairs in a sorted array. It does not mention or explain bisect_left or bisect_right, which are binary search functions in Python's bisect module. The passage is about a different algorithmic pattern and does not help answer the question about the differences between these two bisect functions.",
+              "#3: This passage discusses sliding window techniques for contiguous subarrays/substrings. It does not address bisect_left or bisect_right, which are binary search functions that locate insertion points in sorted sequences. The passage is about a completely different algorithmic technique and contains no relevant information for answering the question about the differences between these two bisect functions.",
+              "#4: This passage discusses the longest increasing subsequence algorithm and mentions bisect_left in passing as part of an O(n log n) optimization, but it does not explain or compare the differences between bisect_left and bisect_right. To answer the question about the difference between these two functions, one would need a passage that directly explains their distinct behaviors, such as how they handle equal elements or their return values."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "list-pop-zero-queue",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-stacks-queues#2.0",
+            "algo-stacks-queues#6.0",
+            "algo-graph-traversal#2.1",
+            "algo-heaps#1.1",
+            "algo-heaps#6.0"
+          ],
+          "answer": "No, it is not fine to use list.pop(0) to take items off a queue. Specifically, list.pop(0) is O(n) because every remaining element shifts down one slot, which can turn a linear algorithm into a quadratic one. You should instead use deque.popleft from the collections module, which operates in O(1) time.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 6,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses the heapq module and heap operations, which is about priority queues specifically. The question asks about using list.pop(0) for general queue operations, which relates to whether it's an efficient approach for FIFO queues. This passage doesn't address the performance implications of list.pop(0) or discuss alternative queue implementations like collections.deque, so it doesn't help answer the question.",
+              "#5: This passage discusses common pitfalls when using heaps and priority queues in Python, but does not address the question about using list.pop(0) for queue operations. The question asks about the efficiency or appropriateness of list.pop(0) as a queue mechanism, while this passage focuses on heap-specific issues. A useful passage would discuss the performance characteristics of list.pop(0) compared to other queue implementations."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "heapq-max-heap",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-heaps#2.0",
+            "algo-heaps#6.0",
+            "algo-heaps#1.0",
+            "algo-heaps#1.1",
+            "algo-heaps#4.0"
+          ],
+          "answer": "Since heapq only implements a min-heap, you can make it behave like a max-heap by storing negated keys and negating again on the way out. You do this by pushing the negative value using heapq.heappush(heap, -value) and retrieving the largest value by negating the result of heapq.heappop(heap). Be careful not to forget the second negation, which is a classic bug.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 4,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses heap operations (heappushpop and heapreplace) but does not address the question of how to make heapq behave like a max-heap. It provides general information about heapq operations but offers no solution to the user's specific problem.",
+              "#5: This passage discusses using tuples with priorities in heapq to order by something other than the element itself, which is a technique for customizing heap behavior. However, it does not address the specific question of how to make heapq behave like a max-heap. To convert a min-heap to a max-heap, one needs to negate values or invert priorities, which is not covered in this passage. The passage only explains tuple-based ordering for tie-breaking purposes, not heap type conversion."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "counter-most-common",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-heaps#4.0",
+            "algo-hash-counting#1.0",
+            "algo-strings#5.0",
+            "algo-sliding-window#3.0",
+            "algo-sets#6.0"
+          ],
+          "answer": "The study library does not cover what collections.Counter gives you that a plain dict does not.",
+          "faithfulness": {
+            "score": 0.0,
+            "claims": 1,
+            "unsupported": [
+              "The study library does not cover what collections.Counter gives you that a plain dict does not."
+            ]
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Explain what features or capabilities collections.Counter provides that a plain dict lacks"
+            ]
+          },
+          "context_precision": {
+            "score": 0.5333333333333333,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses heaps, priority queues, and tuple ordering in the context of heapq operations. It does not address the differences between collections.Counter and a plain dict, their respective features, or what advantages Counter provides. The passage is about heap data structures, not about Counter objects.",
+              "#3: The passage mentions collections.Counter in passing as a viable approach for anagram checks, but it does not explain what Counter provides that a plain dict does not. It only states that Counter 'works' for this use case without detailing its specific advantages or features over a dict."
+            ]
+          },
+          "context_recall": {
+            "score": 0.5,
+            "sentences": 2,
+            "unsupported": [
+              "Counter counts in one call and adds the operations worth importing it for: most_common(k) returns the top k pairs already sorted, + and - merge tables, and & intersects them."
+            ]
+          }
+        },
+        {
+          "case": "bfs-visits-node-twice",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-graph-traversal#2.1",
+            "algo-stacks-queues#2.0",
+            "algo-graph-traversal#2.2",
+            "algo-shortest-paths#4.0",
+            "algo-stacks-queues#5.0"
+          ],
+          "answer": "Your BFS puts the same node in the queue several times because you are marking a vertex as seen when it is dequeued instead of when it is enqueued. Marking on pop allows the same vertex to enter the queue once per incoming edge. To fix this and keep the queue linear, you must mark a vertex as seen as soon as it is enqueued.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.7,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses performance optimization of BFS using deque vs list, but does not address why the same node would be added to the queue multiple times. The question is about duplicate nodes in the queue, which typically relates to visited set tracking or graph traversal logic, not about the data structure choice for queue implementation.",
+              "#3: This passage discusses a technical detail about capturing queue length in BFS implementation to handle queue modifications during iteration. While it relates to BFS implementation, it does not address the actual question about why the same node gets added to the queue multiple times, which is typically caused by visiting nodes without tracking visited state rather than queue length capture issues.",
+              "#4: This passage discusses the relaxation operation used in shortest path algorithms and explains differences between BFS, Dijkstra, and Bellman-Ford. However, it does not address why a BFS implementation might add the same node to the queue multiple times, which is the core issue in the question. The passage focuses on algorithmic theory rather than implementation problems or debugging the duplicate-node issue."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "dp-knapsack-loop-direction",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-dynamic-programming#3.0",
+            "algo-dynamic-programming#6.0",
+            "algo-greedy#5.0",
+            "algo-graph-traversal#2.2",
+            "algo-greedy#4.0"
+          ],
+          "answer": "In the dynamic programming solution for the 0/1 knapsack problem, the inner loop over capacity goes downwards so that each item is used at most once. Descending through the capacity values ensures that the transitions rely on states from before the current item was considered. Conversely, ascending through the capacity values would allow the same item to be reused, which turns it into an unbounded knapsack or coin change problem.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses greedy algorithms and their pitfalls, including a brief mention of the 0/1 knapsack problem in the context of why greedy approaches fail. However, it does not address the specific question about why the inner loop over capacity in dynamic programming for knapsack goes downwards (i.e., the backwards iteration technique used to avoid overwriting values needed for the current iteration). The passage does not explain the mechanics or reasoning behind the DP implementation details.",
+              "#4: This passage discusses graph traversal techniques (BFS and DFS) and queue operations, which is unrelated to the knapsack dynamic programming problem. The question asks specifically about why the capacity loop in knapsack DP iterates downwards (backwards), which requires explanation of the 0/1 knapsack algorithm and the reasoning behind loop direction to avoid using the same item multiple times. This passage about graph traversal does not address knapsack DP at all.",
+              "#5: This passage discusses greedy algorithms and their applications (fractional knapsack, Huffman coding, MST, etc.) but does not address the specific question about why the inner loop over capacity in 0/1 knapsack DP iterates downwards/backwards. The passage mentions that 0/1 knapsack uses DP rather than a greedy approach, but provides no explanation of the DP implementation details."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "gcd-to-lcm",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-number-theory#1.0",
+            "algo-hash-counting#1.0",
+            "algo-dynamic-programming#5.0",
+            "algo-binary-search#2.1",
+            "algo-shortest-paths#1.0"
+          ],
+          "answer": "The identity behind obtaining the least common multiple (LCM) from the greatest common divisor (GCD) is a * b // gcd(a, b). When working with large numbers in a language with fixed-width integers, you should divide before multiplying as a // gcd(a, b) * b.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 2,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 1,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses Python dictionary and Counter operations for frequency counting, which is unrelated to the mathematical relationship between LCM (Least Common Multiple) and GCD (Greatest Common Divisor). It does not contain any information about how to calculate LCM from GCD or any relevant mathematical formulas.",
+              "#3: This passage discusses dynamic programming optimization techniques for space complexity reduction. It has no relevance to finding the Least Common Multiple (LCM) from the Greatest Common Divisor (GCD), which is a number theory problem. The passage does not mention LCM, GCD, or any mathematical relationship between them.",
+              "#4: This passage is about binary search operations in Python (bisect module) and has no connection to the mathematical relationship between LCM (Least Common Multiple) and GCD (Greatest Common Divisor). The question asks about converting GCD to LCM, which requires knowledge of the mathematical formula: LCM(a,b) = (a*b)/GCD(a,b). This passage does not address that topic at all.",
+              "#5: This passage contains code for Dijkstra's shortest path algorithm in weighted graphs. It is completely unrelated to the mathematical relationship between LCM (Least Common Multiple) and GCD (Greatest Common Divisor). The question asks about computing LCM from GCD, which requires knowledge of the fundamental theorem: LCM(a,b) \u00d7 GCD(a,b) = a \u00d7 b, or equivalently LCM(a,b) = (a \u00d7 b) / GCD(a,b). This passage would not help answer that question."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "lifo-vs-fifo",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-stacks-queues#0.0",
+            "algo-heaps#4.0",
+            "algo-stacks-queues#5.0",
+            "algo-stacks-queues#1.1",
+            "algo-stacks-queues#2.0"
+          ],
+          "answer": "A stack is last-in-first-out, which is LIFO. A queue is first-in-first-out, which is FIFO.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.7555555555555555,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses heaps and priority queues with tuple ordering, but does not address the question about which data structure (stack vs queue) corresponds to LIFO vs FIFO. The passage is about a different topic entirely and contains no information that would help answer the specific question being asked.",
+              "#4: This passage discusses stack implementation details for checking parentheses but does not address the fundamental question of which data structure (stack or queue) corresponds to LIFO vs FIFO ordering. The passage does not clarify the relationship between these terms and data structures."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "lis-efficient",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-dynamic-programming#4.0",
+            "algo-two-pointers#2.0",
+            "algo-two-pointers#0.0",
+            "algo-two-pointers#3.0",
+            "algo-number-theory#4.1"
+          ],
+          "answer": "The study library does not cover what the fastest way to compute the LIS of an array is, though it mentions an O(n^2) dynamic programming version and an O(n log n) version that keeps the smallest possible tail for each length.",
+          "faithfulness": {
+            "score": 0.6666666666666666,
+            "claims": 3,
+            "unsupported": [
+              "The study library does not cover what the fastest way to compute the LIS of an array is"
+            ]
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Identify the fastest way to compute the LIS of an array"
+            ]
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 1,
+            "of": 5,
+            "rejected": [
+              "#2: This passage describes a two-pointer technique for removing duplicates from a sorted array, which is unrelated to computing the Longest Increasing Subsequence (LIS). While both are array algorithms, LIS requires dynamic programming or binary search-based approaches, not the in-place deduplication pattern shown here.",
+              "#3: This passage discusses the two-pointer technique on sorted arrays, which is a general algorithmic technique. It does not address the Longest Increasing Subsequence (LIS) problem or provide any information about LIS algorithms. The fastest LIS algorithms use dynamic programming with binary search or other specialized approaches, not the two-pointer technique described here.",
+              "#4: This passage discusses the three-sum problem and two/three-pointer techniques on sorted arrays, which is unrelated to computing the Longest Increasing Subsequence (LIS). LIS requires dynamic programming or binary search approaches, not pointer-based scanning for target sums.",
+              "#5: This passage discusses modular arithmetic and fast exponentiation in Python, which is completely unrelated to computing the Longest Increasing Subsequence (LIS) of an array. It provides no information about LIS algorithms or techniques."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "even-sum-adds-wrong-thing",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-parity-filters#2.0",
+            "algo-two-pointers#1.0",
+            "algo-parity-filters#3.0",
+            "algo-number-theory#0.0",
+            "algo-number-theory#1.0"
+          ],
+          "answer": "The single most common mistake when summing even numbers is accumulating the index rather than the value. Your code might be adding the position, denoted by i, instead of adding the actual number, which is values[i]. Using 'for x in values' removes this possibility entirely.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8333333333333333,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: This passage describes a two-pointer algorithm for finding pairs with a given sum in a sorted array. It is unrelated to the problem of summing only even numbers in a program. The passage does not address filtering, conditional summation, or debugging issues with even number addition, so it would not help answer the question about why the total is too small.",
+              "#4: This passage discusses number theory routines and computational efficiency in competitive programming, but does not address debugging issues with summing even numbers or explain why a sum calculation might produce incorrect results. It is not relevant to the user's specific programming problem.",
+              "#5: This passage discusses GCD and LCM number theory concepts and their implementation in Python. It does not address the question about a program that is summing only even numbers but getting incorrect results. The passage contains no information about filtering even numbers, accumulating sums, or debugging logic errors in summation code."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "judge-says-too-slow",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-greedy#0.0",
+            "algo-sets#0.0",
+            "algo-greedy#1.0",
+            "algo-binary-search#3.1",
+            "algo-dynamic-programming#1.0"
+          ],
+          "answer": "Swapping a list for a set is the single most effective fix for a solution that is correct but too slow. A set is a hash table without values that answers \"have I seen this\" in constant time. You should look at this first when your solution gives the right answers but takes too long.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.9166666666666666,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: This passage is about proving the correctness of greedy algorithms (exchange arguments and staying ahead proofs), not about optimizing algorithm performance or debugging time limit exceeded errors. The question asks what to examine when a correct solution is too slow, which is a time complexity optimization problem, not a correctness proof problem.",
+              "#5: This passage discusses how to design and debug dynamic programming solutions for correctness, focusing on states, transitions, and base cases. However, the question asks about time complexity optimization when the solution is already correct but too slow. The passage does not address performance optimization, algorithm efficiency, time complexity analysis, or what to examine first when facing a TLE (Time Limit Exceeded) verdict. It would not help someone debug a timeout issue."
+            ]
+          },
+          "context_recall": {
+            "score": 0.2857142857142857,
+            "sentences": 7,
+            "unsupported": [
+              "Count the nested loops and compare the step count against the constraints \u2014 Python does roughly 10^7 simple operations per second, so at n = 10^5 anything quadratic is hopeless.",
+              "Then look for the operations that look constant and are not: x in some_list, list.pop(0), string += inside a loop, a[1:].",
+              "prefix sums for repeated range sums",
+              "a hash map for pair search",
+              "a hash map for pair search"
+            ]
+          }
+        },
+        {
+          "case": "grid-rows-change-together",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-graph-traversal#4.2",
+            "algo-sets#5.0",
+            "algo-dynamic-programming#5.0",
+            "algo-graph-traversal#4.0",
+            "algo-python-pitfalls#1.0"
+          ],
+          "answer": "This happens because the outer multiplication operator copies references rather than creating independent lists, causing multiple rows to reference the exact same underlying list. When you modify one cell, the change appears in the other row because they are the same row. To fix this, you must build independent rows using a comprehension such as `[[0] * m for _ in range(n)]` instead of `[[0] * m] * n`.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.3666666666666667,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses graph traversal algorithms (BFS/DFS) for finding connected components and flood fill operations. It does not address the question about table cells changing unexpectedly when setting one cell's value, which appears to be a data binding, cell linking, or spreadsheet-related issue. The passage is about algorithm complexity, not about table cell behavior or dependencies.",
+              "#2: This passage discusses hashability and set membership in Python, covering topics like tuples, frozensets, and hash equality. It does not address the issue of cell modifications in tables affecting other rows, which appears to be about table data structures, references, or aliasing problems. The passage is about Python sets, not table operations or cell references.",
+              "#4: This passage discusses graph traversal algorithms (BFS and DFS) and counting islands in a grid, which is unrelated to the user's issue of a table cell change affecting another row. The passage does not address table cell behavior, data binding, or any potential issues with dependent cell updates."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "negative-floor-division",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-python-pitfalls#4.0",
+            "algo-python-pitfalls#10.0",
+            "algo-number-theory#4.1",
+            "algo-parity-filters#1.0",
+            "algo-number-theory#4.0"
+          ],
+          "answer": "In Python, -7 // 2 is equal to -4 because floor division floors towards minus infinity rather than towards zero. In contrast, truncation like int(-7 / 2) produces -3, but the floor division operator specifically floors downwards toward negative infinity.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.75,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: While this passage mentions the exact expression '-7 // 2 == -4' as a Python pitfall, it only lists it as an item without explaining why this behavior occurs. The passage does not provide the explanation needed to answer the question of why floor division in Python rounds toward negative infinity rather than toward zero.",
+              "#3: This passage discusses modular arithmetic and the behavior of Python's % (modulo) operator, but the question asks about the // (floor division) operator and why -7 // 2 equals -4. While the passage mentions Python's % operator behavior with signs, it does not explain floor division semantics or why floor division rounds toward negative infinity rather than toward zero. The passage is tangentially related but does not provide the explanation needed to answer why -7 // 2 produces -4 instead of -3.",
+              "#5: This passage discusses modular arithmetic and modular inverse in the context of competitive programming (modulo 10^9 + 7), which is unrelated to the question about Python's floor division operator (//) and why -7 // 2 equals -4. The question asks about floor division behavior with negative numbers, not modular arithmetic operations."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "two-pointers-or-sliding-window",
+          "category": "near_duplicate",
+          "chunk_ids": [
+            "algo-two-pointers#5.1",
+            "algo-sliding-window#0.0",
+            "algo-sliding-window#4.0",
+            "algo-two-pointers#0.0",
+            "algo-sliding-window#3.0"
+          ],
+          "answer": "You should use a sliding window rather than two pointers when the problem asks for a subarray or substring and the order of the elements must be preserved. For 'find a subarray' problems, the elements must stay where they are because a sliding window answers questions about contiguous subarrays or substrings without sorting. The key difference is that a sliding window never sorts and preserves the original order of the elements, whereas two pointers on sorted data rely on an ordering property where elements may be sorted.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": true,
+            "missed": [
+              "Explain when to use two pointers rather than a sliding window"
+            ]
+          },
+          "context_precision": {
+            "score": 0.9166666666666666,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: This passage describes when to use sliding window technique (the conditions that make a problem suitable for it), but does not address when you should use two pointers instead. It does not compare two pointers to sliding window or explain scenarios where two pointers would be preferable. To answer the question about when to use two pointers rather than sliding window, you would need information contrasting the two approaches.",
+              "#5: This passage explains how to implement a sliding window algorithm with a counter aggregate, but it does not address the question of when to use two pointers versus sliding window. The passage is entirely focused on demonstrating a sliding window implementation for a specific problem, without discussing the distinctions between these two techniques or criteria for choosing one over the other."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "set-or-counter-for-duplicates",
+          "category": "near_duplicate",
+          "chunk_ids": [
+            "algo-hash-counting#3.0",
+            "algo-sets#7.0",
+            "algo-sets#2.0",
+            "algo-two-pointers#5.1",
+            "algo-sets#6.0"
+          ],
+          "answer": "You should use a set if you only need membership or want to know which values exist, but it will lose duplicates because it answers \"which values\" rather than \"how many of each\". If the count matters, you should use a Counter instead of a set.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.95,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses pitfalls of the two-pointer technique on sorted arrays, specifically about skipping duplicates in that context. It does not address whether to use a set or a Counter data structure for dealing with duplicates, which is what the question asks about. The passage is about algorithm technique rather than data structure choice."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "dijkstra-negative-weights",
+          "category": "negation",
+          "chunk_ids": [
+            "algo-shortest-paths#2.0",
+            "algo-shortest-paths#2.1",
+            "algo-shortest-paths#0.0",
+            "algo-shortest-paths#5.0",
+            "algo-graph-traversal#6.0"
+          ],
+          "answer": "You cannot run Dijkstra if any edge is negative because a negative edge breaks the algorithm's assumption that every remaining edge only adds weight. If you use Dijkstra with negative weights, it will return a confidently wrong answer silently with no error. Instead, if any weights are negative, you should use the Bellman-Ford algorithm.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#5: This passage discusses pitfalls in graph traversal with BFS and DFS, but does not address whether Dijkstra's algorithm can handle negative edge weights. While it mentions that Dijkstra is used for weighted graphs, it does not answer the specific question about running Dijkstra with negative weights. The passage would not help someone understand the constraints or limitations of Dijkstra regarding negative weights."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "greedy-coin-change-valid",
+          "category": "negation",
+          "chunk_ids": [
+            "algo-greedy#3.0",
+            "algo-greedy#1.0",
+            "algo-dynamic-programming#4.1",
+            "algo-recursion#4.0",
+            "algo-dynamic-programming#4.0"
+          ],
+          "answer": "Taking the largest coin first is optimal only for canonical systems and is wrong in general. For example, with coins of {1, 3, 4} and an amount of 6, the greedy approach takes 4 + 1 + 1 using three coins, whereas the optimal solution is 3 + 3 using only two coins. The reliable answer for making change is the dynamic programming recurrence.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses backtracking and pruning techniques in recursive algorithms, but does not address the coin change problem or whether a greedy approach (taking the biggest coin first) is optimal. The passage provides general algorithmic optimization strategies but contains no information relevant to answering whether the greedy coin selection strategy works for making change.",
+              "#5: While this passage mentions 'coin change' at the end, it only provides a dynamic programming algorithm for finding the longest increasing subsequence (LIS) and does not address the greedy approach of taking the biggest coin first or whether it's optimal for making change. The passage does not discuss coin change optimization strategies, counterexamples, or when greedy algorithms fail for the coin change problem."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "binary-search-hangs",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-binary-search#4.0",
+            "algo-binary-search#4.1",
+            "algo-binary-search#1.2",
+            "algo-binary-search#0.0",
+            "algo-binary-search#3.1"
+          ],
+          "answer": "Your binary search may never finish because of how you update the boundaries and loop conditions. Specifically, using `high = mid` in the closed form causes `mid` to equal `low` when bounds are adjacent, meaning the range never shrinks and the loop hangs. Additionally, mixing consistent forms like `low <= high` with `high = mid` produces an infinite loop or skips the answer.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 0.75,
+            "sentences": 4,
+            "unsupported": [
+              "With the closed interval [low, high] the condition is low <= high and the updates are mid + 1 / mid - 1;"
+            ]
+          }
+        },
+        {
+          "case": "recursion-error-deep-input",
+          "category": "multi_hop",
+          "chunk_ids": [
+            "algo-recursion#0.0",
+            "algo-dynamic-programming#2.1",
+            "algo-stacks-queues#5.0",
+            "algo-graph-traversal#3.0",
+            "algo-recursion#2.0"
+          ],
+          "answer": "Python's default recursion limit is 1000 frames, so deep inputs can exceed this limit and raise a RecursionError even if the recursion is correct. To fix this, you can either raise the limit using sys.setrecursionlimit, or rewrite the recursive traversal with an explicit stack. An explicit stack is safer than a bigger limit because raising the limit can cause the C stack to overflow and kill the process. Python does not have tail-call optimisation, meaning tail-recursive helpers still consume a frame per call.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 7,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "sort-desc-score-asc-name",
+          "category": "multi_hop",
+          "chunk_ids": [
+            "algo-sorting-key#2.0",
+            "algo-sorting-key#1.0",
+            "algo-binary-search#1.0",
+            "algo-binary-search#1.1",
+            "algo-binary-search#4.0"
+          ],
+          "answer": "To sort records by highest score first and alphabetically by name on ties, you can use a tuple key and negate the numeric score component. Specifically, use students.sort(key=lambda s: (-s.score, s.name)). This approach works because tuples compare lexicographically and negating the score allows descending numeric order while keeping the name ascending.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses binary search algorithms and interval boundaries in Python. It is not relevant to sorting records by score (descending) and name (alphabetically ascending when scores are equal). The question requires knowledge of sorting techniques, comparators, or multi-key sorting, which this passage does not address.",
+              "#4: This passage discusses binary search algorithms and boundary conditions. It is not relevant to sorting records by multiple criteria (score descending, then name alphabetically). The question asks about sorting/ordering data, not searching within sorted data.",
+              "#5: This passage discusses binary search pitfalls and implementation details. It does not address sorting records by score (descending) and then by name (ascending) when scores are equal. The passage is about binary search algorithms, not sorting or multi-key sorting strategies."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "output-has-brackets",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-stdin-parsing#4.0",
+            "algo-strings#1.0",
+            "algo-stdin-parsing#6.0",
+            "algo-stacks-queues#6.0",
+            "algo-shortest-paths#5.0"
+          ],
+          "answer": "The checker rejects your output because you are using print(values) or print(values), which emits a list literal containing brackets and commas instead of elements separated by spaces. To fix this, you should use print(*values) or print(\" \".join(map(str, values))), as no judge accepts the literal format with brackets and commas.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 4,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "string-building-slow",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-stdin-parsing#4.0",
+            "algo-strings#1.0",
+            "algo-two-pointers#2.0",
+            "algo-strings#2.0",
+            "algo-sets#7.0"
+          ],
+          "answer": "Building up text piece by piece in a loop using concatenation like `out += piece` is very slow and can take seconds instead of milliseconds for 10^5 pieces. Instead, you should append each piece to a list and then use `\"\".join(parts)` to combine them efficiently. Similarly, making many prints in a loop is slow, so you should build the lines and emit them in one call using `sys.stdout.write(\"\\n\".join(map(str, answers)) + \"\\n\")`.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8875,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses the two-pointer technique for array manipulation and in-place deduplication. It is not relevant to the question about slow performance when building up answer text piece by piece in a loop, which is a string concatenation performance issue. The passage does not address string building, concatenation efficiency, or related performance optimization strategies."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "prefix-sum-leading-zero",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-prefix-sums#1.0",
+            "algo-prefix-sums#5.0",
+            "algo-prefix-sums#4.0",
+            "algo-prefix-sums#2.0",
+            "algo-prefix-sums#0.0"
+          ],
+          "answer": "The extra leading zero is what makes the range sum formula work when l equals zero. Without this extra zero at the front, using an array of length n instead of n plus one would force a special case for the first element, which often introduces bugs.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses applications and variants of prefix sums (such as counting occurrences and finding balanced subarrays), but it does not address the specific question of why an extra zero needs to be added at the front of a prefix sum array. The passage does not explain the technical reason or purpose for this initialization step.",
+              "#5: The passage explains what a prefix sum array is and its benefits for range queries, but it does not explain why an extra zero needs to be placed at the front of the prefix sum array. To answer the question, the passage would need to discuss the indexing scheme or mathematical reasoning behind prepending a zero element."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "make-it-faster",
+          "category": "ambiguous",
+          "chunk_ids": [
+            "algo-two-pointers#2.0",
+            "algo-strings#5.0",
+            "algo-sets#1.0",
+            "algo-recursion#5.0",
+            "algo-greedy#5.0"
+          ],
+          "answer": "To make your code faster, use a fixed array instead of a dictionary for a known alphabet because a fixed array is faster. For membership tests, use sets or dictionaries for O(1) hash lookups instead of lists or strings which require O(n) comparisons. If you are using plain recursion that reaches the same subproblem along many paths, add a single `@cache` decorator to turn exponential calls into linear time. Additionally, compact arrays in place using two pointers rather than allocating a second list.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#5: This passage discusses pitfalls and best practices for greedy algorithms and dynamic programming, but does not provide actionable advice for making code faster in general. While it mentions that greedy algorithms are sometimes assumed to be faster than DP, it doesn't explain actual performance optimization techniques, profiling, algorithmic improvements, or implementation optimizations that would help someone speed up their code."
+            ]
+          },
+          "context_recall": {
+            "score": 0.5,
+            "sentences": 2,
+            "unsupported": [
+              "The standard rewrites are a hash map for pair search, sorting plus two pointers, prefix sums for repeated range queries, and a heap for repeated minima."
+            ]
+          }
+        },
+        {
+          "case": "segment-tree-lazy",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-prefix-sums#4.0",
+            "algo-prefix-sums#5.0",
+            "algo-shortest-paths#1.1",
+            "algo-complexity#2.0",
+            "algo-dynamic-programming#5.0"
+          ],
+          "answer": "The study library does not cover it.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": [
+              "Provide implementation guidance or explanation for segment trees with lazy propagation",
+              "Address range updates in the context of segment trees"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses the difference array technique for efficient range updates, which is a different algorithmic approach from segment trees with lazy propagation. While both solve range update problems, the passage does not explain how to implement a segment tree data structure or its lazy propagation mechanism. It would not help someone learn to build an actual segment tree.",
+              "#2: This passage discusses prefix sums and common pitfalls when using them for range queries, as well as mentions Fenwick trees as an alternative. However, it does not address segment trees with lazy propagation, which is what the question asks about. While both are data structures for range operations, this passage provides no information about implementing segment trees or lazy propagation specifically.",
+              "#3: This passage discusses Dijkstra's algorithm for finding shortest paths in weighted graphs using a priority queue. It is entirely unrelated to segment trees, lazy propagation, or range updates. The question asks specifically about implementing a data structure for efficient range updates, while this passage covers graph algorithms. There is no connection between these topics.",
+              "#4: This passage explains how to analyze time complexity of algorithms through code patterns and recursion trees, but it does not provide any information about implementing segment trees, lazy propagation, or range updates. While segment trees do involve recursion and have logarithmic complexity, this passage offers no guidance on the actual implementation details needed to answer the question.",
+              "#5: This passage discusses dynamic programming optimization techniques (table rolling to reduce memory usage), which is unrelated to segment trees with lazy propagation. Segment trees are data structures for efficient range queries and updates, while this passage covers DP table space optimization. The two topics are distinct and this passage would not help someone implement a segment tree."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "red-black-tree",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-binary-search#4.0",
+            "algo-recursion#3.1",
+            "algo-binary-search#2.1",
+            "algo-recursion#6.0",
+            "algo-binary-search#2.0"
+          ],
+          "answer": "The study library does not cover how a red-black tree rebalances itself after an insertion.",
+          "faithfulness": {
+            "score": 0.0,
+            "claims": 1,
+            "unsupported": [
+              "The context covers how a red-black tree rebalances itself after an insertion"
+            ]
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Explain how a red-black tree rebalances itself after an insertion"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses binary search algorithms and their common pitfalls. It is completely unrelated to red-black tree rebalancing after insertion. The question asks specifically about red-black tree self-balancing mechanisms, while this passage covers entirely different computer science concepts (binary search implementation details).",
+              "#2: This passage discusses recursion and backtracking algorithms (permutations, subsets, combinations, N-queens), which is completely unrelated to red-black tree rebalancing. It contains no information about red-black trees, insertion operations, or tree balancing mechanisms.",
+              "#3: This passage discusses the bisect module in Python for binary search and insertion in sorted lists. It does not contain any information about red-black trees, their rebalancing mechanisms, or insertion procedures. The passage is about a different data structure entirely and does not help answer the question about red-black tree rebalancing.",
+              "#4: This passage discusses common pitfalls in recursion and backtracking programming patterns. It has no connection to red-black tree rebalancing, which is a data structure concept involving tree rotations, color properties, and specific insertion/deletion rules. The passage provides no information about how red-black trees maintain balance after insertions.",
+              "#5: This passage discusses binary search operations (lower_bound and upper_bound) on sorted arrays using Python's bisect module. It is unrelated to red-black tree rebalancing after insertion. Red-black trees are self-balancing binary search trees that use color properties and rotations to maintain balance, which is a completely different topic from binary search on arrays."
+            ]
+          },
+          "context_recall": {
+            "score": 0.0,
+            "sentences": 2,
+            "unsupported": [
+              "The library does not cover balanced binary search trees; there is no material on red-black trees, rotations or rebalancing.",
+              "A correct answer should say so rather than improvise."
+            ]
+          }
+        },
+        {
+          "case": "which-web-framework",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-python-pitfalls#8.0",
+            "algo-recursion#2.0",
+            "algo-sorting-key#0.0",
+            "algo-dynamic-programming#2.0",
+            "algo-strings#3.0"
+          ],
+          "answer": "The study library does not cover which Python web framework to pick for a REST API.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Recommend a Python web framework for building a REST API"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses Python late binding closure issues and has no relevance to choosing a web framework for REST APIs. It's a technical Python gotcha unrelated to web frameworks like Flask, Django, FastAPI, or other REST API frameworks.",
+              "#2: This passage discusses Python's recursion limits and stack management, which is not relevant to choosing a web framework for building REST APIs. The question asks for framework recommendations, while the passage covers a technical detail about recursion depth that has no connection to web framework selection.",
+              "#3: This passage discusses Python's sorting functions and key functions, which is unrelated to choosing a web framework for building REST APIs. It provides no information about web frameworks, REST API development, or framework comparison.",
+              "#4: This passage discusses dynamic programming and memoization techniques using Python, specifically showing an example of solving the knapsack problem. It does not contain any information about Python web frameworks or considerations for building REST APIs, making it irrelevant to the question asked.",
+              "#5: This passage discusses string manipulation techniques and palindrome detection in Python. It is completely unrelated to choosing a Python web framework for REST API development. It provides no information about web frameworks, REST API considerations, or framework comparison."
+            ]
+          },
+          "context_recall": {
+            "score": 0.5,
+            "sentences": 2,
+            "unsupported": [
+              "A correct answer should decline rather than invent a recommendation from unrelated passages."
+            ]
+          }
+        }
+      ]
+    },
+    "no_rerank": {
+      "cases": [
+        "bisect-left-vs-right",
+        "list-pop-zero-queue",
+        "heapq-max-heap",
+        "counter-most-common",
+        "bfs-visits-node-twice",
+        "dp-knapsack-loop-direction",
+        "gcd-to-lcm",
+        "lis-efficient",
+        "even-sum-adds-wrong-thing",
+        "judge-says-too-slow",
+        "grid-rows-change-together",
+        "negative-floor-division",
+        "two-pointers-or-sliding-window",
+        "set-or-counter-for-duplicates",
+        "dijkstra-negative-weights",
+        "greedy-coin-change-valid",
+        "binary-search-hangs",
+        "recursion-error-deep-input",
+        "sort-desc-score-asc-name",
+        "output-has-brackets",
+        "string-building-slow",
+        "make-it-faster",
+        "segment-tree-lazy",
+        "red-black-tree",
+        "which-web-framework"
+      ],
+      "summary": {
+        "faithfulness": 0.92,
+        "answer_relevance": 0.75,
+        "context_precision": 0.7679444444444443,
+        "context_recall": 0.78
+      },
+      "summary_answerable": {
+        "faithfulness": 0.9090909090909091,
+        "answer_relevance": 0.8522727272727273,
+        "context_precision": 0.8726641414141413,
+        "context_recall": 0.8484848484848485
+      },
+      "answerable": 22,
+      "by_category": {
+        "acronym": {
+          "n": 4,
+          "faithfulness": 0.75,
+          "answer_relevance": 0.75,
+          "context_precision": 0.8972222222222221,
+          "context_recall": 1.0
+        },
+        "ambiguous": {
+          "n": 1,
+          "faithfulness": 1.0,
+          "answer_relevance": 0.25,
+          "context_precision": 0.95,
+          "context_recall": 0.0
+        },
+        "exact_term": {
+          "n": 4,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.8625,
+          "context_recall": 1.0
+        },
+        "long_tail_detail": {
+          "n": 3,
+          "faithfulness": 1.0,
+          "answer_relevance": 0.8333333333333334,
+          "context_precision": 1.0,
+          "context_recall": 1.0
+        },
+        "multi_hop": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.9166666666666666,
+          "context_recall": 0.6666666666666666
+        },
+        "near_duplicate": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.8770833333333333,
+          "context_recall": 1.0
+        },
+        "negation": {
+          "n": 2,
+          "faithfulness": 1.0,
+          "answer_relevance": 1.0,
+          "context_precision": 0.9333333333333333,
+          "context_recall": 1.0
+        },
+        "out_of_corpus": {
+          "n": 3,
+          "faithfulness": 1.0,
+          "answer_relevance": 0.0,
+          "context_precision": 0.0,
+          "context_recall": 0.27777777777777773
+        },
+        "paraphrase": {
+          "n": 4,
+          "faithfulness": 0.75,
+          "answer_relevance": 0.75,
+          "context_precision": 0.6888888888888889,
+          "context_recall": 0.5833333333333334
+        }
+      },
+      "per_case": [
+        {
+          "case": "bisect-left-vs-right",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-binary-search#2.1",
+            "algo-two-pointers#1.0",
+            "algo-sliding-window#0.0",
+            "algo-binary-search#2.0",
+            "algo-two-pointers#1.1"
+          ],
+          "answer": "bisect_left and bisect_right differ only in how they treat equal elements. Specifically, bisect_left finds the first index with a[i] >= x, while bisect_right finds the first index with a[i] > x.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.75,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses the two-pointer technique for finding pairs in a sorted array. It does not mention or explain bisect_left or bisect_right, which are binary search functions in Python's bisect module. The passage is about a different algorithmic pattern and does not help answer the question about the differences between these two bisect functions.",
+              "#3: This passage discusses sliding window techniques for contiguous subarrays/substrings. It does not address bisect_left or bisect_right, which are binary search functions that locate insertion points in sorted sequences. The passage is about a completely different algorithmic technique and contains no relevant information for answering the question about the differences between these two bisect functions.",
+              "#5: This passage discusses the two-pointer technique on sorted arrays for solving pair-sum problems, not the bisect_left and bisect_right functions from Python's bisect module. It contains no information about the differences between bisect_left and bisect_right, making it irrelevant to answering the question."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "list-pop-zero-queue",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-stacks-queues#2.0",
+            "algo-stacks-queues#6.0",
+            "algo-graph-traversal#2.1",
+            "algo-heaps#3.0",
+            "algo-heaps#4.0"
+          ],
+          "answer": "No, it is not fine to use list.pop(0) to take items off a queue because it is O(n) as every remaining element must shift down one slot. Using list.pop(0) can turn a linear algorithm into a quadratic one and cause a correct BFS to time out. Instead, you should use `collections.deque` and its `popleft()` method, which operates in O(1) time.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 7,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#4: This passage discusses heaps and priority queues in the context of finding top-k elements, but does not address the performance implications or appropriateness of using list.pop(0) for queue operations. It does not compare list.pop(0) with other queue implementations or discuss its efficiency characteristics, which is what the question is asking about.",
+              "#5: This passage discusses using heaps and priority queues with tuples for ordered priorities, which is a different data structure and approach than using list.pop(0) for queue operations. It does not address the performance or appropriateness of using list.pop(0) as a queue implementation method."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "heapq-max-heap",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-heaps#2.0",
+            "algo-heaps#3.0",
+            "algo-heaps#4.0",
+            "algo-heaps#1.0",
+            "algo-heaps#6.0"
+          ],
+          "answer": "The heapq module only implements a min-heap. To make it behave like a max-heap, you can store negated keys when pushing to the heap and negate the value again on the way out.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.7000000000000001,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses using a min-heap to find top-k largest elements, which is a specific application technique, but does not directly answer the question of how to make heapq behave like a max-heap. The question asks for methods to convert the default min-heap behavior to max-heap behavior (such as negating values or using tuples with negated priorities), which this passage does not explain.",
+              "#3: This passage discusses using tuples with priorities in heapq to order by something other than the element itself, which is a technique for customizing heap behavior. However, it does not address the specific question of how to make heapq behave like a max-heap. To convert a min-heap to a max-heap, one needs to negate values or invert priorities, which is not covered in this passage. The passage only explains tuple-based ordering for tie-breaking purposes, not heap type conversion."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 1,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "counter-most-common",
+          "category": "exact_term",
+          "chunk_ids": [
+            "algo-hash-counting#1.0",
+            "algo-sets#6.0",
+            "algo-hash-counting#6.0",
+            "algo-hash-counting#1.1",
+            "algo-sliding-window#3.0"
+          ],
+          "answer": "Collections.Counter adds operations that make it worth importing, such as most_common(k) which returns the top k pairs already sorted. It also supports '+' and '-' to merge tables and '&' to intersect them. Additionally, Counter subtraction drops non-positive counts.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "bfs-visits-node-twice",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-graph-traversal#2.1",
+            "algo-stacks-queues#2.0",
+            "algo-graph-traversal#2.0",
+            "algo-graph-traversal#2.2",
+            "algo-stacks-queues#5.0"
+          ],
+          "answer": "Your BFS puts the same node in the queue several times because vertices are marked as seen when they are dequeued instead of when they are enqueued. Marking on pop allows the same vertex to enter the queue once for every incoming edge. To fix this, you must mark a vertex as seen when it is pushed into the queue.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.7555555555555555,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses performance optimization of BFS using deque vs list, but does not address why the same node would be added to the queue multiple times. The question is about duplicate nodes in the queue, which typically relates to visited set tracking or graph traversal logic, not about the data structure choice for queue implementation.",
+              "#4: This passage discusses a technical detail about capturing queue length in BFS implementation to handle queue modifications during iteration. While it relates to BFS implementation, it does not address the actual question about why the same node gets added to the queue multiple times, which is typically caused by visiting nodes without tracking visited state rather than queue length capture issues."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "dp-knapsack-loop-direction",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-dynamic-programming#3.0",
+            "algo-dynamic-programming#6.0",
+            "algo-greedy#5.0",
+            "algo-dynamic-programming#2.0",
+            "algo-complexity#4.0"
+          ],
+          "answer": "Descending capacity in the inner loop means that each item is used at most once, which defines the 0/1 knapsack problem. Conversely, ascending capacity in the inner loop would allow the same item to be reused.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 3,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses greedy algorithms and their pitfalls, including a brief mention of the 0/1 knapsack problem in the context of why greedy approaches fail. However, it does not address the specific question about why the inner loop over capacity in dynamic programming for knapsack goes downwards (i.e., the backwards iteration technique used to avoid overwriting values needed for the current iteration). The passage does not explain the mechanics or reasoning behind the DP implementation details.",
+              "#4: This passage shows a top-down memoization approach to the knapsack problem using recursion, but does not address the question about why the inner loop over capacity goes downwards in the bottom-up DP (tabulation) approach. The question is specifically about loop direction in iterative DP, while this passage demonstrates a different algorithmic paradigm (recursion with caching) that doesn't involve loops over capacity at all.",
+              "#5: This passage discusses amortised time complexity analysis for list operations and sliding window algorithms. It does not address the knapsack dynamic programming algorithm or explain why the inner loop over capacity iterates backwards/downwards. While both topics relate to algorithm analysis, this passage provides no information relevant to answering the specific question about knapsack DP implementation choices."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "gcd-to-lcm",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-number-theory#1.0",
+            "algo-dynamic-programming#4.0",
+            "algo-stacks-queues#6.0",
+            "algo-dynamic-programming#1.0",
+            "algo-shortest-paths#1.0"
+          ],
+          "answer": "The identity behind the least common multiple (LCM) is a * b // gcd(a, b). When working with large numbers in a language with fixed-width integers, you should divide before multiplying by writing a // gcd(a, b) * b.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 2,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 1,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses dynamic programming algorithms for computing the longest increasing subsequence (LIS) and mentions coin change problems. It does not contain any information about the mathematical relationship between GCD (Greatest Common Divisor) and LCM (Least Common Multiple), which is what the question asks about. The passage is about completely different algorithmic topics.",
+              "#3: This passage is about programming pitfalls related to stacks, queues, and monotonic structures in data structures. It contains no information about the mathematical relationship between LCM (Least Common Multiple) and GCD (Greatest Common Divisor), which is what the question asks about. The passage is entirely unrelated to the topic of finding LCM from GCD.",
+              "#4: This passage discusses dynamic programming concepts and memoization, which is unrelated to the mathematical relationship between GCD (Greatest Common Divisor) and LCM (Least Common Multiple). The question asks about converting between these mathematical values, while the passage explains algorithmic problem-solving techniques. No information in this passage helps answer how to derive LCM from GCD.",
+              "#5: This passage contains code for Dijkstra's shortest path algorithm in weighted graphs. It is completely unrelated to the mathematical relationship between LCM (Least Common Multiple) and GCD (Greatest Common Divisor). The question asks about computing LCM from GCD, which requires knowledge of the fundamental theorem: LCM(a,b) \u00d7 GCD(a,b) = a \u00d7 b, or equivalently LCM(a,b) = (a \u00d7 b) / GCD(a,b). This passage would not help answer that question."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "lis-efficient",
+          "category": "acronym",
+          "chunk_ids": [
+            "algo-dynamic-programming#4.0",
+            "algo-two-pointers#3.0",
+            "algo-complexity#1.0",
+            "algo-stacks-queues#3.1",
+            "algo-stacks-queues#6.0"
+          ],
+          "answer": "The study library does not cover the fastest way to compute the LIS of an array.",
+          "faithfulness": {
+            "score": 0.0,
+            "claims": 1,
+            "unsupported": [
+              "The study library does not cover the fastest way to compute the LIS of an array."
+            ]
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Explain the fastest way to compute the LIS (Longest Increasing Subsequence) of an array"
+            ]
+          },
+          "context_precision": {
+            "score": 0.8333333333333333,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses the three-sum problem and two/three-pointer techniques on sorted arrays, which is unrelated to computing the Longest Increasing Subsequence (LIS). LIS requires dynamic programming or binary search approaches, not pointer-based scanning for target sums.",
+              "#4: This passage discusses monotonic stacks and their applications (previous/next smaller elements, largest rectangle in histogram, subarray minimums), but does not address the Longest Increasing Subsequence (LIS) problem or any algorithm for computing it. While monotonic structures can be used in some dynamic programming approaches, this passage provides no information about LIS algorithms or their time complexity.",
+              "#5: This passage discusses common pitfalls when working with stacks, queues, and monotonic structures in general programming. While monotonic stacks can be used as part of an O(n log n) algorithm for computing Longest Increasing Subsequence (LIS), this passage does not discuss LIS algorithms, the fastest approaches to compute LIS, or how to actually apply these data structures to solve the LIS problem. It only covers implementation mistakes to avoid."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "even-sum-adds-wrong-thing",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-parity-filters#2.0",
+            "algo-parity-filters#3.0",
+            "algo-stdin-parsing#0.0",
+            "algo-loop-bounds#3.0",
+            "algo-loop-bounds#5.0"
+          ],
+          "answer": "The single most common mistake when summing even numbers is accumulating the index rather than the value. By writing total += i instead of total += values[i], your program incorrectly adds the position of the number. Using a loop like for x in values or enumerate removes this possibility entirely.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses how to read stdin in competitive programming and input/output handling, but does not address the logic issue of summing only even numbers. It does not provide guidance on debugging why the sum is too small, algorithm issues with even number filtering, or related programming logic problems.",
+              "#4: This passage discusses loop bounds, off-by-one errors, and the use of enumerate() for iteration. While the user's problem involves a program that's summing only even numbers with an incorrect (too small) total, this passage doesn't address filtering logic, conditional statements, or sum calculations. The passage is about iteration techniques in general, not about diagnosing why an even-number sum would be incorrect. It would not help someone debug why their even-number filtering is producing a wrong result.",
+              "#5: This passage discusses loop bounds, off-by-one errors, and edge cases in general programming. While the question asks about a program that adds up only even numbers and produces an incorrect total, this passage does not address the specific logic needed to filter even numbers (checking divisibility by 2) or common mistakes when implementing such filtering. The passage focuses on boundary conditions and loop iteration rather than the conditional logic required to sum only even numbers."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "judge-says-too-slow",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-dynamic-programming#1.0",
+            "algo-complexity#1.0",
+            "algo-greedy#1.0",
+            "algo-stdin-parsing#5.0",
+            "algo-sliding-window#5.0"
+          ],
+          "answer": "When a judge says your solution takes too long, you should first read the constraints, compute the step count, and compare it against the affordable complexity budget. No amount of micro-optimisation rescues the wrong complexity class. For example, at n = 10^5, an O(n^2) solution requires 10^10 steps, which takes hours.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.45,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses how to design and debug dynamic programming solutions for correctness, focusing on states, transitions, and base cases. However, the question asks about time complexity optimization when the solution is already correct but too slow. The passage does not address performance optimization, algorithm efficiency, time complexity analysis, or what to examine first when facing a TLE (Time Limit Exceeded) verdict. It would not help someone debug a timeout issue.",
+              "#3: This passage is about proving the correctness of greedy algorithms (exchange arguments and staying ahead proofs), not about optimizing algorithm performance or debugging time limit exceeded errors. The question asks what to examine when a correct solution is too slow, which is a time complexity optimization problem, not a correctness proof problem.",
+              "#4: This passage discusses how to structure code for reading multiple test cases in competitive programming, but it doesn't address the question about optimizing code that times out. The question asks what to look at first when a solution is correct but too slow, which requires information about time complexity analysis, algorithmic optimization, or common performance bottlenecks\u2014not input parsing patterns."
+            ]
+          },
+          "context_recall": {
+            "score": 0.3333333333333333,
+            "sentences": 3,
+            "unsupported": [
+              "Then look for the operations that look constant and are not: x in some_list, list.pop(0), string += inside a loop, a[1:].",
+              "The standard rewrites are a hash map for pair search, prefix sums for repeated range sums, and a set for repeated membership."
+            ]
+          }
+        },
+        {
+          "case": "grid-rows-change-together",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-dynamic-programming#4.1",
+            "algo-dynamic-programming#5.0",
+            "algo-graph-traversal#4.2",
+            "algo-dynamic-programming#3.0",
+            "algo-sets#5.0"
+          ],
+          "answer": "The study library does not cover it.",
+          "faithfulness": {
+            "score": 0.0,
+            "claims": 1,
+            "unsupported": [
+              "The study library does not cover the issue where setting one cell of a table causes a cell in a different row to change"
+            ]
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 2,
+            "evasive": true,
+            "missed": [
+              "Explain why changing one cell affects a different row's cell",
+              "Provide a solution or troubleshooting steps"
+            ]
+          },
+          "context_precision": {
+            "score": 0.5,
+            "useful": 1,
+            "of": 5,
+            "rejected": [
+              "#1: This passage explains dynamic programming algorithms (coin change, edit distance, longest common subsequence) and how to construct DP tables. It does not address the user's problem of a table cell changing unexpectedly when setting a different cell in another row, which appears to be a programming issue related to shared references, aliasing, or mutable object handling rather than an algorithmic concern.",
+              "#3: This passage discusses graph traversal algorithms (BFS/DFS) for finding connected components and flood fill operations. It does not address the question about table cells changing unexpectedly when setting one cell's value, which appears to be a data binding, cell linking, or spreadsheet-related issue. The passage is about algorithm complexity, not about table cell behavior or dependencies.",
+              "#4: This passage discusses dynamic programming table algorithms for knapsack problems. It does not address the user's issue about setting one cell in a table causing another cell in a different row to change unexpectedly, which appears to be a programming or data structure problem (likely related to shared references, shallow copies, or aliasing issues). The passage is about algorithm design, not about debugging unexpected cell mutations in tables.",
+              "#5: This passage discusses hashability and set membership in Python, covering topics like tuples, frozensets, and hash equality. It does not address the issue of cell modifications in tables affecting other rows, which appears to be about table data structures, references, or aliasing problems. The passage is about Python sets, not table operations or cell references."
+            ]
+          },
+          "context_recall": {
+            "score": 0.0,
+            "sentences": 2,
+            "unsupported": [
+              "The table was built with [[0] * m] * n, which creates n references to one single row, so writing through any of them is visible through all of them.",
+              "Build it with a comprehension instead: [[0] * m for _ in range(n)]."
+            ]
+          }
+        },
+        {
+          "case": "negative-floor-division",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-python-pitfalls#4.0",
+            "algo-parity-filters#1.0",
+            "algo-python-pitfalls#10.0",
+            "algo-number-theory#4.0",
+            "algo-python-pitfalls#5.0"
+          ],
+          "answer": "In Python, -7 // 2 is equal to -4 because floor division floors towards minus infinity rather than towards zero. Truncation, such as int(-7 / 2), produces -3, which is a different answer than the floor division operation. Therefore, the result floors downward to -4.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 2,
+            "of": 5,
+            "rejected": [
+              "#3: While this passage mentions the exact expression '-7 // 2 == -4' as a Python pitfall, it only lists it as an item without explaining why this behavior occurs. The passage does not provide the explanation needed to answer the question of why floor division in Python rounds toward negative infinity rather than toward zero.",
+              "#4: This passage discusses modular arithmetic and modular inverse in the context of competitive programming (modulo 10^9 + 7), which is unrelated to the question about Python's floor division operator (//) and why -7 // 2 equals -4. The question asks about floor division behavior with negative numbers, not modular arithmetic operations.",
+              "#5: This passage discusses float comparison issues in Python, which is unrelated to the question about floor division behavior with negative numbers. The question asks why -7 // 2 equals -4 rather than -3, which concerns Python's floor division semantics for negative operands. The passage provides no information about floor division, integer division, or how Python handles negative division operations."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "two-pointers-or-sliding-window",
+          "category": "near_duplicate",
+          "chunk_ids": [
+            "algo-sliding-window#0.0",
+            "algo-two-pointers#5.1",
+            "algo-two-pointers#4.0",
+            "algo-sliding-window#5.0",
+            "algo-two-pointers#0.0"
+          ],
+          "answer": "You should use two pointers rather than a sliding window when dealing with sorted data or when order matters, such as when merging two sorted sequences or finding pairs in a sorted array. A sliding window is specifically for answering questions about contiguous subarrays or substrings where the order of elements must be preserved. If a problem asks to find a subarray, elements must stay where they are, which calls for a sliding window rather than a two-pointer scan over sorted data.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 6,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8666666666666667,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: This passage provides an example of two pointers being used to merge sorted arrays, but it does not address when to use two pointers versus when to use a sliding window. The question asks for guidance on choosing between these two techniques, while the passage only demonstrates a specific application of two pointers without any comparison or decision-making criteria between the two approaches.",
+              "#4: This passage discusses common pitfalls and mistakes when using the sliding window technique, but it does not address when to use two pointers versus sliding window. The question asks for guidance on choosing between two different algorithmic approaches, while this passage only covers implementation errors within the sliding window technique itself."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "set-or-counter-for-duplicates",
+          "category": "near_duplicate",
+          "chunk_ids": [
+            "algo-hash-counting#3.0",
+            "algo-sets#6.0",
+            "algo-hash-counting#6.0",
+            "algo-sets#2.0",
+            "algo-sets#7.0"
+          ],
+          "answer": "You should use a set if you only need membership and the count does not matter, because a set loses duplicates and answers which values exist rather than how many of each. You should use a Counter when the count matters, since a set will lose duplicates you might need.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8875,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses pitfalls and common mistakes when counting with dictionaries and Counters, but it does not directly address the question of whether to use a set or a Counter to deal with duplicates. It doesn't provide guidance on when to choose one over the other or explain the differences between their approaches to handling duplicates."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "dijkstra-negative-weights",
+          "category": "negation",
+          "chunk_ids": [
+            "algo-shortest-paths#2.0",
+            "algo-shortest-paths#2.1",
+            "algo-shortest-paths#0.0",
+            "algo-shortest-paths#1.0",
+            "algo-shortest-paths#5.0"
+          ],
+          "answer": "You cannot use Dijkstra's algorithm if there are negative edge weights because a negative edge breaks the core argument that no cheaper route can appear later. If you run Dijkstra with negative weights, it will return a confidently wrong answer silently without throwing an error. Instead, you must use the Bellman-Ford algorithm when any edges are negative.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "greedy-coin-change-valid",
+          "category": "negation",
+          "chunk_ids": [
+            "algo-greedy#3.0",
+            "algo-dynamic-programming#4.1",
+            "algo-dynamic-programming#4.0",
+            "algo-recursion#4.0",
+            "algo-dynamic-programming#3.0"
+          ],
+          "answer": "Taking the largest coin first is optimal only for canonical coin systems, such as (1, 2, 5, 10, ...), and is wrong in general. For example, with coins of {1, 3, 4} and an amount of 6, the greedy approach takes 4 + 1 + 1 using three coins. The optimum solution is actually 3 + 3, which uses only two coins. Therefore, the reliable answer is the dynamic programming recurrence.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8666666666666667,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: While this passage mentions 'coin change' at the end, it only provides a dynamic programming algorithm for finding the longest increasing subsequence (LIS) and does not address the greedy approach of taking the biggest coin first or whether it's optimal for making change. The passage does not discuss coin change optimization strategies, counterexamples, or when greedy algorithms fail for the coin change problem.",
+              "#4: This passage discusses backtracking and pruning techniques in recursive algorithms, but does not address the coin change problem or whether a greedy approach (taking the biggest coin first) is optimal. The passage provides general algorithmic optimization strategies but contains no information relevant to answering whether the greedy coin selection strategy works for making change."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "binary-search-hangs",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-binary-search#1.2",
+            "algo-binary-search#0.0",
+            "algo-binary-search#4.0",
+            "algo-binary-search#3.0",
+            "algo-binary-search#1.0"
+          ],
+          "answer": "Mixing inconsistent forms, such as using `low <= high` with `high = mid` or `low < high` with `high = mid - 1`, produces either an infinite loop or a search that skips the answer. Another pitfall causing the loop to hang occurs in the closed form when `low` and `high` are adjacent, `mid` equals `low`, and the range never shrinks.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.5,
+            "requirements": 2,
+            "evasive": false,
+            "missed": [
+              "Provide guidance on how to fix the problem"
+            ]
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 5,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "recursion-error-deep-input",
+          "category": "multi_hop",
+          "chunk_ids": [
+            "algo-recursion#0.0",
+            "algo-dynamic-programming#2.1",
+            "algo-recursion#1.0",
+            "algo-stacks-queues#5.0",
+            "algo-loop-bounds#3.0"
+          ],
+          "answer": "When you encounter a RecursionError on deep inputs, the standard fix is to rewrite the recursive traversal with an explicit stack. Every recursive traversal can be converted into an iterative approach using a stack.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.9166666666666666,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: This passage explains the general structure and philosophy of writing correct recursive solutions, but does not address the RecursionError that occurs on large test cases. The question asks for solutions to a RecursionError (likely a stack overflow due to recursion depth limits), which requires discussion of topics like increasing recursion limits, converting to iteration, or optimizing to reduce depth. This passage does not address any of these practical solutions.",
+              "#5: This passage discusses loop bounds, off-by-one errors, and the use of enumerate() in Python. It does not address RecursionError issues or how to handle recursion depth problems in Python. The question is asking for help with a RecursionError on a big test, which typically involves increasing the recursion limit or optimizing recursive code, neither of which is covered in this passage about loop indexing techniques."
+            ]
+          },
+          "context_recall": {
+            "score": 0.3333333333333333,
+            "sentences": 3,
+            "unsupported": [
+              "Python's default limit is 1000 frames.",
+              "sys.setrecursionlimit raises it, but only until the C stack itself overflows and the process dies without a traceback."
+            ]
+          }
+        },
+        {
+          "case": "sort-desc-score-asc-name",
+          "category": "multi_hop",
+          "chunk_ids": [
+            "algo-sorting-key#1.0",
+            "algo-sorting-key#2.0",
+            "algo-greedy#2.0",
+            "algo-sorting-key#4.0",
+            "algo-sorting-key#5.0"
+          ],
+          "answer": "To sort records by highest score first and alphabetically by name on ties, use a tuple key function that negates the numeric component. You can implement this as students.sort(key=lambda s: (-s.score, s.name)).",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 2,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.9166666666666666,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#3: This passage discusses sorting intervals by end time for a greedy algorithm problem (interval scheduling), which is unrelated to the question about sorting records by score (high to low) and then alphabetically by name. While the passage demonstrates Python's sort and lambda syntax, it does not address multi-key sorting with mixed sort orders (descending for score, ascending for name) that the question asks about.",
+              "#5: This passage discusses using comparison functions with `cmp_to_key` for complex sorting scenarios, but the specific question about sorting by score (high to low) and then alphabetically by name when scores are equal can be solved more efficiently and directly using tuple keys, which is not what this passage addresses. The passage's example uses a comparator approach, whereas a simple tuple key like `sort(key=lambda x: (-x.score, x.name))` would be the preferred solution for this question. The passage doesn't contribute to answering this particular use case."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 3,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "output-has-brackets",
+          "category": "long_tail_detail",
+          "chunk_ids": [
+            "algo-stdin-parsing#4.0",
+            "algo-stdin-parsing#6.0",
+            "algo-strings#1.0",
+            "algo-strings#6.0",
+            "algo-strings#7.0"
+          ],
+          "answer": "Using print(values) or print(list) emits the list literal with brackets and commas, which no judge accepts. Instead, use print(*values) to print the elements separated by spaces. Alternatively, join the values using print(\" \".join(map(str, values))).",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 3,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 1.0,
+            "useful": 5,
+            "of": 5,
+            "rejected": []
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 4,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "string-building-slow",
+          "category": "paraphrase",
+          "chunk_ids": [
+            "algo-strings#1.0",
+            "algo-two-pointers#2.0",
+            "algo-strings#7.0",
+            "algo-complexity#3.0",
+            "algo-stdin-parsing#5.0"
+          ],
+          "answer": "Never concatenate strings using the += operator inside a loop because it has a time complexity of O(len(s)) due to copying and makes execution take seconds instead of milliseconds for many pieces. Instead, append each piece to a list and combine them at the end using the join method. For example, you can collect the parts in a list and then call \"\".join(parts).",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 5,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 1.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": []
+          },
+          "context_precision": {
+            "score": 0.8055555555555555,
+            "useful": 3,
+            "of": 5,
+            "rejected": [
+              "#2: This passage discusses the two-pointer technique for array manipulation and in-place deduplication. It is not relevant to the question about slow performance when building up answer text piece by piece in a loop, which is a string concatenation performance issue. The passage does not address string building, concatenation efficiency, or related performance optimization strategies.",
+              "#5: This passage discusses reading multiple test cases from stdin in competitive programming, which is about input handling. The question is about the performance problem of building answer text piece by piece in a loop. While the passage does show an example of using a loop with an `out` list and `append()`, it is not addressing the performance issue or providing optimization techniques for string building. The passage's focus is on input parsing structure, not on the optimization problem described in the question."
+            ]
+          },
+          "context_recall": {
+            "score": 1.0,
+            "sentences": 2,
+            "unsupported": []
+          }
+        },
+        {
+          "case": "make-it-faster",
+          "category": "ambiguous",
+          "chunk_ids": [
+            "algo-recursion#4.0",
+            "algo-strings#5.0",
+            "algo-strings#7.0",
+            "algo-dynamic-programming#1.0",
+            "algo-strings#1.0"
+          ],
+          "answer": "To make backtracking code faster, use pruning to cut a branch as soon as it cannot lead to a valid or better answer, and sort the candidates first to make pruning more effective. When working with strings, use a fixed array instead of a dictionary for a known alphabet because it is faster. Additionally, never concatenate strings using \"+=\" in a loop, but instead append pieces to a list and use \"\"\".join(parts).",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 4,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.25,
+            "requirements": 2,
+            "evasive": true,
+            "missed": [
+              "Applicability to the questioner's code"
+            ]
+          },
+          "context_precision": {
+            "score": 0.95,
+            "useful": 4,
+            "of": 5,
+            "rejected": [
+              "#4: This passage provides guidance on dynamic programming concepts (states, transitions, base cases), which is a specific algorithmic technique. While dynamic programming can be one optimization strategy for certain problems, the question asks for general advice on making code faster. The passage doesn't address broader performance optimization topics like profiling, algorithm selection, data structure choices, compiler optimizations, or other practical speedup techniques that would be relevant to answering the general question about code performance."
+            ]
+          },
+          "context_recall": {
+            "score": 0.0,
+            "sentences": 2,
+            "unsupported": [
+              "Start from the complexity class rather than the constants: estimate the step count against the constraints, then find the hidden linear operations inside your loops (x in some_list, pop(0), string concatenation).",
+              "The standard rewrites are a hash map for pair search, sorting plus two pointers, prefix sums for repeated range queries, and a heap for repeated minima."
+            ]
+          }
+        },
+        {
+          "case": "segment-tree-lazy",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-complexity#2.0",
+            "algo-dynamic-programming#4.0",
+            "algo-greedy#4.0",
+            "algo-shortest-paths#1.1",
+            "algo-prefix-sums#4.0"
+          ],
+          "answer": "The study library does not cover how to implement a segment tree with lazy propagation for range updates.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 2,
+            "evasive": false,
+            "missed": [
+              "Explain how to implement a segment tree with lazy propagation",
+              "Explain how to perform range updates using lazy propagation"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage explains how to analyze time complexity of algorithms through code patterns and recursion trees, but it does not provide any information about implementing segment trees, lazy propagation, or range updates. While segment trees do involve recursion and have logarithmic complexity, this passage offers no guidance on the actual implementation details needed to answer the question.",
+              "#2: This passage discusses dynamic programming solutions for longest increasing subsequence (LIS) and coin change problems. It does not contain any information about segment trees, lazy propagation, or range updates, which are the core topics of the question. While both are algorithmic concepts, they address completely different data structures and problem domains.",
+              "#3: This passage discusses greedy algorithms and their applications (fractional knapsack, Huffman coding, MST, resource assignment), but contains no information about segment trees, lazy propagation, or range update techniques. It is entirely unrelated to the question asked.",
+              "#4: This passage discusses Dijkstra's algorithm for finding shortest paths in weighted graphs using a priority queue. It is entirely unrelated to segment trees, lazy propagation, or range updates. The question asks specifically about implementing a data structure for efficient range updates, while this passage covers graph algorithms. There is no connection between these topics.",
+              "#5: This passage discusses the difference array technique for efficient range updates, which is a different algorithmic approach from segment trees with lazy propagation. While both solve range update problems, the passage does not explain how to implement a segment tree data structure or its lazy propagation mechanism. It would not help someone learn to build an actual segment tree."
+            ]
+          },
+          "context_recall": {
+            "score": 0.3333333333333333,
+            "sentences": 3,
+            "unsupported": [
+              "The library does not cover segment trees or lazy propagation.",
+              "It is not a segment tree and a correct answer should say the topic is not covered."
+            ]
+          }
+        },
+        {
+          "case": "red-black-tree",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-recursion#3.1",
+            "algo-recursion#5.0",
+            "algo-complexity#2.0",
+            "algo-dynamic-programming#4.0",
+            "algo-binary-search#4.0"
+          ],
+          "answer": "The study library does not cover how a red-black tree rebalances itself after an insertion.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Explain how a red-black tree rebalances itself after an insertion"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses recursion and backtracking algorithms (permutations, subsets, combinations, N-queens), which is completely unrelated to red-black tree rebalancing. It contains no information about red-black trees, insertion operations, or tree balancing mechanisms.",
+              "#2: This passage discusses recursion, iteration, and memoization concepts. It does not contain any information about red-black trees, their rebalancing mechanisms, insertion procedures, or tree rotations. It is not relevant to explaining how red-black trees rebalance after insertion.",
+              "#3: This passage discusses time complexity analysis techniques (nested loops, recursion trees, memoization) but does not address red-black tree rebalancing mechanisms, insertion operations, or the specific rotations and color changes that occur during red-black tree insertion. It is not relevant to explaining how a red-black tree rebalances itself.",
+              "#4: This passage discusses dynamic programming algorithms for longest increasing subsequence (LIS) and coin change problems. It is completely unrelated to red-black tree rebalancing after insertion. The question asks specifically about red-black tree data structure operations, while this passage covers entirely different algorithmic topics.",
+              "#5: This passage discusses binary search algorithms and their common pitfalls. It is completely unrelated to red-black tree rebalancing after insertion. The question asks specifically about red-black tree self-balancing mechanisms, while this passage covers entirely different computer science concepts (binary search implementation details)."
+            ]
+          },
+          "context_recall": {
+            "score": 0.0,
+            "sentences": 2,
+            "unsupported": [
+              "The library does not cover balanced binary search trees; there is no material on red-black trees, rotations or rebalancing.",
+              "A correct answer should say so rather than improvise."
+            ]
+          }
+        },
+        {
+          "case": "which-web-framework",
+          "category": "out_of_corpus",
+          "chunk_ids": [
+            "algo-python-pitfalls#8.0",
+            "algo-dynamic-programming#4.0",
+            "algo-dynamic-programming#1.0",
+            "algo-prefix-sums#3.0",
+            "algo-dynamic-programming#2.1"
+          ],
+          "answer": "The study library does not cover it.",
+          "faithfulness": {
+            "score": 1.0,
+            "claims": 1,
+            "unsupported": []
+          },
+          "answer_relevance": {
+            "score": 0.0,
+            "requirements": 1,
+            "evasive": false,
+            "missed": [
+              "Recommend a Python web framework for building REST APIs"
+            ]
+          },
+          "context_precision": {
+            "score": 0.0,
+            "useful": 0,
+            "of": 5,
+            "rejected": [
+              "#1: This passage discusses Python late binding closure issues and has no relevance to choosing a web framework for REST APIs. It's a technical Python gotcha unrelated to web frameworks like Flask, Django, FastAPI, or other REST API frameworks.",
+              "#2: This passage discusses dynamic programming algorithms (longest increasing subsequence and coin change problem) and is entirely unrelated to Python web frameworks or REST API development. It does not provide any information relevant to choosing a web framework for building REST APIs.",
+              "#3: This passage discusses dynamic programming concepts and memoization techniques, which is completely unrelated to choosing a Python web framework for building REST APIs. It would not help someone making a decision about web frameworks.",
+              "#4: This passage discusses 2D prefix sums and algorithmic techniques for range queries in Python. It has no relevance to choosing a Python web framework for building REST APIs. The question asks for framework recommendations, while this passage covers a completely unrelated data structures topic.",
+              "#5: This passage discusses dynamic programming, memoization, and Python caching techniques (functools.cache and lru_cache). It is completely unrelated to web frameworks or REST API development. It does not provide any information relevant to choosing a Python web framework for building REST APIs."
+            ]
+          },
+          "context_recall": {
+            "score": 0.5,
+            "sentences": 2,
+            "unsupported": [
+              "A correct answer should decline rather than invent a recommendation from unrelated passages."
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "cache": {
+    "hits": 72,
+    "misses": 396
+  }
+}

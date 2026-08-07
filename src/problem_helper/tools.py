@@ -3,7 +3,12 @@
 The tools are registered with the framework (`@tool` → `BaseTool`) and bound to the model
 in `graph.py`; nothing in the pipeline calls them directly. Whether they run at all is the
 model's decision — for a plain off-by-one it usually answers straight away, for a mistake
-that maps to a technique it pulls the matching material first.
+that maps to a technique it searches first, and it is free to search again with a different
+query when the first result set misses.
+
+`search_corpus` is the retrieval layer's only entry point into the agent. It is a tool
+rather than a step in front of the graph on purpose: a hint for a typo needs no corpus at
+all, and paying for retrieval on every session would be both slower and worse.
 
 Every tool returns a JSON string: models handle it more reliably than prose, and the graph
 parses the same payloads back to build the reading list attached to the hint.
@@ -18,9 +23,12 @@ from langchain_core.messages import AnyMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
 
 from . import materials
+from .retrieval import get_retriever, pack_for_lim
 from .schemas import MaterialRef
 
 logger = logging.getLogger(__name__)
+
+EXCERPT_CHARS = 700
 
 
 def _dump(payload: object) -> str:
@@ -28,38 +36,44 @@ def _dump(payload: object) -> str:
 
 
 @tool(parse_docstring=True)
-def search_learning_materials(query: str, limit: int = 3) -> str:
-    """Search the study library for materials about an algorithmic technique or mistake.
+def search_corpus(query: str, k: int = 5) -> str:
+    """Search the study library for passages about a technique, a mistake or an API.
 
-    Use it when the student's mistake maps to a standard technique (two pointers, binary
-    search, prefix sums, parity, loop bounds, complexity) and you want the wording of the
-    hint to line up with what the student can go and read afterwards.
+    The search is hybrid: a vector index finds passages that mean the same thing as the
+    query, a lexical index finds the ones that use its exact words (identifiers like
+    `bisect_left`, acronyms like BFS or DP), the two rankings are fused, and a reranker
+    orders what comes out. Ask in natural language, not in keywords.
+
+    Search again with a different wording when the results miss the point — a second query
+    is cheap and is often the difference between a generic hint and a precise one.
 
     Args:
-        query: English keywords describing the technique or the mistake, e.g.
-            "binary search off-by-one" or "even numbers sum". Translate the query into
+        query: What you want to know, in English, e.g. "why does my BFS visit a node twice"
+            or "difference between bisect_left and bisect_right". Translate the query into
             English even when the problem statement is in another language.
-        limit: How many materials to return, 1 to 5.
+        k: How many passages to return, 1 to 10.
 
     Returns:
-        A JSON list of materials with id, title, topic, level, tags and a one-line summary.
-        Call get_learning_material with an id to read the full note.
+        A JSON list of passages, each with the id of the material it belongs to, its
+        heading, its rank and an excerpt. Call get_learning_material with a material_id to
+        read that note in full.
     """
-    found = materials.search(query, limit=min(max(limit, 1), 5))
-    logger.info("tool search_learning_materials(%r) → %s hit(s)", query, len(found))
-    return _dump(
-        [
-            {
-                "id": m.id,
-                "title": m.title,
-                "topic": m.topic,
-                "level": m.level,
-                "tags": m.tags,
-                "summary": m.summary,
-            }
-            for m in found
-        ]
-    )
+    hits = get_retriever().search(query, k=min(max(k, 1), 10))
+    logger.info("tool search_corpus(%r) → %s passage(s)", query, len(hits))
+    payload = [
+        {
+            "rank": rank,
+            "chunk_id": hit.chunk.id,
+            "material_id": hit.chunk.material_id,
+            "title": hit.chunk.title,
+            "heading": hit.chunk.heading,
+            "excerpt": hit.chunk.text[:EXCERPT_CHARS],
+        }
+        for rank, hit in enumerate(hits, start=1)
+    ]
+    # The rank field carries the ranking; the list order is packed strongest-at-the-edges,
+    # because that is where a long context is actually read. See retrieval/packing.py.
+    return _dump(pack_for_lim(payload))
 
 
 @tool(parse_docstring=True)
@@ -67,7 +81,7 @@ def get_learning_material(material_id: str) -> str:
     """Read one study material in full, including the list of typical pitfalls.
 
     Args:
-        material_id: The id returned by search_learning_materials, e.g. "algo-two-pointers".
+        material_id: The id returned by search_corpus, e.g. "algo-two-pointers".
 
     Returns:
         A JSON object with the full text of the material, or an error field when the id is
@@ -86,20 +100,20 @@ def get_learning_material(material_id: str) -> str:
 def list_material_topics() -> str:
     """List the topics covered by the study library, with the material ids under each.
 
-    Use it to see what the library holds before searching, or when a keyword search comes
-    back empty.
+    Use it to see what the library holds before searching, or when a search comes back with
+    nothing that fits.
 
     Returns:
         A JSON object mapping every topic to the ids of its materials.
     """
     grouped: dict[str, list[str]] = {}
-    for material in materials.CATALOG:
+    for material in materials.all():
         grouped.setdefault(material.topic, []).append(material.id)
     return _dump(grouped)
 
 
 TOOLS: list[BaseTool] = [
-    search_learning_materials,
+    search_corpus,
     get_learning_material,
     list_material_topics,
 ]
@@ -121,7 +135,8 @@ def read_materials(messages: list[AnyMessage]) -> list[MaterialRef]:
     """The materials the agent actually pulled, in the order it first saw them.
 
     Reconstructed from the tool results rather than from the model's own summary, so the
-    reading list attached to a hint cannot contain a made-up id.
+    reading list attached to a hint cannot contain a made-up id. Retrieval hits name a
+    `material_id`; `get_learning_material` returns the material itself under `id`.
     """
     refs: dict[str, MaterialRef] = {}
     for message in messages:
@@ -147,8 +162,12 @@ def _ids_in(content: object) -> list[str]:
     except json.JSONDecodeError:
         return []
     items = payload if isinstance(payload, list) else [payload]
-    return [item["id"] for item in items if isinstance(item, dict) and "id" in item]
+    return [
+        item["material_id"] if "material_id" in item else item["id"]
+        for item in items
+        if isinstance(item, dict) and ("material_id" in item or "id" in item)
+    ]
 
 
 def _known_ids() -> list[str]:
-    return [m.id for m in materials.CATALOG]
+    return [m.id for m in materials.all()]

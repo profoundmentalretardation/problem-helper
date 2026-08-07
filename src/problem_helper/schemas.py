@@ -69,6 +69,22 @@ class SessionCreated(BaseModel):
     status: SessionStatus
 
 
+class SampleView(BaseModel):
+    """A ready-made session for the playground.
+
+    Deliberately without `samples.Sample.solution`: the catalog carries the reference
+    solution so the tests can prove the sample is well-formed, and handing it to a browser
+    would defeat the entire point of a service that answers with hints.
+    """
+
+    id: str
+    title: str
+    topic: str
+    task: str
+    code: str
+    tests: list[TestCase]
+
+
 class MistakeOut(BaseModel):
     title: str
     detail: str

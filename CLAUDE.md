@@ -43,6 +43,39 @@ strings appear only as deliberate unicode round-trip fixtures in tests.
   (`tools.read_materials`) and intersected with the ids the model named, so a hallucinated
   id cannot reach the student.
 
+## Retrieval
+
+- The corpus is `src/problem_helper/corpus/*.md`, one file per material. The `##` headings
+  are the chunk boundary, so they are part of the data format — rewriting a note into one
+  long section changes what retrieval can find. `materials.py` parses the frontmatter and
+  never searches; `retrieval/` indexes the sections it hands out.
+- Chunk ids (`{material_id}#{section}.{part}`) are positional and move whenever the
+  chunking parameters change. Nothing may store them: the eval set anchors on
+  `(material_id, heading)` and resolves ids at load time.
+- `RetrievalService.search` returns **retriever order**. `pack_for_lim` reorders for a
+  model's attention and runs only in `tools.py`; scoring a packed list silently degrades
+  MRR and nDCG while hit rate, precision and recall stay put, which is what makes the
+  mistake invisible.
+- `rerank: bool` is a parameter of one pipeline, not a second code path — that is what lets
+  the harness measure the configuration the service actually runs.
+- The models are loaded lazily and the unit suite never loads them: `conftest.stub_retriever`
+  installs a `StubRetriever` for every test. Chunking, BM25, RRF and packing are pure and
+  tested directly; the dense index and the reranker are covered by the eval harness.
+
+## Evaluation
+
+- `evals/` imports `problem_helper` and is never imported by it. It is not packaged, and
+  `pythonpath = ["."]` in the pytest config is what lets the tests import it.
+- The five rank-aware metrics return `None`, never `0.0`, for a case with an empty golden
+  set, and `aggregate` reports how many were skipped. Out-of-corpus cases are data.
+- Both the judgements *and* the answers under test go through `ResponseCache`. Caching only
+  the judgements does not make a run reproducible — the answering model is sampled, and a
+  new answer is a new judge prompt.
+- The judge model must differ from the answering model; `run_generation.py` exits rather
+  than let a model grade itself.
+- Committed numbers in the README come from `evals/results/`. Re-run the two runners rather
+  than editing a table by hand.
+
 ## LLM access
 
 Everything goes through `langchain_openai.ChatOpenAI`; the raw `openai` package is imported

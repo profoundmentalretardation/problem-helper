@@ -133,9 +133,35 @@ def test_tools_are_listed(tmp_path, holder):
         body = client.get("/v1/tools").json()
 
         names = [t["name"] for t in body["tools"]]
-        assert "search_learning_materials" in names
+        assert "search_corpus" in names
         assert len(names) >= 2
         assert all(t["description"] for t in body["tools"])
+
+
+def test_samples_are_listed_without_their_solutions(tmp_path, holder):
+    client, _ = make_client(tmp_path, lambda *a: _noop())
+    with client:
+        body = client.get("/v1/samples").json()
+
+        assert len(body["samples"]) >= 8
+        first = body["samples"][0]
+        assert first["task"] and first["code"] and first["tests"]
+        # the reference solution stays on the server — this endpoint feeds a browser
+        assert "solution" not in first
+        assert "mistake" not in first
+
+
+def test_a_sample_can_be_submitted_as_is(tmp_path, holder):
+    client, _ = make_client(tmp_path, lambda *a: _noop())
+    with client:
+        sample = client.get("/v1/samples").json()["samples"][0]
+
+        response = client.post(
+            "/v1/sessions",
+            json={"task": sample["task"], "code": sample["code"], "tests": sample["tests"]},
+        )
+
+        assert response.status_code == 202
 
 
 def test_unfinished_session_can_be_resumed(tmp_path, holder):

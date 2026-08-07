@@ -176,7 +176,7 @@ async def test_fails_when_the_validator_never_approves():
 async def test_agent_calls_a_tool_and_the_result_reaches_the_hint():
     llm = llm_with(
         turns=[
-            tool_turn("search_learning_materials", query="binary search off-by-one"),
+            tool_turn("search_corpus", query="binary search off-by-one"),
             AIMessage("ready"),
         ],
         hints=[hint("mind the boundaries", ["algo-binary-search"])],
@@ -199,7 +199,7 @@ async def test_tools_are_bound_to_the_hint_model():
     await run(llm, runner_returning(report(passed=False), report(passed=True)))
 
     bound = {t.name for t in llm.chat_calls[0].tools}
-    assert {"search_learning_materials", "get_learning_material"} <= bound
+    assert {"search_corpus", "get_learning_material"} <= bound
 
 
 async def test_made_up_material_ids_are_dropped():

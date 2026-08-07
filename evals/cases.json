@@ -1,0 +1,246 @@
+{
+  "categories": {
+    "exact_term": "The query names an identifier or API exactly (`bisect_left`, `heapq`, `pop(0)`). Embeddings blur these into their neighbourhood; the lexical index is what pins them.",
+    "acronym": "The query uses a short form the prose spells out (BFS, DP, LIS, GCD, LIFO). Short tokens carry little semantic signal and are easy to confuse with each other.",
+    "paraphrase": "The student describes a symptom in their own words with none of the corpus vocabulary. Lexical search has nothing to match; this is what the vector index is for.",
+    "near_duplicate": "Two materials cover adjacent techniques and the query has to land on the right one. The failure mode is a plausible neighbour outranking the answer.",
+    "multi_hop": "The answer needs passages from two different materials; retrieving either one alone is a partial answer.",
+    "long_tail_detail": "The answer is a single fact buried inside a longer section, usually a pitfalls list. Whole-document relevance is not enough.",
+    "negation": "The query asks when a technique is *not* valid. Retrieval tends to return the enthusiastic description of the technique instead of its limits.",
+    "ambiguous": "The query is under-specified. There is a defensible golden set, but a wide spread of plausible answers is expected and the metrics should show that.",
+    "out_of_corpus": "The library genuinely cannot answer this. The golden set is empty on purpose: the rank metrics are undefined and the generation metrics measure whether the answer admits it."
+  },
+  "cases": [
+    {
+      "id": "bisect-left-vs-right",
+      "category": "exact_term",
+      "query": "What is the difference between bisect_left and bisect_right?",
+      "golden_anchors": [["algo-binary-search", "Insertion points instead of membership"]],
+      "golden_answer": "Both return an insertion point in a sorted list, and they differ only in how they treat elements equal to the target: bisect_left returns the first index whose element is >= x (the lower bound), bisect_right returns the first index whose element is > x. Their difference, bisect_right(a, x) - bisect_left(a, x), is how many times x occurs."
+    },
+    {
+      "id": "list-pop-zero-queue",
+      "category": "exact_term",
+      "query": "Is it fine to use list.pop(0) to take items off a queue?",
+      "golden_anchors": [
+        ["algo-stacks-queues", "Queue: `collections.deque`, never a list"],
+        ["algo-complexity", "Hidden loops"]
+      ],
+      "golden_answer": "No. list.pop(0) is O(n) because every remaining element shifts down one slot, so using it inside a BFS turns a linear algorithm into a quadratic one. Use collections.deque and popleft(), which is O(1)."
+    },
+    {
+      "id": "heapq-max-heap",
+      "category": "exact_term",
+      "query": "How do I make heapq behave like a max-heap?",
+      "golden_anchors": [["algo-heaps", "Max-heap by negation"]],
+      "golden_answer": "heapq only implements a min-heap, so push negated values and negate again when popping: heappush(heap, -value) and largest = -heappop(heap). Forgetting the second negation is the usual bug — the magnitude is right and the sign is wrong."
+    },
+    {
+      "id": "counter-most-common",
+      "category": "exact_term",
+      "query": "What does collections.Counter give me that a plain dict does not?",
+      "golden_anchors": [["algo-hash-counting", "Frequency tables"]],
+      "golden_answer": "Counter counts in one call and adds the operations worth importing it for: most_common(k) returns the top k pairs already sorted, + and - merge tables, and & intersects them. A plain dict needs counts[value] = counts.get(value, 0) + 1 and gives you none of that."
+    },
+    {
+      "id": "bfs-visits-node-twice",
+      "category": "acronym",
+      "query": "Why does my BFS put the same node in the queue several times?",
+      "golden_anchors": [
+        ["algo-graph-traversal", "BFS: the queue version"],
+        ["algo-graph-traversal", "Pitfalls"]
+      ],
+      "golden_answer": "Because the node is being marked as visited when it is dequeued instead of when it is enqueued. Mark it on push, right before appending it to the queue: otherwise the same vertex enters the queue once per incoming edge, and on a dense graph that is the difference between running and timing out."
+    },
+    {
+      "id": "dp-knapsack-loop-direction",
+      "category": "acronym",
+      "query": "In the DP for knapsack, why does the inner loop over capacity go downwards?",
+      "golden_anchors": [["algo-dynamic-programming", "Bottom-up: fill a table"]],
+      "golden_answer": "Descending capacity means each item is used at most once, which is 0/1 knapsack: when dp[c - w] is read it has not yet been updated for the current item. Iterating upwards lets the same item be picked repeatedly, which is unbounded knapsack / coin change. One character, two different problems, and no error either way."
+    },
+    {
+      "id": "gcd-to-lcm",
+      "category": "acronym",
+      "query": "How do I get the LCM from the GCD?",
+      "golden_anchors": [["algo-number-theory", "GCD and LCM"]],
+      "golden_answer": "lcm(a, b) = a * b // gcd(a, b), and dividing before multiplying (a // gcd(a, b) * b) keeps the intermediate small. Python ships both math.gcd and math.lcm, and gcd accepts several arguments so gcd(*values) reduces a whole list."
+    },
+    {
+      "id": "lifo-vs-fifo",
+      "category": "acronym",
+      "query": "LIFO vs FIFO — which one is a stack and which is a queue?",
+      "golden_anchors": [
+        ["algo-stacks-queues", "Stacks, queues and monotonic structures"],
+        ["algo-stacks-queues", "Stack: a plain list"]
+      ],
+      "golden_answer": "A stack is LIFO (last in, first out) — in Python a plain list with append and pop. A queue is FIFO (first in, first out) — collections.deque with append and popleft. Swapping one container for the other is also the only difference between a DFS and a BFS."
+    },
+    {
+      "id": "lis-efficient",
+      "category": "acronym",
+      "query": "What is the fastest way to compute the LIS of an array?",
+      "golden_anchors": [["algo-dynamic-programming", "Classic one-dimensional recurrences"]],
+      "golden_answer": "The simple DP is O(n^2): dp[i] is the LIS length ending exactly at i, taken as max(dp[j]) + 1 over j < i with a[j] < a[i]. The O(n log n) version keeps the smallest possible tail for each length and finds the insertion point with bisect_left — it gives the correct length, but the tails array is not itself a valid subsequence."
+    },
+    {
+      "id": "even-sum-adds-wrong-thing",
+      "category": "paraphrase",
+      "query": "My program is supposed to add up only the even numbers but the total comes out much too small",
+      "golden_anchors": [
+        ["algo-parity-filters", "Summing the wrong thing"],
+        ["algo-parity-filters", "Filter and aggregate in one expression"]
+      ],
+      "golden_answer": "The usual cause is accumulating the position instead of the number: inside for i in range(len(values)) it is easy to write total += i where total += values[i] was meant. Iterating with for x in values removes the possibility entirely, and the whole filter is one expression: sum(x for x in values if x % 2 == 0)."
+    },
+    {
+      "id": "judge-says-too-slow",
+      "category": "paraphrase",
+      "query": "My solution gives the right answers but the judge says it takes too long. What do I look at first?",
+      "golden_anchors": [
+        ["algo-complexity", "The budget"],
+        ["algo-complexity", "Hidden loops"],
+        ["algo-complexity", "Typical rewrites"]
+      ],
+      "golden_answer": "Count the nested loops and compare the step count against the constraints — Python does roughly 10^7 simple operations per second, so at n = 10^5 anything quadratic is hopeless. Then look for the operations that look constant and are not: x in some_list, list.pop(0), string += inside a loop, a[1:]. The standard rewrites are a hash map for pair search, prefix sums for repeated range sums, and a set for repeated membership."
+    },
+    {
+      "id": "grid-rows-change-together",
+      "category": "paraphrase",
+      "query": "I set one cell of my table and a cell in a different row changes as well",
+      "golden_anchors": [["algo-python-pitfalls", "`[[0] * m] * n` shares rows"]],
+      "golden_answer": "The table was built with [[0] * m] * n, which creates n references to one single row, so writing through any of them is visible through all of them. Build it with a comprehension instead: [[0] * m for _ in range(n)]."
+    },
+    {
+      "id": "negative-floor-division",
+      "category": "long_tail_detail",
+      "query": "Why is -7 // 2 equal to -4 in Python and not -3?",
+      "golden_anchors": [["algo-python-pitfalls", "Integer versus float division"]],
+      "golden_answer": "// is floor division: it rounds towards minus infinity, not towards zero, so -7 // 2 is -4. Truncation is what int(-7 / 2) does, and that gives -3. The two differ only for negative operands, which is why the bug survives every test with positive input."
+    },
+    {
+      "id": "two-pointers-or-sliding-window",
+      "category": "near_duplicate",
+      "query": "When should I use two pointers rather than a sliding window?",
+      "golden_anchors": [
+        ["algo-sliding-window", "Sliding window over a sequence"],
+        ["algo-two-pointers", "Two pointers on a sorted array"],
+        ["algo-sliding-window", "Recognising the pattern"]
+      ],
+      "golden_answer": "Two pointers from the opposite ends needs the array sorted and answers questions about pairs; sorting is part of the technique. A sliding window never sorts, because the order of the elements is the problem — it answers questions about contiguous subarrays, growing on the right and shrinking on the left. If the answer is a subarray, sorting would destroy it, so it is a window."
+    },
+    {
+      "id": "set-or-counter-for-duplicates",
+      "category": "near_duplicate",
+      "query": "Should I use a set or a Counter to deal with duplicates?",
+      "golden_anchors": [
+        ["algo-sets", "When a set is the wrong tool"],
+        ["algo-hash-counting", "Frequency tables"]
+      ],
+      "golden_answer": "A set answers which values are present — membership and uniqueness — and len(set(values)) != len(values) already tells you duplicates exist. As soon as you need how many of each, a set has thrown that away and a Counter is the right structure."
+    },
+    {
+      "id": "dijkstra-negative-weights",
+      "category": "negation",
+      "query": "Can I run Dijkstra if a few edges have negative weights?",
+      "golden_anchors": [["algo-shortest-paths", "Why Dijkstra needs non-negative weights"]],
+      "golden_answer": "No. Dijkstra finalises a vertex when it is popped, on the argument that no cheaper route can appear later because every remaining edge only adds weight; a negative edge breaks that argument and the algorithm returns a confidently wrong answer with no error. Use Bellman-Ford, which also detects negative cycles."
+    },
+    {
+      "id": "greedy-coin-change-valid",
+      "category": "negation",
+      "query": "Is taking the biggest coin first always the optimal way to make change?",
+      "golden_anchors": [["algo-greedy", "Coin change: greedy only for some coin systems"]],
+      "golden_answer": "No, only for canonical coin systems. With coins {1, 3, 4} and amount 6 greedy takes 4 + 1 + 1, three coins, while the optimum is 3 + 3, two coins. The reliable answer is the DP recurrence; greedy is correct only when the statement guarantees a system where it holds."
+    },
+    {
+      "id": "binary-search-hangs",
+      "category": "long_tail_detail",
+      "query": "My binary search sometimes never finishes",
+      "golden_anchors": [
+        ["algo-binary-search", "The two consistent forms"],
+        ["algo-binary-search", "Pitfalls"]
+      ],
+      "golden_answer": "The loop condition and the boundary update have come from different forms. With the closed interval [low, high] the condition is low <= high and the updates are mid + 1 / mid - 1; with the half-open [low, high) it is low < high and high = mid. Mixing them — low <= high together with high = mid — leaves the range unchanged once low and high are adjacent, and the loop spins forever."
+    },
+    {
+      "id": "recursion-error-deep-input",
+      "category": "multi_hop",
+      "query": "I get RecursionError on the big test but my recursion is correct. What now?",
+      "golden_anchors": [
+        ["algo-recursion", "The recursion limit"],
+        ["algo-stacks-queues", "Recursion is a stack"]
+      ],
+      "golden_answer": "Python's default limit is 1000 frames. sys.setrecursionlimit raises it, but only until the C stack itself overflows and the process dies without a traceback. The safe fix for a deep chain is to rewrite the traversal with an explicit stack — the same algorithm with the frame kept by hand, which is also how an iterative DFS is written."
+    },
+    {
+      "id": "sort-desc-score-asc-name",
+      "category": "multi_hop",
+      "query": "How do I sort records by score from high to low, and alphabetically by name when scores are equal?",
+      "golden_anchors": [
+        ["algo-sorting-key", "Multi-level ordering with tuples"],
+        ["algo-sorting-key", "Stability"]
+      ],
+      "golden_answer": "Use a tuple key with the numeric component negated: key=lambda s: (-s.score, s.name). reverse=True is wrong here because it flips the whole comparison, names included. When a component cannot be negated, use the stability of the sort instead: sort by the secondary key first, then by the primary one."
+    },
+    {
+      "id": "output-has-brackets",
+      "category": "long_tail_detail",
+      "query": "The checker rejects my output — it comes out with brackets and commas in it",
+      "golden_anchors": [
+        ["algo-stdin-parsing", "Output format"],
+        ["algo-stdin-parsing", "Pitfalls"]
+      ],
+      "golden_answer": "print(values) prints the list literal, [1, 2, 3]. Print the elements instead: print(*values) separates them with spaces, or print(\" \".join(map(str, values))). Remember print already adds the trailing newline."
+    },
+    {
+      "id": "string-building-slow",
+      "category": "paraphrase",
+      "query": "Building up my answer text piece by piece in a loop is really slow",
+      "golden_anchors": [
+        ["algo-strings", "Never concatenate in a loop"],
+        ["algo-complexity", "Hidden loops"]
+      ],
+      "golden_answer": "Strings are immutable, so out += piece copies everything built so far and the loop is O(n^2). Append the pieces to a list and call \"\".join(parts) once at the end, which is O(n)."
+    },
+    {
+      "id": "prefix-sum-leading-zero",
+      "category": "long_tail_detail",
+      "query": "Why does the prefix sum array need an extra zero at the front?",
+      "golden_anchors": [["algo-prefix-sums", "Building the array"]],
+      "golden_answer": "Because it is what makes the range formula work for l = 0. With pref[0] = 0 and pref[i + 1] = pref[i] + a[i], the inclusive sum of a[l..r] is pref[r + 1] - pref[l] with no special case. An array of length n instead of n + 1 forces that special case, and the special case is where the bug lives."
+    },
+    {
+      "id": "make-it-faster",
+      "category": "ambiguous",
+      "query": "how do I make my code faster",
+      "golden_anchors": [
+        ["algo-complexity", "Typical rewrites"],
+        ["algo-complexity", "The budget"],
+        ["algo-complexity", "Hidden loops"]
+      ],
+      "golden_answer": "Start from the complexity class rather than the constants: estimate the step count against the constraints, then find the hidden linear operations inside your loops (x in some_list, pop(0), string concatenation). The standard rewrites are a hash map for pair search, sorting plus two pointers, prefix sums for repeated range queries, and a heap for repeated minima."
+    },
+    {
+      "id": "segment-tree-lazy",
+      "category": "out_of_corpus",
+      "query": "How do I implement a segment tree with lazy propagation for range updates?",
+      "golden_anchors": [],
+      "golden_answer": "The library does not cover segment trees or lazy propagation. The closest material is the difference array in the prefix-sums note, which handles many range updates followed by one read, but it is not a segment tree and a correct answer should say the topic is not covered."
+    },
+    {
+      "id": "red-black-tree",
+      "category": "out_of_corpus",
+      "query": "Explain how a red-black tree rebalances itself after an insertion",
+      "golden_anchors": [],
+      "golden_answer": "The library does not cover balanced binary search trees; there is no material on red-black trees, rotations or rebalancing. A correct answer should say so rather than improvise."
+    },
+    {
+      "id": "which-web-framework",
+      "category": "out_of_corpus",
+      "query": "Which Python web framework should I pick for a REST API?",
+      "golden_anchors": [],
+      "golden_answer": "Out of scope: the library is about algorithms and Python pitfalls in competitive programming, not about web frameworks. A correct answer should decline rather than invent a recommendation from unrelated passages."
+    }
+  ]
+}

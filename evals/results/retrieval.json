@@ -1,0 +1,2139 @@
+{
+  "params": {
+    "top_k": 5,
+    "candidates": 20,
+    "rerank_depth": 20,
+    "rrf_k": 60,
+    "rerank": true
+  },
+  "chunks": 182,
+  "cases": 27,
+  "unanswerable": 3,
+  "by_k": {
+    "1": {
+      "dense": {
+        "hit_rate": 0.5833333333333334,
+        "precision": 0.5833333333333334,
+        "recall": 0.3416666666666666,
+        "mrr": 0.5833333333333334,
+        "ndcg": 0.5833333333333334,
+        "scored": 24,
+        "undefined": 3
+      },
+      "bm25": {
+        "hit_rate": 0.5833333333333334,
+        "precision": 0.5833333333333334,
+        "recall": 0.3576388888888889,
+        "mrr": 0.5833333333333334,
+        "ndcg": 0.5833333333333334,
+        "scored": 24,
+        "undefined": 3
+      },
+      "fused": {
+        "hit_rate": 0.7916666666666666,
+        "precision": 0.7916666666666666,
+        "recall": 0.44930555555555557,
+        "mrr": 0.7916666666666666,
+        "ndcg": 0.7916666666666666,
+        "scored": 24,
+        "undefined": 3
+      },
+      "rerank": {
+        "hit_rate": 0.6666666666666666,
+        "precision": 0.6666666666666666,
+        "recall": 0.40069444444444446,
+        "mrr": 0.6666666666666666,
+        "ndcg": 0.6666666666666666,
+        "scored": 24,
+        "undefined": 3
+      }
+    },
+    "3": {
+      "dense": {
+        "hit_rate": 0.875,
+        "precision": 0.38888888888888884,
+        "recall": 0.5840277777777777,
+        "mrr": 0.7152777777777778,
+        "ndcg": 0.590595392537582,
+        "scored": 24,
+        "undefined": 3
+      },
+      "bm25": {
+        "hit_rate": 0.7916666666666666,
+        "precision": 0.34722222222222215,
+        "recall": 0.5375,
+        "mrr": 0.6736111111111112,
+        "ndcg": 0.554877720074983,
+        "scored": 24,
+        "undefined": 3
+      },
+      "fused": {
+        "hit_rate": 0.875,
+        "precision": 0.38888888888888884,
+        "recall": 0.5895833333333333,
+        "mrr": 0.8333333333333334,
+        "ndcg": 0.6485142932568432,
+        "scored": 24,
+        "undefined": 3
+      },
+      "rerank": {
+        "hit_rate": 0.8333333333333334,
+        "precision": 0.38888888888888884,
+        "recall": 0.5944444444444444,
+        "mrr": 0.7430555555555555,
+        "ndcg": 0.6183995119263658,
+        "scored": 24,
+        "undefined": 3
+      }
+    },
+    "5": {
+      "dense": {
+        "hit_rate": 0.9583333333333334,
+        "precision": 0.2833333333333334,
+        "recall": 0.6895833333333333,
+        "mrr": 0.7340277777777778,
+        "ndcg": 0.6284634975008565,
+        "scored": 24,
+        "undefined": 3
+      },
+      "bm25": {
+        "hit_rate": 0.8333333333333334,
+        "precision": 0.23333333333333336,
+        "recall": 0.5895833333333333,
+        "mrr": 0.6840277777777778,
+        "ndcg": 0.5705632346044828,
+        "scored": 24,
+        "undefined": 3
+      },
+      "fused": {
+        "hit_rate": 0.9166666666666666,
+        "precision": 0.2916666666666667,
+        "recall": 0.6986111111111111,
+        "mrr": 0.84375,
+        "ndcg": 0.6948426600545226,
+        "scored": 24,
+        "undefined": 3
+      },
+      "rerank": {
+        "hit_rate": 0.9166666666666666,
+        "precision": 0.2833333333333334,
+        "recall": 0.7194444444444444,
+        "mrr": 0.7597222222222223,
+        "ndcg": 0.6622071484643054,
+        "scored": 24,
+        "undefined": 3
+      }
+    },
+    "10": {
+      "dense": {
+        "hit_rate": 1.0,
+        "precision": 0.17500000000000002,
+        "recall": 0.8229166666666666,
+        "mrr": 0.7409722222222223,
+        "ndcg": 0.686645586730323,
+        "scored": 24,
+        "undefined": 3
+      },
+      "bm25": {
+        "hit_rate": 0.9166666666666666,
+        "precision": 0.16666666666666666,
+        "recall": 0.7569444444444445,
+        "mrr": 0.6932870370370371,
+        "ndcg": 0.6445705024590569,
+        "scored": 24,
+        "undefined": 3
+      },
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.17916666666666667,
+        "recall": 0.8298611111111112,
+        "mrr": 0.8549107142857143,
+        "ndcg": 0.7501894602134627,
+        "scored": 24,
+        "undefined": 3
+      },
+      "rerank": {
+        "hit_rate": 0.9583333333333334,
+        "precision": 0.17916666666666667,
+        "recall": 0.8402777777777778,
+        "mrr": 0.7656746031746032,
+        "ndcg": 0.7193384424380661,
+        "scored": 24,
+        "undefined": 3
+      }
+    }
+  },
+  "by_category": {
+    "exact_term": {
+      "n": 4,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.30000000000000004,
+        "recall": 0.8333333333333334,
+        "mrr": 1.0,
+        "ndcg": 0.8059273391747137,
+        "scored": 4,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.25,
+        "recall": 0.7083333333333334,
+        "mrr": 0.875,
+        "ndcg": 0.6766191096980132,
+        "scored": 4,
+        "undefined": 0
+      }
+    },
+    "acronym": {
+      "n": 5,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.32,
+        "recall": 0.7833333333333333,
+        "mrr": 1.0,
+        "ndcg": 0.8141525786117725,
+        "scored": 5,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.28,
+        "recall": 0.7333333333333333,
+        "mrr": 1.0,
+        "ndcg": 0.7740206680553829,
+        "scored": 5,
+        "undefined": 0
+      }
+    },
+    "paraphrase": {
+      "n": 4,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 0.75,
+        "precision": 0.25,
+        "recall": 0.47916666666666663,
+        "mrr": 0.625,
+        "ndcg": 0.47942211531600853,
+        "scored": 4,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 0.75,
+        "precision": 0.2,
+        "recall": 0.5833333333333334,
+        "mrr": 0.425,
+        "ndcg": 0.4006638768371486,
+        "scored": 4,
+        "undefined": 0
+      }
+    },
+    "long_tail_detail": {
+      "n": 4,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.35,
+        "recall": 0.775,
+        "mrr": 1.0,
+        "ndcg": 0.8132731445470561,
+        "scored": 4,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.35,
+        "recall": 0.775,
+        "mrr": 1.0,
+        "ndcg": 0.8138986386396494,
+        "scored": 4,
+        "undefined": 0
+      }
+    },
+    "near_duplicate": {
+      "n": 2,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.30000000000000004,
+        "recall": 0.5,
+        "mrr": 0.75,
+        "ndcg": 0.4734512147629872,
+        "scored": 2,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.4,
+        "recall": 0.6666666666666666,
+        "mrr": 0.35,
+        "ndcg": 0.4571852065075719,
+        "scored": 2,
+        "undefined": 0
+      }
+    },
+    "negation": {
+      "n": 2,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.30000000000000004,
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 1.0,
+        "scored": 2,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.30000000000000004,
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 1.0,
+        "scored": 2,
+        "undefined": 0
+      }
+    },
+    "multi_hop": {
+      "n": 2,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 1.0,
+        "precision": 0.30000000000000004,
+        "recall": 0.75,
+        "mrr": 0.625,
+        "ndcg": 0.6320340612862955,
+        "scored": 2,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 1.0,
+        "precision": 0.4,
+        "recall": 1.0,
+        "mrr": 0.6666666666666666,
+        "ndcg": 0.7718856545760127,
+        "scored": 2,
+        "undefined": 0
+      }
+    },
+    "ambiguous": {
+      "n": 1,
+      "unanswerable": 0,
+      "fused": {
+        "hit_rate": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "mrr": 0.0,
+        "ndcg": 0.0,
+        "scored": 1,
+        "undefined": 0
+      },
+      "rerank": {
+        "hit_rate": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "mrr": 0.0,
+        "ndcg": 0.0,
+        "scored": 1,
+        "undefined": 0
+      }
+    },
+    "out_of_corpus": {
+      "n": 3,
+      "unanswerable": 3,
+      "fused": {
+        "hit_rate": null,
+        "precision": null,
+        "recall": null,
+        "mrr": null,
+        "ndcg": null,
+        "scored": 0,
+        "undefined": 3
+      },
+      "rerank": {
+        "hit_rate": null,
+        "precision": null,
+        "recall": null,
+        "mrr": null,
+        "ndcg": null,
+        "scored": 0,
+        "undefined": 3
+      }
+    }
+  },
+  "packing": {
+    "5": {
+      "retriever_order": {
+        "hit_rate": 0.9166666666666666,
+        "precision": 0.2833333333333334,
+        "recall": 0.7194444444444444,
+        "mrr": 0.7597222222222223,
+        "ndcg": 0.6622071484643054,
+        "scored": 24,
+        "undefined": 3
+      },
+      "packed_order": {
+        "hit_rate": 0.9166666666666666,
+        "precision": 0.2833333333333334,
+        "recall": 0.7194444444444444,
+        "mrr": 0.7527777777777778,
+        "ndcg": 0.659789170520294,
+        "scored": 24,
+        "undefined": 3
+      }
+    },
+    "10": {
+      "retriever_order": {
+        "hit_rate": 0.9583333333333334,
+        "precision": 0.17916666666666667,
+        "recall": 0.8402777777777778,
+        "mrr": 0.7656746031746032,
+        "ndcg": 0.7193384424380661,
+        "scored": 24,
+        "undefined": 3
+      },
+      "packed_order": {
+        "hit_rate": 0.9583333333333334,
+        "precision": 0.17916666666666667,
+        "recall": 0.8402777777777778,
+        "mrr": 0.7576884920634921,
+        "ndcg": 0.7000421244130317,
+        "scored": 24,
+        "undefined": 3
+      }
+    }
+  },
+  "rankings": {
+    "bisect-left-vs-right": {
+      "dense": [
+        "algo-binary-search#2.1",
+        "algo-two-pointers#1.0",
+        "algo-binary-search#1.2",
+        "algo-binary-search#1.1",
+        "algo-parity-filters#3.0",
+        "algo-binary-search#2.0",
+        "algo-binary-search#1.0",
+        "algo-binary-search#4.0",
+        "algo-loop-bounds#5.0",
+        "algo-sliding-window#0.0"
+      ],
+      "bm25": [
+        "algo-binary-search#2.1",
+        "algo-dynamic-programming#4.0",
+        "algo-sliding-window#0.0",
+        "algo-two-pointers#3.1",
+        "algo-two-pointers#1.0",
+        "algo-sliding-window#2.0",
+        "algo-binary-search#2.0",
+        "algo-graph-traversal#2.1",
+        "algo-sliding-window#3.0",
+        "algo-two-pointers#1.1"
+      ],
+      "fused": [
+        "algo-binary-search#2.1",
+        "algo-two-pointers#1.0",
+        "algo-sliding-window#0.0",
+        "algo-binary-search#2.0",
+        "algo-two-pointers#1.1",
+        "algo-sliding-window#2.0",
+        "algo-sliding-window#3.0",
+        "algo-stacks-queues#6.0",
+        "algo-sliding-window#5.0",
+        "algo-dynamic-programming#4.0"
+      ],
+      "rerank": [
+        "algo-binary-search#2.1",
+        "algo-two-pointers#1.0",
+        "algo-sliding-window#0.0",
+        "algo-dynamic-programming#4.0",
+        "algo-binary-search#2.0",
+        "algo-two-pointers#1.1",
+        "algo-sliding-window#3.0",
+        "algo-two-pointers#3.1",
+        "algo-sliding-window#2.0",
+        "algo-sliding-window#5.0"
+      ]
+    },
+    "list-pop-zero-queue": {
+      "dense": [
+        "algo-stacks-queues#2.0",
+        "algo-heaps#6.0",
+        "algo-stacks-queues#6.0",
+        "algo-heaps#1.1",
+        "algo-heaps#4.0",
+        "algo-graph-traversal#2.1",
+        "algo-heaps#1.0",
+        "algo-heaps#3.0",
+        "algo-stacks-queues#1.1",
+        "algo-stacks-queues#1.0"
+      ],
+      "bm25": [
+        "algo-stacks-queues#2.0",
+        "algo-loop-bounds#5.0",
+        "algo-stacks-queues#6.0",
+        "algo-graph-traversal#2.1",
+        "algo-greedy#5.0",
+        "algo-heaps#3.0",
+        "algo-sliding-window#5.0",
+        "algo-loop-bounds#0.0",
+        "algo-dynamic-programming#2.0",
+        "algo-hash-counting#6.0"
+      ],
+      "fused": [
+        "algo-stacks-queues#2.0",
+        "algo-stacks-queues#6.0",
+        "algo-graph-traversal#2.1",
+        "algo-heaps#3.0",
+        "algo-heaps#4.0",
+        "algo-heaps#1.0",
+        "algo-heaps#1.1",
+        "algo-sliding-window#5.0",
+        "algo-stacks-queues#3.0",
+        "algo-heaps#6.0"
+      ],
+      "rerank": [
+        "algo-stacks-queues#2.0",
+        "algo-stacks-queues#6.0",
+        "algo-graph-traversal#2.1",
+        "algo-heaps#1.1",
+        "algo-heaps#6.0",
+        "algo-heaps#1.0",
+        "algo-stacks-queues#1.0",
+        "algo-heaps#3.0",
+        "algo-graph-traversal#6.0",
+        "algo-stacks-queues#4.0"
+      ]
+    },
+    "heapq-max-heap": {
+      "dense": [
+        "algo-heaps#2.0",
+        "algo-heaps#6.0",
+        "algo-heaps#1.1",
+        "algo-heaps#4.0",
+        "algo-heaps#1.0",
+        "algo-heaps#3.0",
+        "algo-sorting-key#6.0",
+        "algo-shortest-paths#1.1",
+        "algo-heaps#0.0",
+        "algo-dynamic-programming#2.0"
+      ],
+      "bm25": [
+        "algo-heaps#2.0",
+        "algo-heaps#3.0",
+        "algo-hash-counting#1.1",
+        "algo-heaps#1.0",
+        "algo-heaps#4.0",
+        "algo-heaps#5.0",
+        "algo-shortest-paths#1.0",
+        "algo-heaps#6.0",
+        "algo-recursion#4.0",
+        "algo-heaps#1.1"
+      ],
+      "fused": [
+        "algo-heaps#2.0",
+        "algo-heaps#3.0",
+        "algo-heaps#4.0",
+        "algo-heaps#1.0",
+        "algo-heaps#6.0",
+        "algo-heaps#1.1",
+        "algo-shortest-paths#1.0",
+        "algo-heaps#5.0",
+        "algo-shortest-paths#1.1",
+        "algo-dynamic-programming#2.0"
+      ],
+      "rerank": [
+        "algo-heaps#2.0",
+        "algo-heaps#6.0",
+        "algo-heaps#1.0",
+        "algo-heaps#1.1",
+        "algo-heaps#4.0",
+        "algo-shortest-paths#1.1",
+        "algo-heaps#3.0",
+        "algo-sorting-key#6.0",
+        "algo-heaps#5.0",
+        "algo-shortest-paths#1.0"
+      ]
+    },
+    "counter-most-common": {
+      "dense": [
+        "algo-hash-counting#6.0",
+        "algo-hash-counting#1.1",
+        "algo-hash-counting#1.0",
+        "algo-hash-counting#2.0",
+        "algo-sets#6.0",
+        "algo-hash-counting#3.0",
+        "algo-stdin-parsing#2.0",
+        "algo-loop-bounds#3.0",
+        "algo-sliding-window#3.0",
+        "algo-sets#2.0"
+      ],
+      "bm25": [
+        "algo-dynamic-programming#1.0",
+        "algo-heaps#1.0",
+        "algo-hash-counting#1.0",
+        "algo-python-pitfalls#9.0",
+        "algo-heaps#4.0",
+        "algo-strings#5.0",
+        "algo-sets#6.0",
+        "algo-dynamic-programming#6.0",
+        "algo-shortest-paths#1.1",
+        "algo-sliding-window#3.0"
+      ],
+      "fused": [
+        "algo-hash-counting#1.0",
+        "algo-sets#6.0",
+        "algo-hash-counting#6.0",
+        "algo-hash-counting#1.1",
+        "algo-sliding-window#3.0",
+        "algo-heaps#4.0",
+        "algo-sets#2.0",
+        "algo-python-pitfalls#2.0",
+        "algo-dynamic-programming#1.0",
+        "algo-heaps#1.0"
+      ],
+      "rerank": [
+        "algo-heaps#4.0",
+        "algo-hash-counting#1.0",
+        "algo-strings#5.0",
+        "algo-sliding-window#3.0",
+        "algo-sets#6.0",
+        "algo-hash-counting#1.1",
+        "algo-hash-counting#6.0",
+        "algo-hash-counting#5.0",
+        "algo-sets#2.0",
+        "algo-python-pitfalls#2.0"
+      ]
+    },
+    "bfs-visits-node-twice": {
+      "dense": [
+        "algo-stacks-queues#2.0",
+        "algo-graph-traversal#2.1",
+        "algo-graph-traversal#2.2",
+        "algo-graph-traversal#2.0",
+        "algo-stacks-queues#6.0",
+        "algo-heaps#4.0",
+        "algo-shortest-paths#4.0",
+        "algo-graph-traversal#4.2",
+        "algo-stacks-queues#5.0",
+        "algo-graph-traversal#4.0"
+      ],
+      "bm25": [
+        "algo-graph-traversal#2.1",
+        "algo-graph-traversal#2.0",
+        "algo-stacks-queues#5.0",
+        "algo-stacks-queues#2.0",
+        "algo-graph-traversal#2.2",
+        "algo-graph-traversal#3.0",
+        "algo-shortest-paths#1.1",
+        "algo-shortest-paths#4.0",
+        "algo-shortest-paths#3.0",
+        "algo-heaps#5.0"
+      ],
+      "fused": [
+        "algo-graph-traversal#2.1",
+        "algo-stacks-queues#2.0",
+        "algo-graph-traversal#2.0",
+        "algo-graph-traversal#2.2",
+        "algo-stacks-queues#5.0",
+        "algo-shortest-paths#4.0",
+        "algo-shortest-paths#1.1",
+        "algo-shortest-paths#3.0",
+        "algo-heaps#5.0",
+        "algo-stacks-queues#6.0"
+      ],
+      "rerank": [
+        "algo-graph-traversal#2.1",
+        "algo-stacks-queues#2.0",
+        "algo-graph-traversal#2.2",
+        "algo-shortest-paths#4.0",
+        "algo-stacks-queues#5.0",
+        "algo-graph-traversal#2.0",
+        "algo-graph-traversal#4.2",
+        "algo-graph-traversal#3.0",
+        "algo-shortest-paths#3.0",
+        "algo-shortest-paths#5.0"
+      ]
+    },
+    "dp-knapsack-loop-direction": {
+      "dense": [
+        "algo-dynamic-programming#3.0",
+        "algo-greedy#5.0",
+        "algo-dynamic-programming#2.0",
+        "algo-dynamic-programming#6.0",
+        "algo-greedy#4.0",
+        "algo-dynamic-programming#6.1",
+        "algo-complexity#2.0",
+        "algo-sliding-window#5.0",
+        "algo-complexity#4.0",
+        "algo-dynamic-programming#0.0"
+      ],
+      "bm25": [
+        "algo-dynamic-programming#3.0",
+        "algo-dynamic-programming#6.0",
+        "algo-binary-search#3.0",
+        "algo-complexity#4.0",
+        "algo-greedy#5.0",
+        "algo-sets#1.0",
+        "algo-dynamic-programming#2.1",
+        "algo-dynamic-programming#1.0",
+        "algo-dynamic-programming#2.0",
+        "algo-complexity#2.0"
+      ],
+      "fused": [
+        "algo-dynamic-programming#3.0",
+        "algo-dynamic-programming#6.0",
+        "algo-greedy#5.0",
+        "algo-dynamic-programming#2.0",
+        "algo-complexity#4.0",
+        "algo-complexity#2.0",
+        "algo-dynamic-programming#2.1",
+        "algo-greedy#4.0",
+        "algo-dynamic-programming#6.1",
+        "algo-dynamic-programming#4.0"
+      ],
+      "rerank": [
+        "algo-dynamic-programming#3.0",
+        "algo-dynamic-programming#6.0",
+        "algo-greedy#5.0",
+        "algo-graph-traversal#2.2",
+        "algo-greedy#4.0",
+        "algo-complexity#2.0",
+        "algo-complexity#4.0",
+        "algo-dynamic-programming#2.0",
+        "algo-dynamic-programming#2.1",
+        "algo-dynamic-programming#6.1"
+      ]
+    },
+    "gcd-to-lcm": {
+      "dense": [
+        "algo-number-theory#1.0",
+        "algo-dynamic-programming#4.0",
+        "algo-dynamic-programming#4.1",
+        "algo-stacks-queues#2.0",
+        "algo-shortest-paths#1.0",
+        "algo-stacks-queues#6.0",
+        "algo-number-theory#3.0",
+        "algo-graph-traversal#1.1",
+        "algo-loop-bounds#5.0",
+        "algo-graph-traversal#2.1"
+      ],
+      "bm25": [
+        "algo-number-theory#1.0",
+        "algo-hash-counting#1.0",
+        "algo-loop-bounds#3.0",
+        "algo-dynamic-programming#5.0",
+        "algo-dynamic-programming#1.0",
+        "algo-stdin-parsing#2.0",
+        "algo-dynamic-programming#2.0",
+        "algo-prefix-sums#2.0",
+        "algo-graph-traversal#1.0",
+        "algo-binary-search#2.1"
+      ],
+      "fused": [
+        "algo-number-theory#1.0",
+        "algo-dynamic-programming#4.0",
+        "algo-stacks-queues#6.0",
+        "algo-dynamic-programming#1.0",
+        "algo-shortest-paths#1.0",
+        "algo-hash-counting#1.0",
+        "algo-dynamic-programming#4.1",
+        "algo-loop-bounds#3.0",
+        "algo-stacks-queues#2.0",
+        "algo-dynamic-programming#5.0"
+      ],
+      "rerank": [
+        "algo-number-theory#1.0",
+        "algo-hash-counting#1.0",
+        "algo-dynamic-programming#5.0",
+        "algo-binary-search#2.1",
+        "algo-shortest-paths#1.0",
+        "algo-stacks-queues#2.0",
+        "algo-graph-traversal#1.0",
+        "algo-dynamic-programming#2.0",
+        "algo-loop-bounds#5.0",
+        "algo-graph-traversal#1.1"
+      ]
+    },
+    "lifo-vs-fifo": {
+      "dense": [
+        "algo-stacks-queues#0.0",
+        "algo-stacks-queues#6.0",
+        "algo-stacks-queues#2.0",
+        "algo-heaps#1.1",
+        "algo-stacks-queues#5.0",
+        "algo-stacks-queues#1.1",
+        "algo-stacks-queues#1.0",
+        "algo-stacks-queues#3.0",
+        "algo-stacks-queues#3.1",
+        "algo-heaps#6.0"
+      ],
+      "bm25": [
+        "algo-stacks-queues#0.0",
+        "algo-heaps#4.0",
+        "algo-stacks-queues#5.0",
+        "algo-heaps#0.0",
+        "algo-stacks-queues#3.0",
+        "algo-stacks-queues#1.1",
+        "algo-graph-traversal#2.1",
+        "algo-stacks-queues#1.0",
+        "algo-graph-traversal#3.0",
+        "algo-stacks-queues#2.0"
+      ],
+      "fused": [
+        "algo-stacks-queues#0.0",
+        "algo-stacks-queues#5.0",
+        "algo-stacks-queues#1.1",
+        "algo-heaps#4.0",
+        "algo-stacks-queues#2.0",
+        "algo-stacks-queues#3.0",
+        "algo-stacks-queues#6.0",
+        "algo-stacks-queues#1.0",
+        "algo-heaps#0.0",
+        "algo-stacks-queues#3.1"
+      ],
+      "rerank": [
+        "algo-stacks-queues#0.0",
+        "algo-heaps#4.0",
+        "algo-stacks-queues#5.0",
+        "algo-stacks-queues#1.1",
+        "algo-stacks-queues#2.0",
+        "algo-stacks-queues#3.0",
+        "algo-stacks-queues#3.1",
+        "algo-stacks-queues#1.0",
+        "algo-stacks-queues#6.0",
+        "algo-graph-traversal#2.1"
+      ]
+    },
+    "lis-efficient": {
+      "dense": [
+        "algo-dynamic-programming#4.0",
+        "algo-two-pointers#3.0",
+        "algo-hash-counting#2.1",
+        "algo-dynamic-programming#4.1",
+        "algo-python-pitfalls#1.0",
+        "algo-loop-bounds#5.0",
+        "algo-python-pitfalls#10.0",
+        "algo-number-theory#4.1",
+        "algo-dynamic-programming#2.0",
+        "algo-complexity#6.0"
+      ],
+      "bm25": [
+        "algo-dynamic-programming#4.0",
+        "algo-prefix-sums#0.0",
+        "algo-prefix-sums#1.0",
+        "algo-two-pointers#0.0",
+        "algo-stdin-parsing#4.0",
+        "algo-prefix-sums#5.0",
+        "algo-complexity#1.0",
+        "algo-hash-counting#6.0",
+        "algo-hash-counting#0.0",
+        "algo-stacks-queues#3.1"
+      ],
+      "fused": [
+        "algo-dynamic-programming#4.0",
+        "algo-two-pointers#3.0",
+        "algo-complexity#1.0",
+        "algo-stacks-queues#3.1",
+        "algo-stacks-queues#6.0",
+        "algo-two-pointers#2.0",
+        "algo-prefix-sums#0.0",
+        "algo-hash-counting#2.1",
+        "algo-prefix-sums#1.0",
+        "algo-dynamic-programming#4.1"
+      ],
+      "rerank": [
+        "algo-dynamic-programming#4.0",
+        "algo-two-pointers#2.0",
+        "algo-two-pointers#0.0",
+        "algo-two-pointers#3.0",
+        "algo-number-theory#4.1",
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#5.0",
+        "algo-prefix-sums#0.0",
+        "algo-stdin-parsing#4.0",
+        "algo-stacks-queues#3.1"
+      ]
+    },
+    "even-sum-adds-wrong-thing": {
+      "dense": [
+        "algo-parity-filters#2.0",
+        "algo-loop-bounds#3.0",
+        "algo-parity-filters#3.0",
+        "algo-loop-bounds#5.0",
+        "algo-python-pitfalls#4.0",
+        "algo-dynamic-programming#4.1",
+        "algo-prefix-sums#1.0",
+        "algo-hash-counting#2.0",
+        "algo-dynamic-programming#4.0",
+        "algo-loop-bounds#6.0"
+      ],
+      "bm25": [
+        "algo-stdin-parsing#0.0",
+        "algo-parity-filters#2.0",
+        "algo-parity-filters#3.0",
+        "algo-number-theory#1.0",
+        "algo-sets#1.0",
+        "algo-dynamic-programming#5.0",
+        "algo-strings#1.0",
+        "algo-number-theory#3.0",
+        "algo-two-pointers#1.0",
+        "algo-graph-traversal#5.0"
+      ],
+      "fused": [
+        "algo-parity-filters#2.0",
+        "algo-parity-filters#3.0",
+        "algo-stdin-parsing#0.0",
+        "algo-loop-bounds#3.0",
+        "algo-loop-bounds#5.0",
+        "algo-number-theory#1.0",
+        "algo-python-pitfalls#4.0",
+        "algo-sets#1.0",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#5.0"
+      ],
+      "rerank": [
+        "algo-parity-filters#2.0",
+        "algo-two-pointers#1.0",
+        "algo-parity-filters#3.0",
+        "algo-number-theory#0.0",
+        "algo-number-theory#1.0",
+        "algo-dynamic-programming#4.0",
+        "algo-python-pitfalls#4.0",
+        "algo-dynamic-programming#5.0",
+        "algo-loop-bounds#5.0",
+        "algo-sets#1.0"
+      ]
+    },
+    "judge-says-too-slow": {
+      "dense": [
+        "algo-recursion#1.0",
+        "algo-binary-search#3.1",
+        "algo-complexity#1.0",
+        "algo-binary-search#3.0",
+        "algo-loop-bounds#5.0",
+        "algo-dynamic-programming#1.0",
+        "algo-stdin-parsing#5.0",
+        "algo-stacks-queues#6.0",
+        "algo-dynamic-programming#6.1",
+        "algo-binary-search#1.2"
+      ],
+      "bm25": [
+        "algo-greedy#1.0",
+        "algo-dynamic-programming#1.0",
+        "algo-sets#0.0",
+        "algo-greedy#0.0",
+        "algo-two-pointers#1.0",
+        "algo-recursion#4.0",
+        "algo-loop-bounds#0.0",
+        "algo-loop-bounds#3.0",
+        "algo-complexity#1.0",
+        "algo-stdin-parsing#5.0"
+      ],
+      "fused": [
+        "algo-dynamic-programming#1.0",
+        "algo-complexity#1.0",
+        "algo-greedy#1.0",
+        "algo-stdin-parsing#5.0",
+        "algo-sliding-window#5.0",
+        "algo-recursion#1.0",
+        "algo-binary-search#3.1",
+        "algo-sets#0.0",
+        "algo-binary-search#3.0",
+        "algo-greedy#0.0"
+      ],
+      "rerank": [
+        "algo-greedy#0.0",
+        "algo-sets#0.0",
+        "algo-greedy#1.0",
+        "algo-binary-search#3.1",
+        "algo-dynamic-programming#1.0",
+        "algo-loop-bounds#0.0",
+        "algo-complexity#1.0",
+        "algo-sliding-window#5.0",
+        "algo-two-pointers#1.0",
+        "algo-recursion#4.0"
+      ]
+    },
+    "grid-rows-change-together": {
+      "dense": [
+        "algo-dynamic-programming#5.0",
+        "algo-dynamic-programming#4.1",
+        "algo-sets#4.0",
+        "algo-dynamic-programming#3.0",
+        "algo-python-pitfalls#1.0",
+        "algo-hash-counting#3.0",
+        "algo-dynamic-programming#1.0",
+        "algo-graph-traversal#4.2",
+        "algo-strings#4.1",
+        "algo-loop-bounds#3.0"
+      ],
+      "bm25": [
+        "algo-sets#5.0",
+        "algo-graph-traversal#4.0",
+        "algo-graph-traversal#4.2",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#6.0",
+        "algo-dynamic-programming#1.0",
+        "algo-dynamic-programming#5.0",
+        "algo-dynamic-programming#3.0",
+        "algo-dynamic-programming#4.0",
+        "algo-sets#0.0"
+      ],
+      "fused": [
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#5.0",
+        "algo-graph-traversal#4.2",
+        "algo-dynamic-programming#3.0",
+        "algo-sets#5.0",
+        "algo-dynamic-programming#1.0",
+        "algo-dynamic-programming#6.0",
+        "algo-python-pitfalls#1.0",
+        "algo-hash-counting#3.0",
+        "algo-sets#0.0"
+      ],
+      "rerank": [
+        "algo-graph-traversal#4.2",
+        "algo-sets#5.0",
+        "algo-dynamic-programming#5.0",
+        "algo-graph-traversal#4.0",
+        "algo-python-pitfalls#1.0",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#6.0",
+        "algo-hash-counting#3.0",
+        "algo-dynamic-programming#4.0",
+        "algo-dynamic-programming#3.0"
+      ]
+    },
+    "negative-floor-division": {
+      "dense": [
+        "algo-python-pitfalls#5.0",
+        "algo-python-pitfalls#4.0",
+        "algo-parity-filters#1.0",
+        "algo-loop-bounds#2.0",
+        "algo-loop-bounds#3.0",
+        "algo-parity-filters#3.0",
+        "algo-python-pitfalls#6.0",
+        "algo-python-pitfalls#10.0",
+        "algo-python-pitfalls#7.0",
+        "algo-binary-search#4.0"
+      ],
+      "bm25": [
+        "algo-python-pitfalls#4.0",
+        "algo-python-pitfalls#10.0",
+        "algo-greedy#3.0",
+        "algo-number-theory#4.0",
+        "algo-parity-filters#1.0",
+        "algo-complexity#1.0",
+        "algo-python-pitfalls#1.0",
+        "algo-number-theory#4.1",
+        "algo-dynamic-programming#1.0",
+        "algo-hash-counting#5.0"
+      ],
+      "fused": [
+        "algo-python-pitfalls#4.0",
+        "algo-parity-filters#1.0",
+        "algo-python-pitfalls#10.0",
+        "algo-number-theory#4.0",
+        "algo-python-pitfalls#5.0",
+        "algo-binary-search#4.0",
+        "algo-number-theory#2.0",
+        "algo-greedy#3.0",
+        "algo-loop-bounds#2.0",
+        "algo-loop-bounds#3.0"
+      ],
+      "rerank": [
+        "algo-python-pitfalls#4.0",
+        "algo-python-pitfalls#10.0",
+        "algo-number-theory#4.1",
+        "algo-parity-filters#1.0",
+        "algo-number-theory#4.0",
+        "algo-hash-counting#5.0",
+        "algo-number-theory#2.0",
+        "algo-python-pitfalls#5.0",
+        "algo-python-pitfalls#1.0",
+        "algo-complexity#1.0"
+      ]
+    },
+    "two-pointers-or-sliding-window": {
+      "dense": [
+        "algo-two-pointers#5.0",
+        "algo-sliding-window#0.0",
+        "algo-two-pointers#5.1",
+        "algo-sliding-window#5.0",
+        "algo-two-pointers#1.1",
+        "algo-two-pointers#0.0",
+        "algo-two-pointers#4.0",
+        "algo-two-pointers#3.1",
+        "algo-two-pointers#2.0",
+        "algo-two-pointers#3.0"
+      ],
+      "bm25": [
+        "algo-sliding-window#0.0",
+        "algo-two-pointers#5.1",
+        "algo-two-pointers#4.0",
+        "algo-sliding-window#1.0",
+        "algo-stacks-queues#4.0",
+        "algo-sliding-window#4.0",
+        "algo-sliding-window#3.0",
+        "algo-stdin-parsing#2.0",
+        "algo-two-pointers#0.0",
+        "algo-sliding-window#5.0"
+      ],
+      "fused": [
+        "algo-sliding-window#0.0",
+        "algo-two-pointers#5.1",
+        "algo-two-pointers#4.0",
+        "algo-sliding-window#5.0",
+        "algo-two-pointers#0.0",
+        "algo-sliding-window#4.0",
+        "algo-two-pointers#3.1",
+        "algo-sliding-window#2.1",
+        "algo-two-pointers#3.0",
+        "algo-sliding-window#2.0"
+      ],
+      "rerank": [
+        "algo-two-pointers#5.1",
+        "algo-sliding-window#0.0",
+        "algo-sliding-window#4.0",
+        "algo-two-pointers#0.0",
+        "algo-sliding-window#3.0",
+        "algo-sliding-window#2.1",
+        "algo-two-pointers#5.0",
+        "algo-two-pointers#4.0",
+        "algo-sliding-window#2.0",
+        "algo-sliding-window#5.0"
+      ]
+    },
+    "set-or-counter-for-duplicates": {
+      "dense": [
+        "algo-hash-counting#3.0",
+        "algo-sets#2.0",
+        "algo-sets#6.0",
+        "algo-sets#4.0",
+        "algo-hash-counting#1.1",
+        "algo-hash-counting#6.0",
+        "algo-sets#7.0",
+        "algo-stacks-queues#6.0",
+        "algo-sets#1.0",
+        "algo-two-pointers#5.1"
+      ],
+      "bm25": [
+        "algo-recursion#4.0",
+        "algo-hash-counting#6.0",
+        "algo-sets#6.0",
+        "algo-sets#7.0",
+        "algo-hash-counting#3.0",
+        "algo-stacks-queues#6.0",
+        "algo-hash-counting#0.0",
+        "algo-sets#2.0",
+        "algo-sorting-key#3.0",
+        "algo-hash-counting#1.1"
+      ],
+      "fused": [
+        "algo-hash-counting#3.0",
+        "algo-sets#6.0",
+        "algo-hash-counting#6.0",
+        "algo-sets#2.0",
+        "algo-sets#7.0",
+        "algo-stacks-queues#6.0",
+        "algo-hash-counting#1.1",
+        "algo-hash-counting#0.0",
+        "algo-stdin-parsing#2.0",
+        "algo-recursion#4.0"
+      ],
+      "rerank": [
+        "algo-hash-counting#3.0",
+        "algo-sets#7.0",
+        "algo-sets#2.0",
+        "algo-two-pointers#5.1",
+        "algo-sets#6.0",
+        "algo-recursion#4.0",
+        "algo-stacks-queues#6.0",
+        "algo-hash-counting#0.0",
+        "algo-hash-counting#1.1",
+        "algo-hash-counting#6.0"
+      ]
+    },
+    "dijkstra-negative-weights": {
+      "dense": [
+        "algo-shortest-paths#2.0",
+        "algo-shortest-paths#2.1",
+        "algo-shortest-paths#5.0",
+        "algo-shortest-paths#1.0",
+        "algo-shortest-paths#0.0",
+        "algo-shortest-paths#3.0",
+        "algo-shortest-paths#1.1",
+        "algo-shortest-paths#4.0",
+        "algo-graph-traversal#6.0",
+        "algo-shortest-paths#3.1"
+      ],
+      "bm25": [
+        "algo-shortest-paths#2.0",
+        "algo-shortest-paths#2.1",
+        "algo-shortest-paths#0.0",
+        "algo-binary-search#3.0",
+        "algo-shortest-paths#3.0",
+        "algo-shortest-paths#1.0",
+        "algo-dynamic-programming#2.0",
+        "algo-shortest-paths#5.0",
+        "algo-graph-traversal#6.0",
+        "algo-shortest-paths#4.0"
+      ],
+      "fused": [
+        "algo-shortest-paths#2.0",
+        "algo-shortest-paths#2.1",
+        "algo-shortest-paths#0.0",
+        "algo-shortest-paths#1.0",
+        "algo-shortest-paths#5.0",
+        "algo-shortest-paths#3.0",
+        "algo-shortest-paths#4.0",
+        "algo-graph-traversal#6.0",
+        "algo-loop-bounds#5.0",
+        "algo-binary-search#3.0"
+      ],
+      "rerank": [
+        "algo-shortest-paths#2.0",
+        "algo-shortest-paths#2.1",
+        "algo-shortest-paths#0.0",
+        "algo-shortest-paths#5.0",
+        "algo-graph-traversal#6.0",
+        "algo-shortest-paths#1.0",
+        "algo-shortest-paths#4.0",
+        "algo-shortest-paths#1.1",
+        "algo-shortest-paths#3.0",
+        "algo-graph-traversal#1.0"
+      ]
+    },
+    "greedy-coin-change-valid": {
+      "dense": [
+        "algo-greedy#3.0",
+        "algo-greedy#1.0",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#4.0",
+        "algo-dynamic-programming#6.1",
+        "algo-greedy#5.0",
+        "algo-prefix-sums#2.1",
+        "algo-greedy#0.0",
+        "algo-recursion#4.0",
+        "algo-dynamic-programming#5.0"
+      ],
+      "bm25": [
+        "algo-greedy#3.0",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#3.0",
+        "algo-dynamic-programming#4.0",
+        "algo-sets#1.0",
+        "algo-recursion#4.0",
+        "algo-hash-counting#0.0",
+        "algo-dynamic-programming#0.0",
+        "algo-python-pitfalls#1.0",
+        "algo-recursion#5.0"
+      ],
+      "fused": [
+        "algo-greedy#3.0",
+        "algo-dynamic-programming#4.1",
+        "algo-dynamic-programming#4.0",
+        "algo-recursion#4.0",
+        "algo-dynamic-programming#3.0",
+        "algo-greedy#1.0",
+        "algo-sets#1.0",
+        "algo-greedy#0.0",
+        "algo-greedy#5.0",
+        "algo-number-theory#4.1"
+      ],
+      "rerank": [
+        "algo-greedy#3.0",
+        "algo-greedy#1.0",
+        "algo-dynamic-programming#4.1",
+        "algo-recursion#4.0",
+        "algo-dynamic-programming#4.0",
+        "algo-greedy#5.0",
+        "algo-hash-counting#0.0",
+        "algo-number-theory#4.1",
+        "algo-greedy#0.0",
+        "algo-prefix-sums#2.1"
+      ]
+    },
+    "binary-search-hangs": {
+      "dense": [
+        "algo-binary-search#1.2",
+        "algo-binary-search#1.0",
+        "algo-binary-search#4.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#0.0",
+        "algo-binary-search#3.0",
+        "algo-binary-search#2.0",
+        "algo-binary-search#4.1",
+        "algo-binary-search#2.1",
+        "algo-binary-search#3.1"
+      ],
+      "bm25": [
+        "algo-binary-search#0.0",
+        "algo-binary-search#1.2",
+        "algo-binary-search#4.0",
+        "algo-binary-search#3.0",
+        "algo-binary-search#3.1",
+        "algo-binary-search#4.1",
+        "algo-heaps#4.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#2.1",
+        "algo-binary-search#1.0"
+      ],
+      "fused": [
+        "algo-binary-search#1.2",
+        "algo-binary-search#0.0",
+        "algo-binary-search#4.0",
+        "algo-binary-search#3.0",
+        "algo-binary-search#1.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#4.1",
+        "algo-binary-search#3.1",
+        "algo-binary-search#2.0",
+        "algo-binary-search#2.1"
+      ],
+      "rerank": [
+        "algo-binary-search#4.0",
+        "algo-binary-search#4.1",
+        "algo-binary-search#1.2",
+        "algo-binary-search#0.0",
+        "algo-binary-search#3.1",
+        "algo-binary-search#1.1",
+        "algo-binary-search#3.0",
+        "algo-binary-search#1.0",
+        "algo-binary-search#2.1",
+        "algo-binary-search#2.0"
+      ]
+    },
+    "recursion-error-deep-input": {
+      "dense": [
+        "algo-recursion#1.0",
+        "algo-recursion#0.0",
+        "algo-recursion#6.0",
+        "algo-dynamic-programming#2.1",
+        "algo-recursion#3.0",
+        "algo-stacks-queues#5.0",
+        "algo-graph-traversal#3.0",
+        "algo-stdin-parsing#2.0",
+        "algo-recursion#2.0",
+        "algo-recursion#5.0"
+      ],
+      "bm25": [
+        "algo-dynamic-programming#1.0",
+        "algo-recursion#0.0",
+        "algo-sets#0.0",
+        "algo-dynamic-programming#2.1",
+        "algo-loop-bounds#3.0",
+        "algo-recursion#4.0",
+        "algo-hash-counting#6.0",
+        "algo-python-pitfalls#2.0",
+        "algo-stacks-queues#5.0",
+        "algo-dynamic-programming#6.1"
+      ],
+      "fused": [
+        "algo-recursion#0.0",
+        "algo-dynamic-programming#2.1",
+        "algo-recursion#1.0",
+        "algo-stacks-queues#5.0",
+        "algo-loop-bounds#3.0",
+        "algo-recursion#3.0",
+        "algo-graph-traversal#3.0",
+        "algo-hash-counting#6.0",
+        "algo-stdin-parsing#2.0",
+        "algo-dynamic-programming#1.0"
+      ],
+      "rerank": [
+        "algo-recursion#0.0",
+        "algo-dynamic-programming#2.1",
+        "algo-stacks-queues#5.0",
+        "algo-graph-traversal#3.0",
+        "algo-recursion#2.0",
+        "algo-recursion#6.0",
+        "algo-recursion#5.0",
+        "algo-recursion#1.0",
+        "algo-recursion#3.0",
+        "algo-dynamic-programming#1.0"
+      ]
+    },
+    "sort-desc-score-asc-name": {
+      "dense": [
+        "algo-sorting-key#1.0",
+        "algo-sorting-key#2.0",
+        "algo-sorting-key#5.0",
+        "algo-sorting-key#7.0",
+        "algo-hash-counting#5.0",
+        "algo-sorting-key#6.0",
+        "algo-parity-filters#3.0",
+        "algo-sets#6.0",
+        "algo-sorting-key#3.0",
+        "algo-strings#5.0"
+      ],
+      "bm25": [
+        "algo-sorting-key#2.0",
+        "algo-sorting-key#1.0",
+        "algo-binary-search#4.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#1.0",
+        "algo-greedy#5.0",
+        "algo-binary-search#3.0",
+        "algo-binary-search#4.1",
+        "algo-greedy#4.0",
+        "algo-binary-search#1.2"
+      ],
+      "fused": [
+        "algo-sorting-key#1.0",
+        "algo-sorting-key#2.0",
+        "algo-greedy#2.0",
+        "algo-sorting-key#4.0",
+        "algo-sorting-key#5.0",
+        "algo-binary-search#4.0",
+        "algo-sorting-key#7.0",
+        "algo-binary-search#1.1",
+        "algo-hash-counting#5.0",
+        "algo-binary-search#1.0"
+      ],
+      "rerank": [
+        "algo-sorting-key#2.0",
+        "algo-sorting-key#1.0",
+        "algo-binary-search#1.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#4.0",
+        "algo-binary-search#1.2",
+        "algo-binary-search#3.0",
+        "algo-binary-search#4.1",
+        "algo-sorting-key#6.0",
+        "algo-hash-counting#5.0"
+      ]
+    },
+    "output-has-brackets": {
+      "dense": [
+        "algo-python-pitfalls#10.0",
+        "algo-stdin-parsing#4.0",
+        "algo-loop-bounds#5.0",
+        "algo-python-pitfalls#0.0",
+        "algo-strings#6.0",
+        "algo-python-pitfalls#7.0",
+        "algo-python-pitfalls#6.0",
+        "algo-stdin-parsing#2.0",
+        "algo-parity-filters#3.0",
+        "algo-stdin-parsing#6.0"
+      ],
+      "bm25": [
+        "algo-strings#1.0",
+        "algo-stdin-parsing#0.0",
+        "algo-graph-traversal#5.0",
+        "algo-stdin-parsing#4.0",
+        "algo-stdin-parsing#6.0",
+        "algo-hash-counting#5.0",
+        "algo-stacks-queues#6.0",
+        "algo-stdin-parsing#5.0",
+        "algo-number-theory#1.0",
+        "algo-shortest-paths#5.0"
+      ],
+      "fused": [
+        "algo-stdin-parsing#4.0",
+        "algo-stdin-parsing#6.0",
+        "algo-strings#1.0",
+        "algo-strings#6.0",
+        "algo-strings#7.0",
+        "algo-python-pitfalls#10.0",
+        "algo-stdin-parsing#0.0",
+        "algo-loop-bounds#5.0",
+        "algo-graph-traversal#5.0",
+        "algo-python-pitfalls#0.0"
+      ],
+      "rerank": [
+        "algo-stdin-parsing#4.0",
+        "algo-strings#1.0",
+        "algo-stdin-parsing#6.0",
+        "algo-stacks-queues#6.0",
+        "algo-shortest-paths#5.0",
+        "algo-strings#6.0",
+        "algo-loop-bounds#5.0",
+        "algo-stdin-parsing#0.0",
+        "algo-hash-counting#5.0",
+        "algo-graph-traversal#5.0"
+      ]
+    },
+    "string-building-slow": {
+      "dense": [
+        "algo-strings#1.0",
+        "algo-strings#7.0",
+        "algo-stdin-parsing#5.0",
+        "algo-strings#5.0",
+        "algo-sets#7.0",
+        "algo-dynamic-programming#4.0",
+        "algo-strings#2.0",
+        "algo-sliding-window#5.0",
+        "algo-stdin-parsing#2.0",
+        "algo-dynamic-programming#4.1"
+      ],
+      "bm25": [
+        "algo-strings#1.0",
+        "algo-complexity#3.0",
+        "algo-two-pointers#2.0",
+        "algo-stdin-parsing#0.0",
+        "algo-stdin-parsing#4.0",
+        "algo-dynamic-programming#1.0",
+        "algo-strings#6.0",
+        "algo-sets#0.0",
+        "algo-number-theory#0.0",
+        "algo-prefix-sums#1.1"
+      ],
+      "fused": [
+        "algo-strings#1.0",
+        "algo-two-pointers#2.0",
+        "algo-strings#7.0",
+        "algo-complexity#3.0",
+        "algo-stdin-parsing#5.0",
+        "algo-strings#5.0",
+        "algo-stdin-parsing#0.0",
+        "algo-sets#7.0",
+        "algo-stdin-parsing#4.0",
+        "algo-dynamic-programming#4.0"
+      ],
+      "rerank": [
+        "algo-stdin-parsing#4.0",
+        "algo-strings#1.0",
+        "algo-two-pointers#2.0",
+        "algo-strings#2.0",
+        "algo-sets#7.0",
+        "algo-strings#7.0",
+        "algo-sliding-window#5.0",
+        "algo-complexity#3.0",
+        "algo-stdin-parsing#5.0",
+        "algo-sets#0.0"
+      ]
+    },
+    "prefix-sum-leading-zero": {
+      "dense": [
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#2.0",
+        "algo-prefix-sums#5.0",
+        "algo-two-pointers#3.1",
+        "algo-prefix-sums#0.0",
+        "algo-parity-filters#4.0",
+        "algo-prefix-sums#4.0",
+        "algo-loop-bounds#5.0",
+        "algo-parity-filters#3.0",
+        "algo-prefix-sums#3.1"
+      ],
+      "bm25": [
+        "algo-prefix-sums#5.0",
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#4.0",
+        "algo-prefix-sums#2.0",
+        "algo-prefix-sums#0.0",
+        "algo-sliding-window#2.1",
+        "algo-hash-counting#2.0",
+        "algo-hash-counting#2.1",
+        "algo-prefix-sums#1.1",
+        "algo-stdin-parsing#4.0"
+      ],
+      "fused": [
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#5.0",
+        "algo-prefix-sums#2.0",
+        "algo-prefix-sums#4.0",
+        "algo-prefix-sums#0.0",
+        "algo-prefix-sums#3.1",
+        "algo-two-pointers#3.1",
+        "algo-hash-counting#2.0",
+        "algo-loop-bounds#4.0",
+        "algo-two-pointers#1.0"
+      ],
+      "rerank": [
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#5.0",
+        "algo-prefix-sums#4.0",
+        "algo-prefix-sums#2.0",
+        "algo-prefix-sums#0.0",
+        "algo-prefix-sums#1.1",
+        "algo-sliding-window#2.1",
+        "algo-two-pointers#3.1",
+        "algo-two-pointers#1.0",
+        "algo-hash-counting#2.1"
+      ]
+    },
+    "make-it-faster": {
+      "dense": [
+        "algo-strings#7.0",
+        "algo-strings#1.0",
+        "algo-strings#5.0",
+        "algo-complexity#1.0",
+        "algo-two-pointers#2.0",
+        "algo-strings#4.0",
+        "algo-sets#1.0",
+        "algo-complexity#0.0",
+        "algo-recursion#4.0",
+        "algo-sets#7.0"
+      ],
+      "bm25": [
+        "algo-dynamic-programming#1.0",
+        "algo-python-pitfalls#0.0",
+        "algo-recursion#4.0",
+        "algo-parity-filters#3.0",
+        "algo-hash-counting#1.0",
+        "algo-greedy#5.0",
+        "algo-recursion#5.0",
+        "algo-dynamic-programming#5.0",
+        "algo-stdin-parsing#2.0",
+        "algo-prefix-sums#1.0"
+      ],
+      "fused": [
+        "algo-recursion#4.0",
+        "algo-strings#5.0",
+        "algo-strings#7.0",
+        "algo-dynamic-programming#1.0",
+        "algo-strings#1.0",
+        "algo-python-pitfalls#0.0",
+        "algo-complexity#1.0",
+        "algo-parity-filters#3.0",
+        "algo-two-pointers#2.0",
+        "algo-hash-counting#1.0"
+      ],
+      "rerank": [
+        "algo-two-pointers#2.0",
+        "algo-strings#5.0",
+        "algo-sets#1.0",
+        "algo-recursion#5.0",
+        "algo-greedy#5.0",
+        "algo-sets#7.0",
+        "algo-dynamic-programming#1.0",
+        "algo-strings#7.0",
+        "algo-dynamic-programming#5.0",
+        "algo-strings#4.0"
+      ]
+    },
+    "segment-tree-lazy": {
+      "dense": [
+        "algo-shortest-paths#1.1",
+        "algo-complexity#2.0",
+        "algo-stacks-queues#5.0",
+        "algo-graph-traversal#2.2",
+        "algo-graph-traversal#4.0",
+        "algo-graph-traversal#2.0",
+        "algo-graph-traversal#3.0",
+        "algo-recursion#6.0",
+        "algo-complexity#6.0",
+        "algo-dynamic-programming#6.0"
+      ],
+      "bm25": [
+        "algo-prefix-sums#4.0",
+        "algo-stdin-parsing#2.0",
+        "algo-prefix-sums#5.0",
+        "algo-dynamic-programming#5.0",
+        "algo-prefix-sums#2.0",
+        "algo-hash-counting#1.0",
+        "algo-heaps#2.0",
+        "algo-recursion#3.0",
+        "algo-python-pitfalls#8.0",
+        "algo-dynamic-programming#4.0"
+      ],
+      "fused": [
+        "algo-complexity#2.0",
+        "algo-dynamic-programming#4.0",
+        "algo-greedy#4.0",
+        "algo-shortest-paths#1.1",
+        "algo-prefix-sums#4.0",
+        "algo-stdin-parsing#2.0",
+        "algo-stacks-queues#5.0",
+        "algo-prefix-sums#5.0",
+        "algo-graph-traversal#2.2",
+        "algo-dynamic-programming#5.0"
+      ],
+      "rerank": [
+        "algo-prefix-sums#4.0",
+        "algo-prefix-sums#5.0",
+        "algo-shortest-paths#1.1",
+        "algo-complexity#2.0",
+        "algo-dynamic-programming#5.0",
+        "algo-dynamic-programming#4.0",
+        "algo-prefix-sums#2.0",
+        "algo-greedy#4.0",
+        "algo-complexity#6.0",
+        "algo-recursion#6.0"
+      ]
+    },
+    "red-black-tree": {
+      "dense": [
+        "algo-recursion#3.1",
+        "algo-stacks-queues#5.0",
+        "algo-two-pointers#1.1",
+        "algo-recursion#4.0",
+        "algo-recursion#6.0",
+        "algo-recursion#3.0",
+        "algo-recursion#5.0",
+        "algo-complexity#2.0",
+        "algo-stacks-queues#1.0",
+        "algo-python-pitfalls#1.0"
+      ],
+      "bm25": [
+        "algo-binary-search#4.0",
+        "algo-stdin-parsing#2.0",
+        "algo-complexity#4.0",
+        "algo-hash-counting#2.0",
+        "algo-prefix-sums#5.0",
+        "algo-recursion#3.1",
+        "algo-binary-search#2.1",
+        "algo-dynamic-programming#4.0",
+        "algo-binary-search#2.0",
+        "algo-two-pointers#2.0"
+      ],
+      "fused": [
+        "algo-recursion#3.1",
+        "algo-recursion#5.0",
+        "algo-complexity#2.0",
+        "algo-dynamic-programming#4.0",
+        "algo-binary-search#4.0",
+        "algo-stacks-queues#5.0",
+        "algo-stdin-parsing#2.0",
+        "algo-two-pointers#1.1",
+        "algo-complexity#4.0",
+        "algo-recursion#4.0"
+      ],
+      "rerank": [
+        "algo-binary-search#4.0",
+        "algo-recursion#3.1",
+        "algo-binary-search#2.1",
+        "algo-recursion#6.0",
+        "algo-binary-search#2.0",
+        "algo-recursion#5.0",
+        "algo-hash-counting#2.0",
+        "algo-prefix-sums#5.0",
+        "algo-complexity#2.0",
+        "algo-dynamic-programming#4.0"
+      ]
+    },
+    "which-web-framework": {
+      "dense": [
+        "algo-dynamic-programming#2.1",
+        "algo-complexity#5.0",
+        "algo-dynamic-programming#4.1",
+        "algo-complexity#1.0",
+        "algo-recursion#1.0",
+        "algo-recursion#2.0",
+        "algo-graph-traversal#3.0",
+        "algo-python-pitfalls#10.0",
+        "algo-python-pitfalls#8.0",
+        "algo-dynamic-programming#2.0"
+      ],
+      "bm25": [
+        "algo-stdin-parsing#2.0",
+        "algo-strings#2.0",
+        "algo-binary-search#1.2",
+        "algo-sorting-key#0.0",
+        "algo-python-pitfalls#8.0",
+        "algo-dynamic-programming#1.0",
+        "algo-loop-bounds#3.0",
+        "algo-prefix-sums#3.0",
+        "algo-dynamic-programming#4.0",
+        "algo-strings#3.0"
+      ],
+      "fused": [
+        "algo-python-pitfalls#8.0",
+        "algo-dynamic-programming#4.0",
+        "algo-dynamic-programming#1.0",
+        "algo-prefix-sums#3.0",
+        "algo-dynamic-programming#2.1",
+        "algo-stdin-parsing#2.0",
+        "algo-complexity#5.0",
+        "algo-strings#2.0",
+        "algo-dynamic-programming#4.1",
+        "algo-binary-search#1.2"
+      ],
+      "rerank": [
+        "algo-python-pitfalls#8.0",
+        "algo-recursion#2.0",
+        "algo-sorting-key#0.0",
+        "algo-dynamic-programming#2.0",
+        "algo-strings#3.0",
+        "algo-dynamic-programming#2.1",
+        "algo-graph-traversal#3.0",
+        "algo-python-pitfalls#10.0",
+        "algo-complexity#5.0",
+        "algo-recursion#1.0"
+      ]
+    }
+  },
+  "per_case": {
+    "bisect-left-vs-right": {
+      "category": "exact_term",
+      "query": "What is the difference between bisect_left and bisect_right?",
+      "golden": [
+        "algo-binary-search#2.0",
+        "algo-binary-search#2.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "list-pop-zero-queue": {
+      "category": "exact_term",
+      "query": "Is it fine to use list.pop(0) to take items off a queue?",
+      "golden": [
+        "algo-complexity#3.0",
+        "algo-complexity#3.1",
+        "algo-stacks-queues#2.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "heapq-max-heap": {
+      "category": "exact_term",
+      "query": "How do I make heapq behave like a max-heap?",
+      "golden": [
+        "algo-heaps#2.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "counter-most-common": {
+      "category": "exact_term",
+      "query": "What does collections.Counter give me that a plain dict does not?",
+      "golden": [
+        "algo-hash-counting#1.0",
+        "algo-hash-counting#1.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 2,
+        "bm25": 3,
+        "fused": 1,
+        "rerank": 2
+      }
+    },
+    "bfs-visits-node-twice": {
+      "category": "acronym",
+      "query": "Why does my BFS put the same node in the queue several times?",
+      "golden": [
+        "algo-graph-traversal#2.0",
+        "algo-graph-traversal#2.1",
+        "algo-graph-traversal#2.2",
+        "algo-graph-traversal#6.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 2,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "dp-knapsack-loop-direction": {
+      "category": "acronym",
+      "query": "In the DP for knapsack, why does the inner loop over capacity go downwards?",
+      "golden": [
+        "algo-dynamic-programming#3.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "gcd-to-lcm": {
+      "category": "acronym",
+      "query": "How do I get the LCM from the GCD?",
+      "golden": [
+        "algo-number-theory#1.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "lifo-vs-fifo": {
+      "category": "acronym",
+      "query": "LIFO vs FIFO \u2014 which one is a stack and which is a queue?",
+      "golden": [
+        "algo-stacks-queues#0.0",
+        "algo-stacks-queues#1.0",
+        "algo-stacks-queues#1.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "lis-efficient": {
+      "category": "acronym",
+      "query": "What is the fastest way to compute the LIS of an array?",
+      "golden": [
+        "algo-dynamic-programming#4.0",
+        "algo-dynamic-programming#4.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "even-sum-adds-wrong-thing": {
+      "category": "paraphrase",
+      "query": "My program is supposed to add up only the even numbers but the total comes out much too small",
+      "golden": [
+        "algo-parity-filters#2.0",
+        "algo-parity-filters#3.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 2,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "judge-says-too-slow": {
+      "category": "paraphrase",
+      "query": "My solution gives the right answers but the judge says it takes too long. What do I look at first?",
+      "golden": [
+        "algo-complexity#1.0",
+        "algo-complexity#3.0",
+        "algo-complexity#3.1",
+        "algo-complexity#6.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 3,
+        "bm25": 9,
+        "fused": 2,
+        "rerank": 7
+      }
+    },
+    "grid-rows-change-together": {
+      "category": "paraphrase",
+      "query": "I set one cell of my table and a cell in a different row changes as well",
+      "golden": [
+        "algo-python-pitfalls#1.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 5,
+        "bm25": null,
+        "fused": 8,
+        "rerank": 5
+      }
+    },
+    "negative-floor-division": {
+      "category": "long_tail_detail",
+      "query": "Why is -7 // 2 equal to -4 in Python and not -3?",
+      "golden": [
+        "algo-python-pitfalls#4.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 2,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "two-pointers-or-sliding-window": {
+      "category": "near_duplicate",
+      "query": "When should I use two pointers rather than a sliding window?",
+      "golden": [
+        "algo-sliding-window#0.0",
+        "algo-sliding-window#4.0",
+        "algo-two-pointers#0.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 2,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 2
+      }
+    },
+    "set-or-counter-for-duplicates": {
+      "category": "near_duplicate",
+      "query": "Should I use a set or a Counter to deal with duplicates?",
+      "golden": [
+        "algo-hash-counting#1.0",
+        "algo-hash-counting#1.1",
+        "algo-sets#6.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 3,
+        "bm25": 3,
+        "fused": 2,
+        "rerank": 5
+      }
+    },
+    "dijkstra-negative-weights": {
+      "category": "negation",
+      "query": "Can I run Dijkstra if a few edges have negative weights?",
+      "golden": [
+        "algo-shortest-paths#2.0",
+        "algo-shortest-paths#2.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "greedy-coin-change-valid": {
+      "category": "negation",
+      "query": "Is taking the biggest coin first always the optimal way to make change?",
+      "golden": [
+        "algo-greedy#3.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "binary-search-hangs": {
+      "category": "long_tail_detail",
+      "query": "My binary search sometimes never finishes",
+      "golden": [
+        "algo-binary-search#1.0",
+        "algo-binary-search#1.1",
+        "algo-binary-search#1.2",
+        "algo-binary-search#4.0",
+        "algo-binary-search#4.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 2,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "recursion-error-deep-input": {
+      "category": "multi_hop",
+      "query": "I get RecursionError on the big test but my recursion is correct. What now?",
+      "golden": [
+        "algo-recursion#2.0",
+        "algo-stacks-queues#5.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 6,
+        "bm25": 9,
+        "fused": 4,
+        "rerank": 3
+      }
+    },
+    "sort-desc-score-asc-name": {
+      "category": "multi_hop",
+      "query": "How do I sort records by score from high to low, and alphabetically by name when scores are equal?",
+      "golden": [
+        "algo-sorting-key#1.0",
+        "algo-sorting-key#2.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "output-has-brackets": {
+      "category": "long_tail_detail",
+      "query": "The checker rejects my output \u2014 it comes out with brackets and commas in it",
+      "golden": [
+        "algo-stdin-parsing#4.0",
+        "algo-stdin-parsing#6.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 2,
+        "bm25": 4,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "string-building-slow": {
+      "category": "paraphrase",
+      "query": "Building up my answer text piece by piece in a loop is really slow",
+      "golden": [
+        "algo-complexity#3.0",
+        "algo-complexity#3.1",
+        "algo-strings#1.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 1,
+        "fused": 1,
+        "rerank": 2
+      }
+    },
+    "prefix-sum-leading-zero": {
+      "category": "long_tail_detail",
+      "query": "Why does the prefix sum array need an extra zero at the front?",
+      "golden": [
+        "algo-prefix-sums#1.0",
+        "algo-prefix-sums#1.1"
+      ],
+      "first_relevant_rank": {
+        "dense": 1,
+        "bm25": 2,
+        "fused": 1,
+        "rerank": 1
+      }
+    },
+    "make-it-faster": {
+      "category": "ambiguous",
+      "query": "how do I make my code faster",
+      "golden": [
+        "algo-complexity#1.0",
+        "algo-complexity#3.0",
+        "algo-complexity#3.1",
+        "algo-complexity#6.0"
+      ],
+      "first_relevant_rank": {
+        "dense": 4,
+        "bm25": null,
+        "fused": 7,
+        "rerank": null
+      }
+    },
+    "segment-tree-lazy": {
+      "category": "out_of_corpus",
+      "query": "How do I implement a segment tree with lazy propagation for range updates?",
+      "golden": [],
+      "first_relevant_rank": {
+        "dense": null,
+        "bm25": null,
+        "fused": null,
+        "rerank": null
+      }
+    },
+    "red-black-tree": {
+      "category": "out_of_corpus",
+      "query": "Explain how a red-black tree rebalances itself after an insertion",
+      "golden": [],
+      "first_relevant_rank": {
+        "dense": null,
+        "bm25": null,
+        "fused": null,
+        "rerank": null
+      }
+    },
+    "which-web-framework": {
+      "category": "out_of_corpus",
+      "query": "Which Python web framework should I pick for a REST API?",
+      "golden": [],
+      "first_relevant_rank": {
+        "dense": null,
+        "bm25": null,
+        "fused": null,
+        "rerank": null
+      }
+    }
+  }
+}

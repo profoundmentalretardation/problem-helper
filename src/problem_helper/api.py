@@ -15,12 +15,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from . import tools
+from . import samples, tools
 from .config import Settings, get_settings
 from .db import Database
 from .llm import LLMClient
 from .orchestrator import process_session, resume_session
 from .schemas import (
+    SampleView,
     SessionCreated,
     SessionDebugView,
     SessionStatus,
@@ -123,6 +124,11 @@ def create_app(
     async def list_tools() -> dict[str, Any]:
         """The tools registered with the framework and bound to the hint agent."""
         return {"tools": tools.specs()}
+
+    @app.get("/v1/samples")
+    async def list_samples() -> dict[str, list[SampleView]]:
+        """Ready-made broken solutions the playground can load; no reference solutions."""
+        return {"samples": [SampleView(**s.model_dump()) for s in samples.all()]}
 
     @app.post("/v1/sessions/{session_id}/resume", status_code=202, response_model=SessionCreated)
     async def resume(session_id: str, request: Request) -> SessionCreated:

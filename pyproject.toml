@@ -10,7 +10,9 @@ requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.22.1",
     "fastapi>=0.141.1",
+    "fastembed>=0.8.0",
     "langchain-openai>=1.4.1",
+    "langchain-text-splitters>=0.3",
     "langgraph>=1.2.10",
     "langgraph-checkpoint-sqlite>=3.1.1",
     "openai>=2.52.1",
@@ -30,6 +32,7 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q"
+pythonpath = ["."]  # so the tests can import the `evals` harness, which is not packaged
 
 [tool.ruff]
 line-length = 100
@@ -39,4 +42,5 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "scikit-learn>=1.9.0",
 ]

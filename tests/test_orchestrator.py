@@ -57,7 +57,7 @@ async def run(db, llm, req: SolveRequest | None = None) -> dict:
 def good_llm(approved: bool = True) -> FakeLLM:
     return FakeLLM(
         turns=[
-            tool_turn("search_learning_materials", query="even numbers sum"),
+            tool_turn("search_corpus", query="even numbers sum"),
             AIMessage("ready to write"),
         ],
         script={
@@ -106,7 +106,7 @@ async def test_happy_path_produces_hint_and_diff(db):
     assert "-print(a - b)" in internals["diff"]
     assert internals["fix_attempts_used"] == 1
     assert internals["tool_calls"] == [
-        {"name": "search_learning_materials", "args": {"query": "even numbers sum"}}
+        {"name": "search_corpus", "args": {"query": "even numbers sum"}}
     ]
 
     attempts = await db.get_attempts("s1")
