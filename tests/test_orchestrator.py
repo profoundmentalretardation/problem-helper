@@ -12,6 +12,7 @@ from problem_helper.schemas import (
     HintResult,
     Mistake,
     Outcome,
+    SandboxBackend,
     SessionStatus,
     SolveRequest,
     TestCase,
@@ -36,8 +37,22 @@ def request(code: str = BROKEN, **kwargs) -> SolveRequest:
     )
 
 
-def settings() -> Settings:
-    return Settings(llm_api_key="test", max_fix_attempts=2, max_hint_attempts=2)
+def settings(**overrides) -> Settings:
+    """The real sandbox, pinned to the subprocess backend.
+
+    These tests cover the orchestrator end to end, so they execute code for real — but the
+    property under test is that streamed updates become rows, not that the container is
+    isolated, and `tests/test_sandbox.py` covers the container itself. Paying a container
+    start per test here would buy nothing and cost a minute.
+    """
+    return Settings(
+        llm_api_key="test",
+        max_fix_attempts=2,
+        max_hint_attempts=2,
+        sandbox_backend=SandboxBackend.local,
+        tracing_enabled=False,
+        **overrides,
+    )
 
 
 @pytest.fixture

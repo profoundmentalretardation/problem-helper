@@ -3796,5 +3796,855 @@
         "reason": "While the context discusses various algorithmic topics, it does not contain any statement or instruction about how to handle out-of-scope questions or whether to decline versus invent recommendations. This is a guideline about correct behavior that is not entailed by the provided context."
       }
     ]
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|adbda1d42b91aa42e9db": {
+    "claims": [
+      {
+        "claim": "The condition x % 2 == 1 checks for odd numbers",
+        "supported": true,
+        "reason": "The context states 'x % 2 != 0        # odd' and explains that x % 2 == 1 is used for odd number detection, contrasting it with x % 2 == 0 for even numbers"
+      },
+      {
+        "claim": "The problem asks for the sum of the even ones",
+        "supported": true,
+        "reason": "The question explicitly states 'Print the sum of the even ones'"
+      },
+      {
+        "claim": "To select even numbers, the condition should check if numbers are divisible by 2",
+        "supported": true,
+        "reason": "The context shows 'x % 2 == 0        # even' and provides the example 'total = sum(x for x in values if x % 2 == 0)      # sum of the even ones'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|7d9109fb7fc5d1f76981": {
+    "requirements": [
+      {
+        "requirement": "Identify what the problem asks for (sum of even numbers)",
+        "satisfied": true,
+        "reason": "The answer correctly states 'the problem asks for the sum of the even ones'"
+      },
+      {
+        "requirement": "Provide a solution or explanation of how to solve it",
+        "satisfied": true,
+        "reason": "The answer explains the fix needed: change the condition from checking for odd numbers (x % 2 == 1) to checking for even numbers (divisible by 2)"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|5858d79ef68e5de228fe": {
+    "useful": true,
+    "reason": "This passage directly addresses the core problem: summing even numbers from a list. It provides multiple code examples showing how to filter by parity (x % 2 == 0 for even numbers) and aggregate them using sum(), which is exactly what the question asks for. The passage also covers common pitfalls and best practices relevant to implementing this solution correctly."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|acc509dbdbb615d583af": {
+    "claims": [
+      {
+        "claim": "The question asks to print the sum of ranges for every query, one per line",
+        "supported": true,
+        "reason": "The question states: 'Print the sum of the range for every query, one per line.'"
+      },
+      {
+        "claim": "The queries use 1-based, inclusive bounds for L and R",
+        "supported": true,
+        "reason": "The question states: 'Each of the next Q lines holds L and R (1-based, inclusive).'"
+      },
+      {
+        "claim": "When computing range sums with prefix arrays and 1-based inclusive queries, subtracting pref[l] excludes the element at index l",
+        "supported": true,
+        "reason": "The context states: 'Because the queries are 1-based and inclusive, subtracting `pref[l]` accidentally excludes the element at index `l`; you need to subtract the prefix sum right before `l` instead.'"
+      },
+      {
+        "claim": "The correct formula for 1-based inclusive range queries is pref[r + 1] - pref[l]",
+        "supported": true,
+        "reason": "The context explains that with 1-based inclusive bounds, you must 'subtract the prefix sum right before `l` instead', which means using pref[l] where l is the index before the 1-based start, equivalent to pref[r + 1] - pref[l] for 1-based inclusive ranges."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|81e1e45507b9ded7c8f2": {
+    "requirements": [
+      {
+        "requirement": "Identify what the question asks for",
+        "satisfied": true,
+        "reason": "The question asks for a program that reads N and Q, then N integers, processes Q range sum queries with 1-based inclusive indices, and prints the sum for each query."
+      },
+      {
+        "requirement": "Address the specific issue mentioned in the answer",
+        "satisfied": true,
+        "reason": "The answer correctly identifies a bug in line 8 where `pref[r] - pref[l]` is incorrect for 1-based inclusive queries, explaining that it excludes the element at index l and should subtract the prefix sum before l instead."
+      },
+      {
+        "requirement": "Provide the correction needed",
+        "satisfied": true,
+        "reason": "The answer explains the fix: instead of `pref[r] - pref[l]`, it should be `pref[r] - pref[l-1]` to correctly include the element at position l in a 1-based inclusive range query."
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|eec231a9dbed67a854c5": {
+    "useful": true,
+    "reason": "This passage directly addresses common pitfalls when implementing prefix sum solutions for range query problems. Since the question describes a classic range sum query problem (given N integers and Q queries with ranges L and R), this passage provides practical guidance on correct implementation of prefix sums, including handling inclusive bounds (which matches the 1-based inclusive ranges in the question) and avoiding common mistakes that would lead to incorrect answers."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|c74ddad70353ec02730b": {
+    "useful": false,
+    "reason": "The passage describes a 2D prefix sum technique for range queries on a grid, but the question asks about 1D range sum queries on a linear array (N integers with L and R indices). The passage's 2D approach is not applicable to this 1D problem, which would be solved more simply with a 1D prefix sum array."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|a7a6dccf951b40d80097": {
+    "useful": false,
+    "reason": "The passage describes an algorithm for finding the longest balanced subarray using prefix sums and a hash map to track first occurrences. However, the question asks for a solution to answer range sum queries efficiently. While prefix sums are mentioned in the passage title, the actual code solves a completely different problem (finding longest balanced subarray) and does not address how to handle multiple range sum queries as specified in the question. The passage is not applicable to this range query problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|cb401b42f941103c4beb": {
+    "useful": true,
+    "reason": "This passage explains the prefix sum technique for efficiently answering range sum queries. It directly addresses the core algorithm needed to solve the problem: given N integers and Q queries asking for range sums from L to R, prefix sums allow computing each query in O(1) time after O(N) preprocessing. The passage provides the conceptual foundation for implementing the solution described in the question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|e06904a5de4b62201818": {
+    "useful": true,
+    "reason": "This passage directly explains the prefix sum technique for efficiently answering range sum queries. It provides the exact algorithm and formula needed to solve the problem: building a prefix sum array and using the formula `pref[r + 1] - pref[l]` to compute range sums in O(1) time after O(n) preprocessing. This is the standard and optimal approach for the described problem."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|a102927cc558eb4ba840": {
+    "claims": [
+      {
+        "claim": "The operation `pref[r] - pref[l]` subtracts the element at position `l` instead of removing it from the sum",
+        "supported": false,
+        "reason": "The context states the opposite: for an inclusive range l..r with 1-based indexing, the correct formula is `pref[r + 1] - pref[l]`, and using `pref[r] - pref[l]` drops the last element, not the first. The context says 'writing `pref[r] - pref[l]` drops the last element of every query.'"
+      },
+      {
+        "claim": "The problem uses 1-based indices",
+        "supported": true,
+        "reason": "The context confirms this: 'Problems often number positions from 1 while Python indexes from 0' and the question states 'Each of the next Q lines holds L and R (1-based, inclusive).'"
+      },
+      {
+        "claim": "For an inclusive range with 1-based indexing, the element at position `l` should be part of the interval",
+        "supported": true,
+        "reason": "The context states: 'if a query is \"the inclusive range l..r\", the prefix-sum formula needs `pref[r + 1] - pref[l]`'"
+      },
+      {
+        "claim": "Using `pref[r] - pref[l]` causes the last element to be dropped from the query result",
+        "supported": true,
+        "reason": "The context explicitly states: 'writing `pref[r] - pref[l]` drops the last element of every query'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|effc51a125a72a1fe3fe": {
+    "requirements": [
+      {
+        "requirement": "Identify what the question asks for",
+        "satisfied": true,
+        "reason": "The answer correctly identifies that the question asks for range sum queries on an array"
+      },
+      {
+        "requirement": "Address the specific issue with the prefix sum calculation",
+        "satisfied": true,
+        "reason": "The answer points out the bug in line 8 where `pref[r] - pref[l]` incorrectly excludes the element at position l"
+      },
+      {
+        "requirement": "Explain the 1-based indexing problem",
+        "satisfied": true,
+        "reason": "The answer explicitly mentions that the problem uses 1-based indexing and that this needs to be reconsidered"
+      },
+      {
+        "requirement": "Provide the correct formula or solution",
+        "satisfied": false,
+        "reason": "The answer identifies the problem but does not provide the correct formula. It should state that the correct formula is `pref[r] - pref[l-1]` to include the element at position l in a 1-based system"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|5dc5cb49ade6e819fa24": {
+    "useful": true,
+    "reason": "This passage directly addresses the core issue in the question: handling 1-based indexing for range queries. It explains the conversion strategy for 1-based inclusive ranges (converting once at boundaries) and provides the correct prefix-sum formula for inclusive ranges (pref[r+1] - pref[l]), which is essential for correctly implementing the range sum query solution described in the question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|06e597345c5ebe8ced53": {
+    "useful": false,
+    "reason": "This passage describes the difference array technique for efficiently applying multiple range updates followed by a single read of the entire array. However, the question asks for computing range sums for multiple queries on a static array, which is a different problem. The passage's technique is optimized for the opposite scenario (many updates, one read), not many range sum queries on an unchanging array. For the given problem, a prefix sum array would be the appropriate technique, not a difference array."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|16a1994cb57967df6c08": {
+    "claims": [
+      {
+        "claim": "The formula `pref[r] - pref[l]` excludes the element at index `l`",
+        "supported": true,
+        "reason": "The context states: 'if a query is \"the inclusive range l..r\", the prefix-sum formula needs `pref[r + 1] - pref[l]`, and writing `pref[r] - pref[l]` drops the last element of every query.' This indicates the formula `pref[r] - pref[l]` is incorrect for inclusive ranges."
+      },
+      {
+        "claim": "The issue is caused by 1-based indexing in the problem statement",
+        "supported": true,
+        "reason": "The context explains: 'Problems often number positions from 1 while Python indexes from 0. Convert **once**, at the boundary where the data is read or the answer is printed' and discusses the need to adjust bounds for 1-based queries."
+      },
+      {
+        "claim": "The correct formula for an inclusive range `l..r` is `pref[r + 1] - pref[l]`",
+        "supported": true,
+        "reason": "The context explicitly states: 'The sum of the inclusive range `a[l..r]` is then `range_sum = pref[r + 1] - pref[l]`' and reiterates this in the pitfalls section."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|e37598e7ee6927b5d756": {
+    "requirements": [
+      {
+        "requirement": "Explain what the question asks for (input format and task)",
+        "satisfied": false,
+        "reason": "The answer does not describe the problem statement or what needs to be done. It jumps directly into code critique."
+      },
+      {
+        "requirement": "Address the specific issue mentioned in the answer (the range sum calculation bug)",
+        "satisfied": true,
+        "reason": "The answer identifies a bug in line 8 related to prefix sum calculation with 1-based indexing, pointing out that `pref[r] - pref[l]` excludes the element at index `l`."
+      },
+      {
+        "requirement": "Provide a solution or correction",
+        "satisfied": false,
+        "reason": "While the answer identifies the problem, it only hints at the solution ('adjust correctly your lower bound') without providing the actual corrected formula or code."
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|b5a196dfa99ea5a105d7": {
+    "useful": true,
+    "reason": "This passage directly addresses the core technique needed to solve the problem. The question asks for range sum queries, and the passage explains prefix sums, which is the standard O(1) per query solution after O(n) preprocessing. This is exactly what would be used to efficiently answer multiple range sum queries as described in the problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|4abf2433beeebb5166b8": {
+    "useful": false,
+    "reason": "This passage discusses 2D prefix sums for 2D range queries, but the question asks about 1D range sum queries (with L and R parameters indicating a single range). The passage is about a different problem domain and does not help answer the specific question about implementing 1D range sum queries."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|397d7e49e5dd20bbd372": {
+    "useful": true,
+    "reason": "This passage directly explains the prefix sum technique needed to solve the problem. It provides the exact algorithm to answer range sum queries efficiently: build a prefix sum array in O(n) time, then answer each query in O(1) time using the formula `pref[r + 1] - pref[l]`. The passage includes working code examples and addresses the 1-based indexing consideration mentioned in the problem."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|2c4398c2e9c8d4e1f2b4": {
+    "claims": [
+      {
+        "claim": "Using `<=` in the while loop condition allows left and right pointers to meet at the same position",
+        "supported": true,
+        "reason": "The context states: '`left < right`, not `left <= right`. With `<=` the two pointers can meet on the same element'"
+      },
+      {
+        "claim": "When pointers meet at the same position, an element sums with itself",
+        "supported": true,
+        "reason": "The context explains: 'it pairs with itself, which reports `x + x == target` as a valid pair'"
+      },
+      {
+        "claim": "The problem requires two different positions to sum to the target",
+        "supported": true,
+        "reason": "The question states 'Print YES if two DIFFERENT positions sum to S'"
+      },
+      {
+        "claim": "The solution is to adjust the inequality so the pointers never coincide at the same index",
+        "supported": true,
+        "reason": "The context recommends using `left < right` instead of `left <= right` to prevent pointers from meeting on the same element, which directly addresses the requirement for different positions"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|5c179309a33cee0195df": {
+    "requirements": [
+      {
+        "requirement": "Identify what the question asks for",
+        "satisfied": true,
+        "reason": "The answer correctly identifies that the question asks to find if two DIFFERENT positions sum to S"
+      },
+      {
+        "requirement": "Address the specific issue with the code",
+        "satisfied": true,
+        "reason": "The answer points out the problem with the while loop condition using `<=` which allows left and right to reach the same position, violating the 'different positions' requirement"
+      },
+      {
+        "requirement": "Provide guidance on the fix",
+        "satisfied": true,
+        "reason": "The answer suggests adjusting the inequality condition to ensure the pointers never coincide at the same index"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|162e038a8bb3cf5148bd": {
+    "useful": true,
+    "reason": "This passage directly addresses the two-pointer technique for finding pairs that sum to a target value in a sorted array. It covers critical pitfalls including: (1) ensuring the array is sorted, (2) using `left < right` instead of `left <= right` to avoid pairing an element with itself, and (3) moving only one pointer per iteration. These are all essential considerations for solving the given problem of finding two DIFFERENT positions that sum to S in a sorted array."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|600ae9ebbacde7364e6a": {
+    "useful": true,
+    "reason": "This passage directly addresses a key pitfall in two-pointer algorithms on sorted arrays. Since the problem asks to find if two DIFFERENT positions sum to S (implying we need distinct pairs), the passage's warning about skipping duplicates is relevant. Additionally, the passage confirms that two-pointer technique is appropriate for sorted arrays, which matches the problem's input format of N integers in non-decreasing order. The passage provides practical guidance on implementing the two-pointer approach correctly for this type of problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|80ed21d4d60ea63980db": {
+    "useful": true,
+    "reason": "This passage directly addresses the core algorithm needed to solve the problem. The question asks to find if two different positions in a sorted array sum to a target value S, which is exactly what the two-pointer technique described in this passage solves. The code example provided is a direct implementation of the required solution."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|9f262f8b379670ef5267": {
+    "useful": false,
+    "reason": "This passage describes the two-pointer technique for merging two sorted sequences, which is not applicable to the problem of finding if two different positions in a single array sum to a target value. The problem requires a two-pointer approach on a single sorted array (one pointer at the start, one at the end, moving toward each other), not a merge operation on two separate arrays. The passage does not address the sum-finding problem at all."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|1bc8df55908327c15762": {
+    "useful": true,
+    "reason": "This passage directly describes the two-pointer technique, which is the optimal algorithm for solving this problem. The problem asks to find if two different positions sum to a target value in a sorted array, which is a classic two-pointer application. The passage explains how two pointers can efficiently find such pairs by moving through the sorted array in a single pass, avoiding the O(n²) nested loop approach."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|ed78ce5501f3b3f2d120": {
+    "useful": true,
+    "reason": "This passage directly addresses the problem of finding two different positions that sum to a target value in a sorted array. The 'opposite-ends pattern' section provides the exact algorithm needed: using two pointers starting from opposite ends of a sorted array to efficiently find a pair with a given sum. The code example and explanation of why the algorithm works are directly applicable to solving this problem."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|37e10d9f4a0beacab174": {
+    "claims": [
+      {
+        "claim": "The problem requires two DIFFERENT positions to sum to S",
+        "supported": true,
+        "reason": "The question states 'Print YES if two DIFFERENT positions sum to S'"
+      },
+      {
+        "claim": "A loop condition with `left <= right` allows the two pointers to meet on the same element",
+        "supported": true,
+        "reason": "The context states: 'With `<=` the two pointers can meet on the same element and it pairs with itself, which reports `x + x == target` as a valid pair'"
+      },
+      {
+        "claim": "When two pointers meet on the same index, an element pairs with itself",
+        "supported": true,
+        "reason": "The context explains that with `left <= right`, 'the two pointers can meet on the same element and it pairs with itself'"
+      },
+      {
+        "claim": "The correct loop condition for finding two different positions should be `left < right`",
+        "supported": true,
+        "reason": "The context states: '`left < right`, not `left <= right`' as the correct condition to avoid pairing an element with itself"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|f21dd7baa14a6b8275be": {
+    "requirements": [
+      {
+        "requirement": "Identify that the loop condition allows left and right to meet on the same index",
+        "satisfied": true,
+        "reason": "The answer explicitly states 'Your loop condition allows `left` and `right` to meet on the same index'"
+      },
+      {
+        "requirement": "Explain that this violates the requirement for two DIFFERENT positions",
+        "satisfied": true,
+        "reason": "The answer clearly states 'which pairs an element with itself' and 'Since the problem requires two DIFFERENT positions'"
+      },
+      {
+        "requirement": "Suggest how to fix the condition",
+        "satisfied": true,
+        "reason": "The answer asks 'check how your condition should change when the pointers cross or meet', directing the reader to modify the loop condition to prevent same-index pairing"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|1007aa12e44900a70336": {
+    "useful": false,
+    "reason": "The passage discusses the three-pointer variant for solving 3-sum problems (finding three elements that sum to a target). However, the question asks about finding two DIFFERENT positions that sum to a target (2-sum problem), which is a simpler problem that can be solved with a two-pointer approach in O(n) time. The passage's focus on triple summing and O(n^2) complexity is not directly applicable to this 2-sum problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|b4f9e87d2a34ca2b4baa": {
+    "useful": false,
+    "reason": "This passage describes the two-pointer technique for removing duplicates from a sorted array by moving both pointers in the same direction. However, the question asks about finding if two different positions sum to a target value S. The relevant two-pointer technique for this problem would be the opposite-direction pattern (one pointer at the start, one at the end), not the same-direction pattern shown here. This passage does not help answer the specific question."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|e9549a84881c0ac12f5a": {
+    "claims": [
+      {
+        "claim": "Using left <= right in the while loop allows the two pointers to meet at the same index",
+        "supported": true,
+        "reason": "The context explicitly states: \"With `<=` the two pointers can meet on the same element and it pairs with itself, which reports `x + x == target` as a valid pair.\""
+      },
+      {
+        "claim": "When two pointers meet at the same index, an element can pair with itself",
+        "supported": true,
+        "reason": "The context states: \"it pairs with itself, which reports `x + x == target` as a valid pair\" and \"Inserting before the lookup lets an element pair with itself and reports `i, i`.\""
+      },
+      {
+        "claim": "The problem requires two different positions",
+        "supported": true,
+        "reason": "The question states: \"Print YES if two DIFFERENT positions sum to S\""
+      },
+      {
+        "claim": "The loop condition should be left < right to prevent the pointers from landing on the same spot",
+        "supported": true,
+        "reason": "The context states: \"**`left < right`, not `left <= right`.** With `<=` the two pointers can meet on the same element and it pairs with itself\" and the provided code example uses `while left < right:`"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|361e507cf45d7c8b0924": {
+    "requirements": [
+      {
+        "requirement": "Identify what the question asks for",
+        "satisfied": true,
+        "reason": "The answer correctly identifies that the question requires finding two DIFFERENT positions that sum to S"
+      },
+      {
+        "requirement": "Address the specific issue with the while loop condition",
+        "satisfied": true,
+        "reason": "The answer points out that 'left <= right' allows the pointers to meet at the same index, which violates the 'different positions' requirement"
+      },
+      {
+        "requirement": "Suggest how to fix the condition",
+        "satisfied": true,
+        "reason": "The answer indicates the loop condition should be changed to prevent the pointers from landing on the same spot (implying 'left < right' instead)"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|7053b55d42ce2097e3f3": {
+    "useful": true,
+    "reason": "This passage directly addresses the core algorithm needed to solve the problem. It provides a solution to the two-sum problem that finds if two different positions sum to a target value. The passage explains the complement trick approach using a dictionary, which is an efficient method for this exact problem. The code shown handles the requirement of finding two DIFFERENT positions (by inserting after the lookup to avoid self-pairing) and works with unsorted or sorted input, making it applicable to the given problem where the input is already in non-decreasing order."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|a6408072a25fdbcb41fe": {
+    "useful": true,
+    "reason": "This passage directly describes the two-pointer technique for finding if two different positions in a sorted array sum to a target value. It explains the algorithm's correctness (why discarding elements is safe), its O(n) time complexity, and the exact approach needed to solve the stated problem efficiently."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|1e414eb9382281448c74": {
+    "claims": [
+      {
+        "claim": "The code checks incorrect closings correctly",
+        "supported": true,
+        "reason": "The context shows the balanced() function checks 'if not stack or stack.pop() != PAIRS[ch]' which validates that closing brackets match their opening counterparts"
+      },
+      {
+        "claim": "The code forgets to verify if any opening brackets remain pending on the stack at the end of the loop",
+        "supported": false,
+        "reason": "The context explicitly shows 'return not stack' at the end of the balanced() function, which checks that the stack is empty after processing all characters"
+      },
+      {
+        "claim": "If the input string has leftover openings like '(((', the program finishes the loop with ok = True",
+        "supported": false,
+        "reason": "The context shows the function returns 'not stack', so with leftover openings the stack would not be empty and the function would return False, not True"
+      },
+      {
+        "claim": "You should check whether the stack is empty before printing the final result",
+        "supported": true,
+        "reason": "The context states 'return not stack — anything left open means unbalanced', confirming that an emptiness check is necessary for correct bracket matching"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|b404609c6d1531f7f3f7": {
+    "requirements": [
+      {
+        "requirement": "Identify what the problem asks for (checking if brackets are balanced)",
+        "satisfied": true,
+        "reason": "The answer correctly references the bracket balancing problem and understands that the task is to print YES or NO based on whether brackets are balanced."
+      },
+      {
+        "requirement": "Address the specific issue of leftover opening brackets",
+        "satisfied": true,
+        "reason": "The answer explicitly identifies and explains the bug: that opening brackets like '(((' can remain on the stack after the loop completes, causing incorrect results."
+      },
+      {
+        "requirement": "Provide a solution or fix",
+        "satisfied": true,
+        "reason": "The answer clearly states the fix: 'Make sure to check whether the stack is empty before printing the final result,' which directly addresses how to resolve the issue."
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|49515cdb743668c006f6": {
+    "useful": true,
+    "reason": "This passage directly addresses the question by providing a complete solution to the bracket balancing problem. It explains the stack-based algorithm, shows the exact Python implementation needed to check if brackets are balanced, and includes the logic for handling opening brackets, closing brackets, and the final validation. This is precisely what would be needed to answer the question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|57548aa8222f10be6770": {
+    "useful": false,
+    "reason": "This passage discusses queues and the deque data structure, but the bracket balancing problem is best solved using a stack, not a queue. While the passage mentions 'stacks, queues and monotonic structures' in the title, it only provides information about queues and deque operations. It does not explain how to use a stack to check for balanced brackets, which is the standard and appropriate approach for this problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|89e68de53950e36a3948": {
+    "useful": false,
+    "reason": "This passage discusses prefix sums and range queries, which is a technique for counting elements in arrays. While it briefly mentions 'opening brackets' in the context of counting, it does not address the actual problem of checking whether brackets are balanced. The bracket balancing problem requires checking if every opening bracket has a corresponding closing bracket in the correct order, which typically uses a stack-based approach. This passage's content about prefix sums is not relevant to solving the bracket balancing problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|e51176814742e2a791be": {
+    "useful": false,
+    "reason": "This passage describes monotonic stacks for finding the next greater element in an array. While stacks are a relevant data structure for bracket balancing problems, this passage provides no information about bracket matching, validation, or the algorithm needed to solve the bracket balancing problem. The example code solves a completely different problem and would not help someone answer the bracket balancing question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|fc90d2e946e478180baa": {
+    "useful": true,
+    "reason": "This passage directly addresses bracket balancing problems, specifically mentioning 'Forgetting the final emptiness check in bracket problems' as a common pitfall. This is relevant to solving the bracket balancing problem, as checking if the stack is empty at the end is a key step in determining if brackets are balanced. The passage also discusses stack operations which are the standard approach for solving bracket matching problems."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|37a9123b7e55ff3ed13a": {
+    "claims": [
+      {
+        "claim": "When the input consists only of opening brackets like `(((`, the loop finishes completely without returning False",
+        "supported": true,
+        "reason": "The context states: '`\"(((\"` never fails a check inside the loop' and 'The final `return not stack` is the half everybody forgets: `\"(((\"` never fails a check inside the loop.'"
+      },
+      {
+        "claim": "You must check whether any leftover brackets remain in the stack after the loop ends",
+        "supported": true,
+        "reason": "The context explicitly states: 'Forgetting the final emptiness check in bracket problems' as a pitfall, and shows the solution: 'return not stack        # anything left open means unbalanced'"
+      },
+      {
+        "claim": "The variable `ok` should be used to track bracket balance",
+        "supported": false,
+        "reason": "The context uses a `stack` variable and returns boolean values directly, not a variable named `ok`. The provided code example does not mention an `ok` variable."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|8b2ac90f2c8046e70f2c": {
+    "requirements": [
+      {
+        "requirement": "Explain how to check if brackets are balanced",
+        "satisfied": true,
+        "reason": "The answer addresses the core requirement by pointing out a key aspect of bracket balancing: checking for leftover brackets in the stack after processing"
+      },
+      {
+        "requirement": "Provide a solution that prints YES or NO based on bracket balance",
+        "satisfied": false,
+        "reason": "The answer does not provide a complete solution or code that actually prints YES or NO. It only gives a hint about one specific edge case"
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|b2ce030375b626d60fca": {
+    "useful": true,
+    "reason": "This passage directly addresses the bracket balancing problem by mentioning the stack approach and highlighting a critical detail about checking if the stack is empty at the end. The note about `\"(((\"` never failing inside the loop but needing a final check is specifically relevant to correctly implementing a balanced bracket solution, which is exactly what the question asks for."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|0ae7228721d8d26f5422": {
+    "useful": true,
+    "reason": "This passage directly addresses the bracket balancing problem. It provides a complete Python solution using a stack data structure that checks if brackets are balanced by pushing opening brackets and validating closing brackets against the stack top. The code example and explanation are directly applicable to solving the stated problem of determining if a string of brackets is balanced."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|906558db0be22bdc2dd3": {
+    "claims": [
+      {
+        "claim": "The loop terminates without errors on inputs like '((('",
+        "supported": true,
+        "reason": "The context states: '\"(((\" never fails a check inside the loop' [2]"
+      },
+      {
+        "claim": "After processing all characters, the stack still has open elements remaining for input like '((('",
+        "supported": true,
+        "reason": "The context explains that '\"(((\" never fails a check inside the loop' and the final return checks 'not stack' because 'anything left open means unbalanced' [1][2]"
+      },
+      {
+        "claim": "You must check that the stack is empty before printing YES",
+        "supported": true,
+        "reason": "The context states 'The final `return not stack` is the half everybody forgets' [2] and lists 'Forgetting the final emptiness check in bracket problems' as a pitfall [5]"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|9f0ba2caefe0bed0e90a": {
+    "requirements": [
+      {
+        "requirement": "Explain how to check if brackets are balanced",
+        "satisfied": true,
+        "reason": "The answer addresses the core requirement by explaining that after processing all characters, you must check if the stack is empty before printing YES"
+      },
+      {
+        "requirement": "Handle the case of unmatched opening brackets",
+        "satisfied": true,
+        "reason": "The answer specifically uses the example '((('' to illustrate the problem of opening brackets remaining in the stack after processing, which is exactly the case that needs to be handled"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|66b655c716c3f2d86401": {
+    "useful": true,
+    "reason": "This passage explains how to use a stack data structure, which is the fundamental approach for solving bracket balancing problems. The bracket matching problem is a classic stack application where you push opening brackets and pop when encountering closing brackets. Understanding explicit stack usage as shown in this passage is directly applicable to implementing a bracket balance checker."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|e66f497526ed3579ef41": {
+    "claims": [
+      {
+        "claim": "The question asks to print the number of elements strictly less than X",
+        "supported": true,
+        "reason": "The question statement says 'Print the number of elements strictly less than X.'"
+      },
+      {
+        "claim": "lower_bound returns the number of elements strictly less than x",
+        "supported": true,
+        "reason": "The context states: 'lower_bound(a, x) — the number of elements strictly less than x'"
+      },
+      {
+        "claim": "In a closed-interval binary search, setting high = mid when a[mid] >= x can cause the loop to hang when low and high are adjacent",
+        "supported": true,
+        "reason": "The context states: 'When low and high are adjacent, mid equals low, the range never shrinks, and the loop hangs' and 'high = mid in the closed form' is listed as a pitfall"
+      },
+      {
+        "claim": "The insertion point after the loop is low, not the last mid value",
+        "supported": true,
+        "reason": "The context states: 'The insertion point is low after the loop, not the last mid you looked at'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|de4ca0b79ad1a39a038e": {
+    "requirements": [
+      {
+        "requirement": "Explain how to count elements strictly less than X",
+        "satisfied": false,
+        "reason": "The answer does not address the counting problem at all. Instead, it discusses a binary search bug in some unspecified code."
+      },
+      {
+        "requirement": "Provide a solution to the stated problem",
+        "satisfied": false,
+        "reason": "The answer does not provide any solution to counting elements strictly less than X from the given input format."
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|daf2e705374b4419eb3a": {
+    "useful": true,
+    "reason": "This passage directly explains that `lower_bound(a, x)` returns the number of elements strictly less than x, which is exactly what the question asks for. The passage provides the exact solution approach needed to answer this problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|9e0a5196adb984a4dae6": {
+    "useful": true,
+    "reason": "This passage explains the lower_bound algorithm, which finds the first element >= target. To count elements strictly less than X, one would use lower_bound(a, X) to find the first element >= X, and the index returned equals the count of elements < X. This directly solves the problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|5f5d5c198fd6cd53015b": {
+    "useful": false,
+    "reason": "The passage discusses binary search implementation details and boundary conditions, but the question asks for a simple count of elements strictly less than X in a sorted array. This is a straightforward linear scan or single binary search problem that doesn't require understanding different binary search boundary forms. The passage's focus on finding exact matches and comparing two binary search implementations doesn't directly help answer the counting question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|92fd554f92e389b9451d": {
+    "useful": true,
+    "reason": "This passage is useful because it discusses binary search pitfalls and specifically mentions returning insertion points, which is directly relevant to solving the problem. To count elements strictly less than X in a sorted array, one would use binary search to find the insertion point (the position where X would be inserted to maintain order), and the insertion point value gives exactly the count of elements less than X. The passage's warning about 'Returning mid when the task asks for an insertion point' and noting that 'The insertion point is low after the loop' provides crucial guidance for correctly implementing this solution."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|eec682235d62a859d334": {
+    "useful": true,
+    "reason": "This passage directly helps answer the question. To count elements strictly less than X in a sorted array, one can use bisect_left(a, x) which returns the first index where a[i] >= x. The number of elements strictly less than X equals this index value. The passage explains bisect_left and bisect_right, which are the standard library tools for solving this exact type of problem on sorted arrays."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|07df37fa66c86f089c4d": {
+    "claims": [
+      {
+        "claim": "Using `low <= high` condition with `high = mid` when `a[mid] >= x` risks an infinite loop when `low` and `high` are adjacent",
+        "supported": true,
+        "reason": "The context states: 'When `low` and `high` are adjacent, `mid` equals `low`, the range never shrinks, and the loop hangs.' This directly supports the claim about the infinite loop risk with this specific combination."
+      },
+      {
+        "claim": "The interval does not shrink when `low` and `high` are adjacent with this approach",
+        "supported": true,
+        "reason": "The context explicitly states: 'When `low` and `high` are adjacent, `mid` equals `low`, the range never shrinks, and the loop hangs.'"
+      },
+      {
+        "claim": "The answer addresses how to update `high` instead of setting it to `mid`",
+        "supported": false,
+        "reason": "The answer mentions looking at how to update `high` instead of setting it to `mid`, but the context does not provide specific guidance on what the correct update should be in this particular scenario. The context discusses the pitfall but does not detail the alternative approach suggested."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|f184d371c6d04346674e": {
+    "requirements": [
+      {
+        "requirement": "Explain how to count elements strictly less than X",
+        "satisfied": false,
+        "reason": "The answer does not address the core task of counting elements strictly less than X. Instead, it discusses binary search loop conditions and potential infinite loops."
+      },
+      {
+        "requirement": "Address the algorithm or approach for solving the problem",
+        "satisfied": false,
+        "reason": "While the answer mentions binary search concepts, it does not explain how to apply them to solve the counting problem, nor does it provide a complete solution approach."
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|18ed7543698f9ea6769e": {
+    "useful": false,
+    "reason": "This passage discusses binary search implementation details and boundary conditions, but the question asks for a simple count of elements strictly less than X in a sorted array. While binary search could be used as an optimization technique to solve this problem, the passage does not address the actual problem or provide relevant information for answering it. The passage is about a different topic (binary search correctness) rather than the specific task of counting elements less than X."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|1f63cd660f4c315e7e84": {
+    "useful": false,
+    "reason": "The passage discusses binary search algorithm and its implementation details, but the question asks for a simple count of elements strictly less than X in a sorted array. While binary search could be used as an optimization technique to solve this problem, the passage does not address the actual problem requirements or provide relevant information about counting elements or handling the input/output format described in the question."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|03dfafe56db372a59a94": {
+    "claims": [
+      {
+        "claim": "Mixing the closed form (low <= high) with high = mid causes an infinite loop when low and high are adjacent and a[mid] >= x",
+        "supported": true,
+        "reason": "The context states: 'When `low` and `high` are adjacent, `mid` equals `low`, the range never shrinks, and the loop hangs' and lists '`high = mid` in the closed form' as a pitfall that produces this issue."
+      },
+      {
+        "claim": "The search range never shrinks in this scenario",
+        "supported": true,
+        "reason": "The context explains: 'When `low` and `high` are adjacent, `mid` equals `low`, the range never shrinks, and the loop hangs.'"
+      },
+      {
+        "claim": "The upper bound update needs to be adjusted correctly",
+        "supported": true,
+        "reason": "The context discusses the importance of consistency in binary search forms and warns against mixing `low <= high` with `high = mid`, recommending proper form selection to avoid this bug."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|d58652f133de7853c40b": {
+    "requirements": [
+      {
+        "requirement": "Explain what the problem asks for (count elements strictly less than X)",
+        "satisfied": false,
+        "reason": "The answer does not describe the problem requirements at all"
+      },
+      {
+        "requirement": "Provide a solution or approach to solve the problem",
+        "satisfied": false,
+        "reason": "The answer does not provide any solution or algorithm to count elements less than X"
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|424ebaf6676df4357860": {
+    "claims": [
+      {
+        "claim": "The code is missing tie-breaking logic when multiple words share the same maximum frequency",
+        "supported": false,
+        "reason": "The context does not contain any code to evaluate. No code is shown in the answer or context that could be assessed for this claim."
+      },
+      {
+        "claim": "The update to `best` should occur when a word has a strictly higher frequency than the current maximum",
+        "supported": true,
+        "reason": "The context states in section [1] that the standard tie-break for 'most frequent, alphabetical on ties' uses `(-count, key)` tuple ordering, which implies updating when frequency is higher."
+      },
+      {
+        "claim": "The update to `best` should also occur when a word's frequency matches the current maximum and the word is alphabetically smaller than the current best",
+        "supported": true,
+        "reason": "The context in section [1] explicitly describes the `(-kv[1], kv[0])` sorting pattern for 'by count desc, then key', which implements exactly this tie-breaking logic of comparing alphabetically when counts are equal."
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|acc86d44d97ef071edce": {
+    "requirements": [
+      {
+        "requirement": "Identify what the question asks for",
+        "satisfied": true,
+        "reason": "The answer correctly identifies that the question asks to print the most frequent word, with alphabetical tie-breaking"
+      },
+      {
+        "requirement": "Address the specific issue in the code",
+        "satisfied": true,
+        "reason": "The answer points out that line 8 is missing tie-breaking logic and explains what needs to be fixed"
+      },
+      {
+        "requirement": "Explain the solution",
+        "satisfied": true,
+        "reason": "The answer clearly explains that `best` should be updated both when frequency is strictly higher AND when frequency matches but the word is alphabetically smaller"
+      }
+    ],
+    "evasive": false
+  },
+  "anthropic/claude-haiku-4.5|context_precision|ea20d313adbc4a8e066a": {
+    "useful": true,
+    "reason": "This passage directly addresses the core requirement of the question. It explains how to find the most frequent word and handle ties by sorting alphabetically, which is exactly what the question asks for. The passage provides the specific sorting pattern `(-kv[1], kv[0])` that sorts by count descending and then by key alphabetically, which is the standard solution for this problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|378392c0275158de1975": {
+    "useful": false,
+    "reason": "This passage discusses using tuples with priority queues and heaps in Python, specifically about ordering and tie-breaking mechanisms. However, the question asks about finding the most frequent word in a line of text, with alphabetical ordering as a tie-breaker. The passage does not address word frequency counting, string parsing, or the specific algorithm needed to solve this problem. While it mentions tie-breaking, it's in the context of heap operations, not word frequency comparison."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|8fd2a68191a4fc87f72b": {
+    "useful": false,
+    "reason": "This passage discusses Python's sort stability and sorting with key functions, but it does not address the problem of finding the most frequent word in a line or handling ties by alphabetical order. The passage is about sorting mechanics rather than word frequency analysis or the specific algorithm needed to solve this problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|f99663f75e80fdb71189": {
+    "useful": false,
+    "reason": "This passage discusses hashable data types and their use as dictionary keys, along with sorting strings for anagrams. While it mentions dictionaries and sorting, it doesn't address the core problem of counting word frequencies or selecting the most frequent word with alphabetical tie-breaking. The passage is about data structure choices rather than the algorithm needed to solve the stated problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|9d483fe8aff2f8c43ec9": {
+    "useful": true,
+    "reason": "This passage explains how to use tuple-based sorting with tie-breaking, which is directly applicable to the problem. The technique of using a tuple key with lexicographic comparison (e.g., sorting by frequency first, then alphabetically on ties) is the core approach needed to solve this problem. The passage demonstrates how to handle tie-breaking scenarios, which matches the requirement to 'print the alphabetically smallest' word on a frequency tie."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|85075f7b04119f934907": {
+    "claims": [
+      {
+        "claim": "Using `[[0] * c] * r` creates multiple references to the exact same list object instead of independent rows",
+        "supported": true,
+        "reason": "Context [5] explicitly states: 'grid = [[0] * 3] * 2 # WRONG: two references to ONE row' and 'The outer `*` copies the reference, not the list.'"
+      },
+      {
+        "claim": "Modifying one row accidentally updates all of them when using `[[0] * c] * r`",
+        "supported": true,
+        "reason": "Context [5] demonstrates this with the example: 'grid[0][0] = 1' results in '[[1, 0, 0], [1, 0, 0]]', showing that modifying one row affects all rows"
+      },
+      {
+        "claim": "A list comprehension should be used to generate separate list objects for each row",
+        "supported": true,
+        "reason": "Context [5] shows the correct approach: 'grid = [[0] * 3 for _ in range(2)] # right: two independent rows'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|5c43e68a761fe4cb7e49": {
+    "requirements": [
+      {
+        "requirement": "Explain what the question asks for",
+        "satisfied": false,
+        "reason": "The answer does not describe the problem statement at all - it doesn't mention reading R and C, reading a grid of characters, or counting '#' symbols per row"
+      },
+      {
+        "requirement": "Address the specific task of counting '#' characters in each row",
+        "satisfied": false,
+        "reason": "The answer provides no guidance on how to count '#' characters or process the grid as described in the problem"
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|2f951b41f57287ef5e6b": {
+    "useful": false,
+    "reason": "This passage discusses Python list copying and deep copy operations, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which requires basic string/character counting logic, not information about list copying or assignment semantics."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|416f6256e4d74d24b050": {
+    "useful": false,
+    "reason": "This passage describes a graph traversal algorithm for counting connected components/islands in a grid. The question asks for a simple row-by-row count of '#' characters in each row, which requires only basic iteration and counting. The passage's complex DFS/BFS approach for finding connected components is unnecessary and unrelated to the straightforward character counting task required."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|2718388e86999e335c29": {
+    "useful": false,
+    "reason": "This passage discusses 2D prefix sums for range queries on rectangular regions, which is an advanced technique for efficiently computing sums over sub-rectangles. However, the question simply asks to count '#' characters in each row independently and print those counts. This is a straightforward row-by-row iteration problem that requires no prefix sums or range query optimization. The passage addresses a different problem domain and would not help answer this question."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|59a25bd9a40fdc43f6f0": {
+    "useful": false,
+    "reason": "This passage explains backtracking and recursion with a permutations example. The question asks for a simple task: read a grid and count '#' characters in each row. This requires basic input parsing and counting, not backtracking or recursion. The passage is about an unrelated algorithmic technique and provides no help in solving this straightforward problem."
+  },
+  "anthropic/claude-haiku-4.5|context_precision|eee3b4b358a79a47c2f6": {
+    "useful": false,
+    "reason": "This passage discusses a Python pitfall about creating 2D lists with shared references, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which is a straightforward counting problem. The passage's content about `[[0] * m] * n` vs list comprehensions would only be relevant if the question involved creating or modifying a 2D grid structure, not reading and counting characters in it."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|91b28afa7a9311844412": {
+    "claims": [
+      {
+        "claim": "Grid initialization using [[0] * m] * n creates multiple references to the exact same inner list rather than independent rows",
+        "supported": true,
+        "reason": "The context states: 'The outer `*` copies the reference, not the list. Every 2D DP table, adjacency matrix and grid built the first way is silently broken.'"
+      },
+      {
+        "claim": "Because all rows are aliased, modifying one row updates every row in the grid at once",
+        "supported": true,
+        "reason": "The context demonstrates this with an example: 'grid = [[0] * 3] * 2 # WRONG: two references to ONE row' followed by 'grid[0][0] = 1' resulting in '[[1, 0, 0], [1, 0, 0]]', showing that modifying one row affects all rows"
+      },
+      {
+        "claim": "Building the 2D list with a list comprehension over range(r) ensures each row is a separate list object",
+        "supported": true,
+        "reason": "The context shows the correct approach: 'grid = [[0] * 3 for _ in range(2)] # right: two independent rows'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|0dcc158c991db0a66702": {
+    "requirements": [
+      {
+        "requirement": "Explain how to count '#' characters in each row of a grid",
+        "satisfied": false,
+        "reason": "The answer does not address the core task of counting '#' characters per row. Instead, it discusses a completely different problem about 2D list aliasing in Python."
+      },
+      {
+        "requirement": "Provide a solution to print R numbers (one per line) representing the count of '#' in each row",
+        "satisfied": false,
+        "reason": "The answer does not provide any solution for counting or printing the required output. It only discusses a grid initialization issue unrelated to the stated problem."
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|83360aade146a130e1b5": {
+    "useful": false,
+    "reason": "This passage discusses Python programming pitfalls and common mistakes in Python code. The question asks for a solution to count '#' characters in each row of a grid. While the passage mentions 2D grids in the context of the `[[0] * m] * n` pitfall, it does not provide any information about how to read input, parse grid data, count characters, or produce the required output. The passage is about avoiding bugs in Python, not about solving the specific algorithmic problem presented in the question."
+  },
+  "anthropic/claude-haiku-4.5|faithfulness|09fe91c50adafb3916da": {
+    "claims": [
+      {
+        "claim": "Using `[[0] * c] * r` creates multiple references to the exact same list object rather than independent rows",
+        "supported": true,
+        "reason": "Context [5] states: 'The outer `*` copies the reference, not the list' and shows the example `grid = [[0] * 3] * 2` with the comment 'WRONG: two references to ONE row'"
+      },
+      {
+        "claim": "Because all rows point to the same underlying list, modifying one row accidentally updates all of them",
+        "supported": true,
+        "reason": "Context [5] demonstrates this with `grid[0][0] = 1` resulting in `[[1, 0, 0], [1, 0, 0]]`, showing that modifying one row affects all rows"
+      },
+      {
+        "claim": "Using a list comprehension ensures each row is created independently",
+        "supported": true,
+        "reason": "Context [5] shows the correct approach: `grid = [[0] * 3 for _ in range(2)]` with the comment 'right: two independent rows'"
+      }
+    ]
+  },
+  "anthropic/claude-haiku-4.5|answer_relevance|c503aeb9f128e0afda2d": {
+    "requirements": [
+      {
+        "requirement": "Address the question about counting '#' characters in each row",
+        "satisfied": false,
+        "reason": "The answer does not address the actual problem at all. It discusses a bug in list initialization code that is not part of the stated question."
+      },
+      {
+        "requirement": "Provide a solution to print R numbers showing '#' count per row",
+        "satisfied": false,
+        "reason": "The answer provides no solution or approach to the actual problem of counting and printing '#' characters."
+      }
+    ],
+    "evasive": true
+  },
+  "anthropic/claude-haiku-4.5|context_precision|b090c902d84340da34ba": {
+    "useful": true,
+    "reason": "This passage provides relevant code patterns for reading input in the format described by the question. Specifically, the pattern 'A count, then that many lines' with the code `n = int(input()); rows = [input().strip() for _ in range(n)]` directly applies to reading R (the count) and then the next R lines of characters. This is a key component needed to solve the problem."
   }
 }

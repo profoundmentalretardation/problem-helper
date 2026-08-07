@@ -19,6 +19,7 @@ def make_client(tmp_path, processor, resumer=None):
         llm_api_key="test",
         db_path=str(tmp_path / "api.db"),
         checkpoint_db_path=str(tmp_path / "checkpoints.db"),
+        tracing_enabled=False,
     )
     app = create_app(settings, processor=processor, resumer=resumer)
     return TestClient(app), app
@@ -57,7 +58,7 @@ def test_index_page_is_served(tmp_path, holder):
 
 
 def test_create_session_returns_202_and_persists_request(tmp_path, holder):
-    async def processor(session_id, request):
+    async def processor(session_id, request, trace):
         holder["seen"] = request
 
     client, _ = make_client(tmp_path, processor)
@@ -78,7 +79,7 @@ def test_create_session_returns_202_and_persists_request(tmp_path, holder):
 
 
 def test_background_result_becomes_visible(tmp_path, holder):
-    async def processor(session_id, request):
+    async def processor(session_id, request, trace):
         await holder["app"].state.db.finish_success(
             session_id,
             {
@@ -109,7 +110,7 @@ def test_background_result_becomes_visible(tmp_path, holder):
 
 
 def test_failed_session_exposes_error(tmp_path, holder):
-    async def processor(session_id, request):
+    async def processor(session_id, request, trace):
         await holder["app"].state.db.finish_failure(
             session_id, ErrorCode.fix_failed, "could not repair the code"
         )
@@ -165,12 +166,12 @@ def test_a_sample_can_be_submitted_as_is(tmp_path, holder):
 
 
 def test_unfinished_session_can_be_resumed(tmp_path, holder):
-    async def processor(session_id, request):
+    async def processor(session_id, request, trace):
         await holder["app"].state.db.finish_failure(
             session_id, ErrorCode.internal_error, "provider is down"
         )
 
-    async def resumer(session_id, request):
+    async def resumer(session_id, request, trace):
         holder["resumed"] = request
         await holder["app"].state.db.finish_success(
             session_id,
@@ -200,7 +201,7 @@ def test_unfinished_session_can_be_resumed(tmp_path, holder):
 
 
 def test_resume_of_a_finished_session_is_rejected(tmp_path, holder):
-    async def processor(session_id, request):
+    async def processor(session_id, request, trace):
         await holder["app"].state.db.finish_success(
             session_id,
             {

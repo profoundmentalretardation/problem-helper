@@ -25,6 +25,9 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import mlflow
+from mlflow.entities import SpanType
+
 from .chunking import Chunk, build_chunks
 from .dense import DEFAULT_MODEL as DEFAULT_EMBED_MODEL
 from .dense import DenseIndex
@@ -110,6 +113,7 @@ class RetrievalService:
 
     # ------------------------------------------------------------------ #
 
+    @mlflow.trace(name="retrieval.search", span_type=SpanType.RETRIEVER)
     def search(
         self,
         query: str,
@@ -117,7 +121,12 @@ class RetrievalService:
         k: int | None = None,
         rerank: bool | None = None,
     ) -> list[Hit]:
-        """Top-k chunks in retriever order, best first."""
+        """Top-k chunks in retriever order, best first.
+
+        Traced as a `RETRIEVER` span: autolog only sees LangChain retrievers, and this one
+        is hand-written, so without the decorator the retrieval step would be a gap in the
+        span tree between the tool call and its result.
+        """
         params = self._params(k=k, rerank=rerank)
         stages = self.explain(query, params=params)
         return stages["rerank" if params.rerank else "fused"]

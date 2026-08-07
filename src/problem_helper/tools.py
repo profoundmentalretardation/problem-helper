@@ -19,8 +19,10 @@ from __future__ import annotations
 import json
 import logging
 
+import mlflow
 from langchain_core.messages import AnyMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
+from mlflow.entities import SpanType
 
 from . import materials
 from .retrieval import get_retriever, pack_for_lim
@@ -30,12 +32,26 @@ logger = logging.getLogger(__name__)
 
 EXCERPT_CHARS = 700
 
+def _traced(name: str):
+    """A `TOOL` span for one tool, named and attributed by us rather than by autolog.
+
+    `evals.trajectory` reads the trajectory off `gen_ai.tool.name`, so that attribute is
+    pinned here instead of inferred from whatever the LangChain integration happens to call
+    its own span. The decorator sits *under* `@tool`, so the span opens when the tool body
+    runs; autolog's span for the same call becomes its parent, and the extractor keeps only
+    the outermost tool span of a nested chain, so a call is never counted twice.
+    """
+    return mlflow.trace(
+        name=name, span_type=SpanType.TOOL, attributes={"gen_ai.tool.name": name}
+    )
+
 
 def _dump(payload: object) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
 @tool(parse_docstring=True)
+@_traced("search_corpus")
 def search_corpus(query: str, k: int = 5) -> str:
     """Search the study library for passages about a technique, a mistake or an API.
 
@@ -58,6 +74,8 @@ def search_corpus(query: str, k: int = 5) -> str:
         heading, its rank and an excerpt. Call get_learning_material with a material_id to
         read that note in full.
     """
+    # `k` is clamped rather than validated: the bound is a capability constraint (layer 4),
+    # and a model asking for k=10000 gets ten passages, not an error it can loop on.
     hits = get_retriever().search(query, k=min(max(k, 1), 10))
     logger.info("tool search_corpus(%r) → %s passage(s)", query, len(hits))
     payload = [
@@ -77,6 +95,7 @@ def search_corpus(query: str, k: int = 5) -> str:
 
 
 @tool(parse_docstring=True)
+@_traced("get_learning_material")
 def get_learning_material(material_id: str) -> str:
     """Read one study material in full, including the list of typical pitfalls.
 
@@ -97,6 +116,7 @@ def get_learning_material(material_id: str) -> str:
 
 
 @tool(parse_docstring=True)
+@_traced("list_material_topics")
 def list_material_topics() -> str:
     """List the topics covered by the study library, with the material ids under each.
 

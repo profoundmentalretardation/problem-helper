@@ -30,8 +30,9 @@ strings appear only as deliberate unicode round-trip fixtures in tests.
   logs append through `operator.add` and `research` through `add_messages`, so a streamed
   update carries exactly what the node just produced.
 - Code runs through an injected `runner: Callable[[str], Awaitable[TestReport]]` built by
-  `orchestrator.make_runner`. `sandbox.run_tests` is the single swap point for moving
-  execution into a container; keep that signature stable.
+  `orchestrator.make_runner`. `sandbox.run_tests` is the single swap point between the two
+  backends; keep that signature stable and keep both backends returning the same
+  `TestReport`, or the graph above them means different things per deployment.
 - Hint retries deliberately clear the conversation (`RemoveMessage(REMOVE_ALL_MESSAGES)`)
   and rebuild a fresh context with the rejected hints and the validator's remarks appended,
   instead of continuing it. That is a token-cost decision, not an oversight.
@@ -42,6 +43,61 @@ strings appear only as deliberate unicode round-trip fixtures in tests.
 - The reading list attached to a hint is rebuilt from the tool results
   (`tools.read_materials`) and intersected with the ids the model named, so a hallucinated
   id cannot reach the student.
+
+## Sandbox
+
+- Two backends behind `sandbox.run_tests`: `docker` (default) and `local`. There is
+  deliberately **no `auto`** — a host whose daemon is down would then silently run untrusted
+  code under the weaker isolation, and that mistake is invisible because everything keeps
+  working. `ensure_ready` raises `SandboxUnavailable` once, before the first test, and the
+  orchestrator finishes the session as `sandbox_unavailable`.
+- The container flags in `sandbox/container._run_args` are the isolation. A flag deleted by
+  an editing accident is a silent loss of a security property, which is why
+  `test_run_args_carry_every_isolation_flag` asserts on the command line itself.
+- The `local` backend exists so the suite runs without a container runtime, and nothing
+  selects it implicitly. Orchestrator tests pin it; sandbox tests parametrise over both.
+
+## Safety
+
+- Four layers, and the numbering in `safety/__init__.py` is the reading order:
+  1 input filtering (`safety/inputs.py`), 2 structural separation (`safety/channels.py`),
+  3 output filtering (`safety/outputs.py`), 4 capability constraints — the code shield, the
+  container, and the fact that no registered tool can write, fetch or execute anything.
+- Layer 2 is the one that holds when layer 1's patterns miss, so **every untrusted field
+  reaches a prompt through `safety.fence`** and every system prompt ends with
+  `safety.FENCE_RULE`. Adding a field to a prompt means fencing it; interpolating a user
+  string directly is the bug `prompts.py` is arranged to make visible.
+- Guardrails are graph nodes, not wrappers. `screen` makes a refused request a terminal
+  state with an error code rather than an exception; `screen_hint` routes a blocked hint
+  into the *existing* hint retry loop through `_rejection`, which is also what the
+  validator's own rejections use — there is one definition of what a rejection costs. The
+  fixer's code is screened inside `verify`, so a refusal is a failing attempt the fix loop
+  already knows how to retry.
+- The code shield is tuned for a low false-positive rate, not for completeness: a
+  legitimate solution refused as hostile is a worse failure than a hostile one the container
+  catches instead. `open(0)` and `os.read(0, …)` are fast-input idioms and must keep
+  passing; unparsable code is allowed through because a `SyntaxError` is the service's main
+  use case and cannot execute anything.
+- `GuardConfig` switches exist for the attack suite's ablation, not as a supported way to
+  run the service.
+
+## Tracing
+
+- One trace per session. `mlflow.autolog()` covers everything that goes through LangChain;
+  `@mlflow.trace` covers the three things it cannot see — the session root span, the
+  sandbox, and the guardrails.
+- Tags are the taught vocabulary: `request_origin` is `api` / `ui` / `batch` and is checked
+  against that list rather than passed through, and `eval_case_id` is set only on batch
+  runs, where the case set is bounded.
+- The tools are traced twice on purpose (autolog's span plus ours, which pins
+  `gen_ai.tool.name`). `evals.trajectory` keeps only the outermost tool span of a nested
+  chain, so a call is never double-counted. Do not "fix" the duplication by removing the
+  decorator — the extractor would then depend on how the integration names its spans.
+- `tracing.configure` is idempotent and process-wide. `tests/conftest.py` calls it with
+  `enabled=False` at import time, before any decorator runs, which is what keeps the suite
+  from writing a store into the repository.
+- The tracking URI is a database (`sqlite:///mlflow.db`). MLflow 3 refuses `./mlruns`
+  outright, and `search_traces` / `log_feedback` need a real backend.
 
 ## Retrieval
 
@@ -73,8 +129,24 @@ strings appear only as deliberate unicode round-trip fixtures in tests.
   new answer is a new judge prompt.
 - The judge model must differ from the answering model; `run_generation.py` exits rather
   than let a model grade itself.
-- Committed numbers in the README come from `evals/results/`. Re-run the two runners rather
+- Committed numbers in the README come from `evals/results/`. Re-run the runners rather
   than editing a table by hand.
+- The agent eval and the attack suite both run in **two phases**: execute, then score stored
+  traces. Nothing is measured inline. That is what lets the same scorers run over production
+  traffic, and it is the reason `evals/trace_scorers.py` and `evals/safety_scorer.py` take a
+  trace rather than a pipeline.
+- The scorer bodies do not change to accommodate a trace. `evals/trajectory.py` is the whole
+  adapter layer; if wiring a scorer to a trace ever requires editing the scorer, the adapter
+  is doing too little.
+- The eval raises the temperature (`--temperature`, default 0.7) and the service does not.
+  Three runs at 0.0 are three copies of one run, and `pass^3` would be identically equal to
+  `pass@1`.
+- `expected_tools` in `agent_cases.json` is a set of acceptable trajectories. When a real run
+  takes a sensible plan the file did not list, widen the file — that is a gap in the eval
+  set, not an agent regression. Tightening the metric instead is how an eval suite becomes a
+  test of its author's imagination.
+- `evals/agent_cases.json` anchors on samples by id, never by copying the task and tests, for
+  the same reason `cases.json` anchors on `(material_id, heading)`.
 
 ## LLM access
 
@@ -101,8 +173,12 @@ lifetime of the client.
   would make `add_messages` treat the second append as an edit of the first.
 - Graph tests use `InMemorySaver` for the checkpoint/resume cases; the sqlite saver only
   appears in the app itself.
-- Orchestrator tests run the real sandbox — subprocess execution is fast enough and worth
-  covering end to end.
+- Orchestrator tests run the real sandbox, pinned to the `local` backend: they cover the
+  streaming-to-rows path, and `tests/test_sandbox.py` covers the container.
+- The false-positive halves of `test_safety.py` and `test_codeshield.py` are the load-bearing
+  ones. Both files list legitimate inputs chosen to sit next to a detector — a virtual
+  machine that "ignores all previous instructions", `open(0)`, a task about environment
+  files. Two of those cases failed on first run and the filters were loosened, not the tests.
 - API tests are sync and use `TestClient` plus
   `create_app(settings, db=..., processor=..., resumer=...)` injection; background work is
   observed by polling `GET /v1/sessions/{id}`.
@@ -110,11 +186,16 @@ lifetime of the client.
 
 ## Tooling and ops
 
-- `uv run pytest`; `uvx ruff check src tests` — ruff is not a project dependency.
+- `uv run pytest`; `uvx ruff check src evals tests` — ruff is not a project dependency.
+- The suite needs `docker pull python:3.13-alpine`. Without it the container tests skip
+  rather than fail, and the rest of the suite is unaffected.
 - Smoke run against a real provider: `DB_PATH=/tmp/x.db CHECKPOINT_DB_PATH=/tmp/x-cp.db
   PORT=8079 uv run problem-helper`, then POST to `/v1/sessions` and poll. `/` serves the
   playground page, `/v1/tools` lists the registered tools and `/v1/sessions/{id}/debug`
-  shows the diff, the model's code, the tool calls and every attempt.
+  shows the diff, the model's code, the tool calls, the guardrail decisions and every
+  attempt.
+- `mlflow ui --backend-store-uri sqlite:///mlflow.db` opens the traces, with the feedback
+  the scorers wrote back attached to each one.
 - `uv_build` ships `src/problem_helper/static/` into the wheel, so the page works from an
   installed copy.
 - `docs/` is gitignored in this repo — plans under `docs/plans/` stay local.

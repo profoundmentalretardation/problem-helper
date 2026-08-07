@@ -315,7 +315,9 @@ async function submit() {
   try {
     const response = await fetch("/v1/sessions", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // Tags the trace as interactive traffic, so a dashboard can tell the playground
+      // apart from programmatic calls and from eval runs. See tracing.TraceContext.
+      headers: { "content-type": "application/json", "x-request-origin": "ui" },
       body: JSON.stringify(payload),
     });
     const body = await response.json();

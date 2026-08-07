@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from . import samples, tools
+from . import samples, tools, tracing
 from .config import Settings, get_settings
 from .db import Database
 from .llm import LLMClient
@@ -28,12 +28,16 @@ from .schemas import (
     SessionView,
     SolveRequest,
 )
+from .tracing import TraceContext
 
 logger = logging.getLogger(__name__)
 
-Processor = Callable[[str, SolveRequest], Awaitable[None]]
+Processor = Callable[[str, SolveRequest, TraceContext], Awaitable[None]]
 
 _INDEX_PAGE = Path(__file__).parent / "static" / "index.html"
+
+ORIGINS = ("api", "ui", "batch")
+"""The taught `request_origin` values. Anything else is recorded as `api`."""
 
 
 def create_app(
@@ -62,7 +66,15 @@ def create_app(
             checkpointer = AsyncSqliteSaver(checkpoint_conn)
             await checkpointer.setup()
 
-        async def default_processor(session_id: str, request: SolveRequest) -> None:
+        tracing.configure(
+            enabled=settings.tracing_enabled,
+            tracking_uri=settings.mlflow_tracking_uri,
+            experiment=settings.mlflow_experiment,
+        )
+
+        async def default_processor(
+            session_id: str, request: SolveRequest, trace: TraceContext
+        ) -> None:
             assert llm is not None and checkpointer is not None
             await process_session(
                 session_id,
@@ -71,9 +83,12 @@ def create_app(
                 llm=llm,
                 settings=settings,
                 checkpointer=checkpointer,
+                trace=trace,
             )
 
-        async def default_resumer(session_id: str, request: SolveRequest) -> None:
+        async def default_resumer(
+            session_id: str, request: SolveRequest, trace: TraceContext
+        ) -> None:
             assert llm is not None and checkpointer is not None
             await resume_session(
                 session_id,
@@ -82,6 +97,7 @@ def create_app(
                 llm=llm,
                 settings=settings,
                 checkpointer=checkpointer,
+                trace=trace,
             )
 
         app.state.settings = settings
@@ -116,7 +132,10 @@ def create_app(
     async def create_session(payload: SolveRequest, request: Request) -> SessionCreated:
         session_id = uuid4().hex
         await request.app.state.db.create_session(session_id, payload.model_dump())
-        _spawn(request.app, request.app.state.processor(session_id, payload))
+        _spawn(
+            request.app,
+            request.app.state.processor(session_id, payload, _trace_context(request)),
+        )
         logger.info("session %s queued", session_id)
         return SessionCreated(session_id=session_id, status=SessionStatus.pending)
 
@@ -137,7 +156,10 @@ def create_app(
         if record["status"] == SessionStatus.succeeded:
             raise HTTPException(status_code=409, detail="session already finished")
         payload = SolveRequest.model_validate(record["request"])
-        _spawn(request.app, request.app.state.resumer(session_id, payload))
+        _spawn(
+            request.app,
+            request.app.state.resumer(session_id, payload, _trace_context(request)),
+        )
         logger.info("session %s resumed", session_id)
         return SessionCreated(session_id=session_id, status=SessionStatus.running)
 
@@ -158,6 +180,18 @@ def create_app(
         )
 
     return app
+
+
+def _trace_context(request: Request) -> TraceContext:
+    """Where this call came from, off a header the playground sets and clients may set.
+
+    The value is checked against the taught vocabulary rather than passed through: a tag
+    whose values are whatever a caller typed is not a tag anyone can filter on. Batch runs
+    do not come through HTTP at all — the eval harness calls the orchestrator directly and
+    supplies its own context with the case id.
+    """
+    origin = request.headers.get("x-request-origin", "api").lower()
+    return TraceContext(request_origin=origin if origin in ORIGINS else "api")
 
 
 async def _record(request: Request, session_id: str) -> dict[str, Any]:

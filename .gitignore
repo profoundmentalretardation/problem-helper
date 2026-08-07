@@ -11,3 +11,7 @@ docs/
 *.db-wal
 *.db-shm
 .rag_cache/
+# MLflow's own store. The traces are a local artifact of running the service; what gets
+# committed is evals/results/, which is generated from them.
+mlruns/
+mlartifacts/
