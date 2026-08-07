@@ -109,6 +109,7 @@ class LLMClient:
                 api_key=self._settings.llm_api_key or "unset",
                 timeout=self._settings.llm_timeout_sec,
                 max_retries=self._settings.llm_max_retries,
+                temperature=self._settings.llm_temperature,
             )
         return self._models[model]
 

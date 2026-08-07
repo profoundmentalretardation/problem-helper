@@ -17,12 +17,12 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from . import sandbox
+from . import sandbox, tracing
 from .config import Settings
 from .db import Database
-from .graph import build_graph, initial_state
+from .graph import GuardConfig, build_graph, initial_state
 from .llm import LLMProtocol
-from .sandbox import TestReport
+from .sandbox import SandboxUnavailable, TestReport
 from .schemas import (
     ErrorCode,
     MaterialRef,
@@ -33,6 +33,7 @@ from .schemas import (
     SessionStatus,
     SolveRequest,
 )
+from .tracing import TraceContext
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ def make_runner(
         return await sandbox.run_tests(
             code,
             request.tests,
+            backend=settings.sandbox_backend,
+            image=settings.sandbox_image,
             timeout_sec=settings.sandbox_timeout_sec,
             memory_mb=settings.sandbox_memory_mb,
             max_output_bytes=settings.sandbox_max_output_bytes,
@@ -60,10 +63,11 @@ async def process_session(
     llm: LLMProtocol,
     settings: Settings,
     checkpointer: BaseCheckpointSaver | None = None,
+    trace: TraceContext | None = None,
 ) -> None:
     """Runs a fresh session from the start."""
     await _run(session_id, request, db=db, llm=llm, settings=settings,
-               checkpointer=checkpointer, resume=False)
+               checkpointer=checkpointer, resume=False, trace=trace)
 
 
 async def resume_session(
@@ -74,10 +78,11 @@ async def resume_session(
     llm: LLMProtocol,
     settings: Settings,
     checkpointer: BaseCheckpointSaver,
+    trace: TraceContext | None = None,
 ) -> None:
     """Continues a session from its last checkpoint — nothing already done is paid for twice."""
     await _run(session_id, request, db=db, llm=llm, settings=settings,
-               checkpointer=checkpointer, resume=True)
+               checkpointer=checkpointer, resume=True, trace=trace)
 
 
 async def _run(
@@ -89,6 +94,7 @@ async def _run(
     settings: Settings,
     checkpointer: BaseCheckpointSaver | None,
     resume: bool,
+    trace: TraceContext | None = None,
 ) -> None:
     try:
         await _drive(
@@ -99,7 +105,13 @@ async def _run(
             settings=settings,
             checkpointer=checkpointer,
             resume=resume,
+            trace=trace or TraceContext(),
         )
+    except SandboxUnavailable as exc:
+        # Not an internal error and not the student's fault: the isolation the service
+        # promises is not there, so the session stops rather than running anything.
+        logger.error("session %s: sandbox unavailable: %s", session_id, exc)
+        await db.finish_failure(session_id, ErrorCode.sandbox_unavailable, str(exc))
     except Exception as exc:
         logger.exception("session %s crashed", session_id)
         await db.finish_failure(
@@ -116,6 +128,7 @@ async def _drive(
     settings: Settings,
     checkpointer: BaseCheckpointSaver | None,
     resume: bool,
+    trace: TraceContext,
 ) -> None:
     graph = build_graph(
         llm=llm,
@@ -124,6 +137,7 @@ async def _drive(
         hint_model=settings.hint_model,
         validator_model=settings.validator_model,
         checkpointer=checkpointer,
+        guards=GuardConfig.from_settings(settings),
     )
     config = {"configurable": {"thread_id": session_id}}
     # `None` tells LangGraph to pick the run up where the checkpoint left off.
@@ -143,15 +157,32 @@ async def _drive(
 
     values: dict[str, Any] = {}
     tool_calls: list[dict] = []
-    async for mode, chunk in graph.astream(
-        payload, config, stream_mode=["updates", "values"]
-    ):
-        if mode == "values":
-            values = chunk
-            continue
-        for node, update in chunk.items():
-            if isinstance(update, dict):
-                await _persist(session_id, node, update, db=db, tool_calls=tool_calls)
+    # The root span of the trace: every LLM, tool, retrieval and guardrail span produced
+    # below hangs off it, and the tags are what make this run findable afterwards.
+    with tracing.session_span(
+        session_id, trace, task=request.task, resumed=resume
+    ) as span:
+        async for mode, chunk in graph.astream(
+            payload, config, stream_mode=["updates", "values"]
+        ):
+            if mode == "values":
+                values = chunk
+                continue
+            for node, update in chunk.items():
+                if isinstance(update, dict):
+                    await _persist(session_id, node, update, db=db, tool_calls=tool_calls)
+
+        tracing.set_outputs(
+            span,
+            {
+                "outcome": values.get("outcome"),
+                "error_code": values.get("error_code"),
+                "hint": values.get("hint"),
+                "materials": [ref.id for ref in values.get("materials", [])],
+                "fix_attempts_used": values.get("fix_round"),
+                "hint_attempts_used": values.get("hint_round"),
+            },
+        )
 
     await _finish(session_id, values, tool_calls, db=db)
 
@@ -181,6 +212,18 @@ async def _finish(
     internals: dict[str, Any] = {"baseline_tests": values.get("baseline")}
     if tool_calls:
         internals["tool_calls"] = tool_calls
+    if values.get("guardrails"):
+        internals["guardrails"] = values["guardrails"]
+
+    if values.get("error_code") == ErrorCode.unsafe_input:
+        # Refused before anything ran, so there is no baseline and no attempt to report.
+        await db.finish_failure(
+            session_id,
+            ErrorCode.unsafe_input,
+            values.get("error_message", ""),
+            {"guardrails": values.get("guardrails", [])},
+        )
+        return
 
     if values.get("outcome") == Outcome.already_correct:
         logger.info("session %s: the student's code already passes the tests", session_id)

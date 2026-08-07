@@ -56,10 +56,21 @@ class PipelineState(TypedDict, total=False):
     fix_attempts: Annotated[list[dict], operator.add]
     diff: str
 
+    # --- guardrails ------------------------------------------------------- #
+    # Every layer's decision, appended in the order the layers ran. `refused_because` is
+    # set only by the entry screen, and it is what makes the refusal a terminal state
+    # rather than an exception. `hint_blocked` carries one screen_hint decision to its
+    # routing function and is overwritten each round.
+    guardrails: Annotated[list[dict], operator.add]
+    refused_because: str
+    hint_blocked: bool
+
     # --- loop 2: hint ----------------------------------------------------- #
     hint_round: int
     research: Annotated[list[AnyMessage], add_messages]
     hint: str
+    claimed_material_ids: list[str]
+    available_material_ids: list[str]
     materials: list[MaterialRef]
     approved: bool
     issues: list[str]

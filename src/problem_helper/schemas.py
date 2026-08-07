@@ -56,7 +56,16 @@ class Outcome(StrEnum):
 class ErrorCode(StrEnum):
     fix_failed = "fix_failed"
     hint_rejected = "hint_rejected"
+    unsafe_input = "unsafe_input"
+    sandbox_unavailable = "sandbox_unavailable"
     internal_error = "internal_error"
+
+
+class SandboxBackend(StrEnum):
+    """Where submitted code is executed. There is no `auto` — see `sandbox/__init__.py`."""
+
+    docker = "docker"
+    local = "local"
 
 
 # --------------------------------------------------------------------------- #

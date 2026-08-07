@@ -1,0 +1,2089 @@
+{
+  "by_case": {
+    "even-sum": {
+      "category": "predicate",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            },
+            {
+              "tool": "get_learning_material",
+              "arguments": {
+                "material_id": "algo-parity-filters"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Take a look at line 5: your condition checks for odd numbers (x % 2 == 1), but the problem asks for the sum of the even ones. You'll want to adjust that check so it selects numbers divisible by 2 instead.",
+            "materials": [
+              "algo-parity-filters"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "list_material_topics",
+            "get_learning_material"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 1,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 2,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 1.0,
+              "useful": 1,
+              "of": 1,
+              "rejected": []
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 1.0,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-a8b9b01e15e0c67784d1c548e8d6ee8f",
+          "session_id": "0c1aab29f2114811a15fb5596eb3a304"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 5, your condition `x % 2 == 1` checks for odd numbers instead of even ones. Since the problem asks for the sum of even numbers, you should adjust the check so that it targets numbers with a remainder of 0 when divided by 2.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-64c684eae48c301b31478d765da969f5",
+          "session_id": "e6fbc2bdec12425db89f25780f7919a7"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at the condition on line 5: `x % 2 == 1` checks for odd numbers, but the problem asks you to sum the even ones. Adjust that remainder check so you're filtering for even integers instead!",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-bb3ffadea6dbf8c189d96cab2278de55",
+          "session_id": "ea97eb1c67d4494d808e694d2b0f97e8"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": 1.0,
+      "tool_parameter_accuracy_skipped": 2,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "sum-of-indices": {
+      "category": "predicate",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 6, you are adding the loop index 'i' to your total instead of the actual element from the list. Make sure to accumulate the list value itself when the condition is met rather than its position.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 3
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-c96e3b163df74c5566ec12713edcabc2",
+          "session_id": "4b251e28d1594906b7007a602bbaf5fa"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at line 6: when a number is strictly greater than the threshold t, you are currently adding the loop index i to your total instead of the actual element from values. Make sure you accumulate the element itself rather than its position.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-fd8dcf228cba7f5d2b57a349cb49bf0a",
+          "session_id": "8bd722f744e5493a9ae3fc7707fb53fc"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 6, you are adding the loop index `i` to the total instead of the actual element from your list. Make sure you accumulate the values themselves rather than their positions when they exceed the threshold `t`.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-2b9d68fce1d9ce7c3e466ed22a64c372",
+          "session_id": "1fdcf4d96cac48798e27de40f30f53f8"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "range-sums": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "prefix sums range query 1-based indexing inclusive"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at line 8 where you compute `pref[r] - pref[l]`. Because the queries are 1-based and inclusive, subtracting `pref[l]` accidentally excludes the element at index `l`; you need to subtract the prefix sum right before `l` instead.",
+            "materials": [
+              "algo-prefix-sums"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 4,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.7000000000000001,
+              "useful": 3,
+              "of": 5,
+              "rejected": [
+                "#2: The passage describes a 2D prefix sum technique for range queries on a grid, but the question asks about 1D range sum queries on a linear array (N integers with L and R indices). The passage's 2D approach is not applicable to this 1D problem, which would be solved more simply with a 1D prefix sum array.",
+                "#3: The passage describes an algorithm for finding the longest balanced subarray using prefix sums and a hash map to track first occurrences. However, the question asks for a solution to answer range sum queries efficiently. While prefix sums are mentioned in the passage title, the actual code solves a completely different problem (finding longest balanced subarray) and does not address how to handle multiple range sum queries as specified in the question. The passage is not applicable to this range query problem."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.7000000000000001,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-64db417052fcd0b27984bf1a1df5948d",
+          "session_id": "d6bfe5c006874567a3c5c0013b588117"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "prefix sum range queries 1 based indexing inclusive"
+              }
+            },
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            },
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "how to answer range sum queries with prefix sums 1-based indexing",
+                "material_id": "algo-prefix-sums"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Na linha 8, a opera\u00e7\u00e3o `pref[r] - pref[l]` acaba subtraindo o elemento da posi\u00e7\u00e3o `l` em vez de retir\u00e1-lo da soma, o que altera o resultado da faixa. Como o problema usa \u00edndices baseados em 1, repense qual valor acumulado anterior voc\u00ea precisa subtrair para garantir que o elemento inicial `l` fa\u00e7a parte do intervalo.",
+            "materials": [
+              "algo-prefix-sums"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [
+            "the hint mentions none of ['1-based', '0-based', 'index', 'offset', 'l - 1', 'shift']"
+          ],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 0.6666666666666666,
+          "trajectory_recall": 1.0,
+          "goal_completion": 0.0,
+          "rag": {
+            "contexts": 7,
+            "faithfulness": {
+              "score": 0.75,
+              "claims": 4,
+              "unsupported": [
+                "The operation `pref[r] - pref[l]` subtracts the element at position `l` instead of removing it from the sum"
+              ]
+            },
+            "answer_relevance": {
+              "score": 0.75,
+              "requirements": 4,
+              "evasive": false,
+              "missed": [
+                "Provide the correct formula or solution"
+              ]
+            },
+            "context_precision": {
+              "score": 0.8875,
+              "useful": 4,
+              "of": 7,
+              "rejected": [
+                "#3: The passage describes a 2D prefix sum technique for range queries on a grid, but the question asks about 1D range sum queries on a linear array (N integers with L and R indices). The passage's 2D approach is not applicable to this 1D problem, which would be solved more simply with a 1D prefix sum array.",
+                "#6: This passage describes the difference array technique for efficiently applying multiple range updates followed by a single read of the entire array. However, the question asks for computing range sums for multiple queries on a static array, which is a different problem. The passage's technique is optimized for the opposite scenario (many updates, one read), not many range sum queries on an unchanging array. For the given problem, a prefix sum array would be the appropriate technique, not a difference array.",
+                "#7: The passage describes an algorithm for finding the longest balanced subarray using prefix sums and a hash map to track first occurrences. However, the question asks for a solution to answer range sum queries efficiently. While prefix sums are mentioned in the passage title, the actual code solves a completely different problem (finding longest balanced subarray) and does not address how to handle multiple range sum queries as specified in the question. The passage is not applicable to this range query problem."
+              ]
+            }
+          },
+          "rag_faithfulness": 0.75,
+          "rag_answer_relevance": 0.75,
+          "rag_context_precision": 0.8875,
+          "passed": false,
+          "feedback_written": 9,
+          "attempt": 2,
+          "trace_id": "tr-d2d473130f15c4bd9472da67f9b2edb3",
+          "session_id": "f2de8ca2ae0041d3aebf059dcb5f4f19"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "prefix sums range query 1-based indexing"
+              }
+            },
+            {
+              "tool": "get_learning_material",
+              "arguments": {
+                "material_id": "algo-prefix-sums"
+              }
+            },
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            },
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "prefix sums range queries 1-based indexing inclusive L R"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Regarde ton calcul \u00e0 la ligne 8 : tu fais `pref[r] - pref[l]`, ce qui exclut l'\u00e9l\u00e9ment situ\u00e9 \u00e0 l'indice `l` \u00e0 cause de l'indexation 1-based de l'\u00e9nonc\u00e9. R\u00e9fl\u00e9chis \u00e0 quel indice de ton tableau `pref` correspond le d\u00e9but de la tranche inclusive pour ajuster correctement ta borne inf\u00e9rieure.",
+            "materials": [
+              "algo-prefix-sums",
+              "algo-loop-bounds"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 0.5,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 9,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.16666666666666666,
+              "requirements": 3,
+              "evasive": true,
+              "missed": [
+                "Explain what the question asks for (input format and task)",
+                "Provide a solution or correction"
+              ]
+            },
+            "context_precision": {
+              "score": 0.8551587301587302,
+              "useful": 6,
+              "of": 9,
+              "rejected": [
+                "#4: This passage discusses 2D prefix sums for 2D range queries, but the question asks about 1D range sum queries (with L and R parameters indicating a single range). The passage is about a different problem domain and does not help answer the specific question about implementing 1D range sum queries.",
+                "#5: The passage describes an algorithm for finding the longest balanced subarray using prefix sums and a hash map to track first occurrences. However, the question asks for a solution to answer range sum queries efficiently. While prefix sums are mentioned in the passage title, the actual code solves a completely different problem (finding longest balanced subarray) and does not address how to handle multiple range sum queries as specified in the question. The passage is not applicable to this range query problem.",
+                "#9: This passage describes the difference array technique for efficiently applying multiple range updates followed by a single read of the entire array. However, the question asks for computing range sums for multiple queries on a static array, which is a different problem. The passage's technique is optimized for the opposite scenario (many updates, one read), not many range sum queries on an unchanging array. For the given problem, a prefix sum array would be the appropriate technique, not a difference array."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.16666666666666666,
+          "rag_context_precision": 0.8551587301587302,
+          "passed": false,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-b698c8a5a70abeb0a75da157e67f2051",
+          "session_id": "274abc6b255549389480b2ece9b53ff2"
+        }
+      ],
+      "passed": [
+        true,
+        false,
+        false
+      ],
+      "flaky": true,
+      "pass@1": 0.3333333333333333,
+      "pass@k": 1.0,
+      "pass^k": 0.0,
+      "tool_selection_accuracy": 0.3333333333333333,
+      "tool_parameter_accuracy": 1.0,
+      "trajectory_precision": 0.7222222222222222,
+      "trajectory_recall": 1.0,
+      "goal_completion": 0.6666666666666666
+    },
+    "adjacent-pairs": {
+      "category": "loop-bounds",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look at your loop range (range(n)): when i reaches the last element, accessing a[i + 1] goes out of bounds. Adjust your loop bounds so that i + 1 stays within the valid indices of the list.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-9613287bed36d697291662abfed38130",
+          "session_id": "b3e4ff564e9c4e47a978ad8efb11fb47"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look at your loop range `range(n)`: when `i` reaches the last element `n - 1`, accessing `a[i + 1]` tries to look at index `n`, which causes an `IndexError`. Adjust your loop upper bound so that `i + 1` never goes past the end of the list.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-40899ee1ba7d418830a860c51c5282b5",
+          "session_id": "8936751a31434971b8298bfd05bfce64"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look at your loop range on line 5: by using `range(n)` while checking `a[i + 1]` inside, when `i` reaches the last element (`n - 1`), you try to access index `n`, which causes an `IndexError`. Try adjusting the upper bound of your loop so that comparing adjacent elements never exceeds the list size.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-ae2079d5a38c25911e0effd6d8ce7b63",
+          "session_id": "886a8d44399844f1b4375cc908f060c9"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "pair-with-sum": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "two pointers distinct positions same index"
+              }
+            },
+            {
+              "tool": "get_learning_material",
+              "arguments": {
+                "material_id": "algo-two-pointers"
+              }
+            },
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "two pointers same position different indices"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "F\u00edjate en la condici\u00f3n de tu ciclo while: al usar `<=` permites que left y right lleguen a la misma posici\u00f3n, lo que hace que un elemento se sume consigo mismo. Como el problema exige dos posiciones diferentes, piensa c\u00f3mo ajustar esa desigualdad para que los punteros nunca coincidan en el mismo \u00edndice.",
+            "materials": [
+              "algo-two-pointers"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 0.6666666666666666,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 6,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 4,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.9266666666666667,
+              "useful": 5,
+              "of": 6,
+              "rejected": [
+                "#4: This passage describes the two-pointer technique for merging two sorted sequences, which is not applicable to the problem of finding if two different positions in a single array sum to a target value. The problem requires a two-pointer approach on a single sorted array (one pointer at the start, one at the end, moving toward each other), not a merge operation on two separate arrays. The passage does not address the sum-finding problem at all."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.9266666666666667,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-880fd2c187b1d56feb5f5298dbc92ffb",
+          "session_id": "507033145e874e8b93726cd28c8a936a"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "two pointers same position element used twice"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Your loop condition allows `left` and `right` to meet on the same index, which pairs an element with itself. Since the problem requires two DIFFERENT positions, check how your condition should change when the pointers cross or meet.",
+            "materials": [
+              "algo-two-pointers"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 4,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 1.0,
+              "useful": 2,
+              "of": 5,
+              "rejected": [
+                "#3: This passage describes the two-pointer technique for merging two sorted sequences, which is not applicable to the problem of finding if two different positions in a single array sum to a target value. The problem requires a two-pointer approach on a single sorted array (one pointer at the start, one at the end, moving toward each other), not a merge operation on two separate arrays. The passage does not address the sum-finding problem at all.",
+                "#4: The passage discusses the three-pointer variant for solving 3-sum problems (finding three elements that sum to a target). However, the question asks about finding two DIFFERENT positions that sum to a target (2-sum problem), which is a simpler problem that can be solved with a two-pointer approach in O(n) time. The passage's focus on triple summing and O(n^2) complexity is not directly applicable to this 2-sum problem.",
+                "#5: This passage describes the two-pointer technique for removing duplicates from a sorted array by moving both pointers in the same direction. However, the question asks about finding if two different positions sum to a target value S. The relevant two-pointer technique for this problem would be the opposite-direction pattern (one pointer at the start, one at the end), not the same-direction pattern shown here. This passage does not help answer the specific question."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 1.0,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 2,
+          "trace_id": "tr-e08e61d79da73143dfc67a8a36cffde9",
+          "session_id": "de737b393cb246b7b58d6d012e89e638"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "two pointers different positions sum to target"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Take a look at your while loop condition: using left <= right allows the two pointers to meet at the same index and pair an element with itself. Since the problem requires two different positions, check how the loop condition should prevent them from landing on the same spot.",
+            "materials": [
+              "algo-two-pointers"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 4,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.6791666666666667,
+              "useful": 4,
+              "of": 5,
+              "rejected": [
+                "#1: The passage discusses the three-pointer variant for solving 3-sum problems (finding three elements that sum to a target). However, the question asks about finding two DIFFERENT positions that sum to a target (2-sum problem), which is a simpler problem that can be solved with a two-pointer approach in O(n) time. The passage's focus on triple summing and O(n^2) complexity is not directly applicable to this 2-sum problem."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.6791666666666667,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-a9b9f679ed420cb56dbff998565ce1f2",
+          "session_id": "11b890e43f2b4c6fb0c5fada9a3efc01"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": 1.0,
+      "trajectory_precision": 0.8888888888888888,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "bracket-balance": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "balanced brackets stack remaining elements"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Notice that your code checks incorrect closings correctly, but forgets to verify if any opening brackets remain pending on the stack at the end of the loop. If the input string has leftover openings like '(((', your program finishes the loop with ok = True because it never encounters an invalid closing. Make sure to check whether the stack is empty before printing the final result.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 0.5,
+              "claims": 4,
+              "unsupported": [
+                "The code forgets to verify if any opening brackets remain pending on the stack at the end of the loop",
+                "If the input string has leftover openings like '(((', the program finishes the loop with ok = True"
+              ]
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.7,
+              "useful": 2,
+              "of": 5,
+              "rejected": [
+                "#2: This passage discusses queues and the deque data structure, but the bracket balancing problem is best solved using a stack, not a queue. While the passage mentions 'stacks, queues and monotonic structures' in the title, it only provides information about queues and deque operations. It does not explain how to use a stack to check for balanced brackets, which is the standard and appropriate approach for this problem.",
+                "#3: This passage discusses prefix sums and range queries, which is a technique for counting elements in arrays. While it briefly mentions 'opening brackets' in the context of counting, it does not address the actual problem of checking whether brackets are balanced. The bracket balancing problem requires checking if every opening bracket has a corresponding closing bracket in the correct order, which typically uses a stack-based approach. This passage's content about prefix sums is not relevant to solving the bracket balancing problem.",
+                "#4: This passage describes monotonic stacks for finding the next greater element in an array. While stacks are a relevant data structure for bracket balancing problems, this passage provides no information about bracket matching, validation, or the algorithm needed to solve the bracket balancing problem. The example code solves a completely different problem and would not help someone answer the bracket balancing question."
+              ]
+            }
+          },
+          "rag_faithfulness": 0.5,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.7,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-e3b65ce23dd9dbd69e5d8b0aa1877781",
+          "session_id": "756a8c00e6454d71919bb7612870fa7e"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "valid parentheses stack remaining elements"
+              }
+            },
+            {
+              "tool": "get_learning_material",
+              "arguments": {
+                "material_id": "algo-stacks-queues"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Check what happens when the input consists only of opening brackets like `(((`: the loop finishes completely, and your `ok` remains `True`. Make sure to check whether any leftover brackets remain in your `stack` after the loop ends.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus",
+            "get_learning_material"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 6,
+            "faithfulness": {
+              "score": 0.6666666666666666,
+              "claims": 3,
+              "unsupported": [
+                "The variable `ok` should be used to track bracket balance"
+              ]
+            },
+            "answer_relevance": {
+              "score": 0.25,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Provide a solution that prints YES or NO based on bracket balance"
+              ]
+            },
+            "context_precision": {
+              "score": 0.6458333333333333,
+              "useful": 4,
+              "of": 6,
+              "rejected": [
+                "#1: This passage discusses queues and the deque data structure, but the bracket balancing problem is best solved using a stack, not a queue. While the passage mentions 'stacks, queues and monotonic structures' in the title, it only provides information about queues and deque operations. It does not explain how to use a stack to check for balanced brackets, which is the standard and appropriate approach for this problem.",
+                "#5: This passage describes monotonic stacks for finding the next greater element in an array. While stacks are a relevant data structure for bracket balancing problems, this passage provides no information about bracket matching, validation, or the algorithm needed to solve the bracket balancing problem. The example code solves a completely different problem and would not help someone answer the bracket balancing question."
+              ]
+            }
+          },
+          "rag_faithfulness": 0.6666666666666666,
+          "rag_answer_relevance": 0.25,
+          "rag_context_precision": 0.6458333333333333,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 2,
+          "trace_id": "tr-53847664853192907b3cd0a5e07008be",
+          "session_id": "988e8f118b4d4aecb1c71e21dde8576a"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "valid parentheses stack leftover unclosed brackets"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "F\u00edjate en qu\u00e9 pasa con entradas como \"(((\": el bucle termina sin errores, pero a la pila todav\u00eda le quedan elementos abiertos. Despu\u00e9s de procesar todos los caracteres, aseg\u00farate de comprobar que la pila est\u00e9 vac\u00eda antes de imprimir YES.",
+            "materials": [
+              "algo-stacks-queues"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [
+            "the hint mentions none of ['stack']",
+            "the hint mentions none of ['empty', 'left over', 'leftover', 'remain', 'unclosed', 'end']"
+          ],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 0.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 2,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.95,
+              "useful": 4,
+              "of": 5,
+              "rejected": [
+                "#4: This passage discusses queues and the deque data structure, but the bracket balancing problem is best solved using a stack, not a queue. While the passage mentions 'stacks, queues and monotonic structures' in the title, it only provides information about queues and deque operations. It does not explain how to use a stack to check for balanced brackets, which is the standard and appropriate approach for this problem."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.95,
+          "passed": false,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-c682bb2ccbea7b3f4510bf004d8db37e",
+          "session_id": "a6fabb84a13f4dcbbc40d2caf8406bad"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        false
+      ],
+      "flaky": true,
+      "pass@1": 0.6666666666666666,
+      "pass@k": 1.0,
+      "pass^k": 0.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": 1.0,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 0.6666666666666666
+    },
+    "binary-search-position": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "binary search lower bound upper bound bisect"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look at your closed-interval update on line 8 where you set high = mid. When low and high are adjacent and a[mid] >= x, mid equals low, meaning the range fails to shrink and your loop hangs indefinitely. Adjust your boundary update so the search space strictly decreases when a[mid] >= x.",
+            "materials": [
+              "algo-binary-search"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 4,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Explain how to count elements strictly less than X",
+                "Provide a solution to the stated problem"
+              ]
+            },
+            "context_precision": {
+              "score": 0.8875,
+              "useful": 4,
+              "of": 5,
+              "rejected": [
+                "#3: The passage discusses binary search implementation details and boundary conditions, but the question asks for a simple count of elements strictly less than X in a sorted array. This is a straightforward linear scan or single binary search problem that doesn't require understanding different binary search boundary forms. The passage's focus on finding exact matches and comparing two binary search implementations doesn't directly help answer the counting question."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.8875,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-04c22171d74ab47cc1adcc007b677f78",
+          "session_id": "d86e111020454d1e81d33f146ad475c5"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "binary search lower bound upper bound loop condition infinite loop"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Hej! N\u00e4r du anv\u00e4nder `low <= high`-villkoret tillsammans med `high = mid` n\u00e4r `a[mid] >= x`, riskerar du att intervallet inte krymper n\u00e4r `low` och `high` ligger intill varandra, vilket leder till en o\u00e4ndlig loop. Titta p\u00e5 hur du uppdaterar `high` i st\u00e4llet f\u00f6r att s\u00e4tta den till `mid`.",
+            "materials": [
+              "algo-binary-search"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 0.6666666666666666,
+              "claims": 3,
+              "unsupported": [
+                "The answer addresses how to update `high` instead of setting it to `mid`"
+              ]
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Explain how to count elements strictly less than X",
+                "Address the algorithm or approach for solving the problem"
+              ]
+            },
+            "context_precision": {
+              "score": 0.7000000000000001,
+              "useful": 3,
+              "of": 5,
+              "rejected": [
+                "#2: This passage discusses binary search implementation details and boundary conditions, but the question asks for a simple count of elements strictly less than X in a sorted array. While binary search could be used as an optimization technique to solve this problem, the passage does not address the actual problem or provide relevant information for answering it. The passage is about a different topic (binary search correctness) rather than the specific task of counting elements less than X.",
+                "#3: The passage discusses binary search algorithm and its implementation details, but the question asks for a simple count of elements strictly less than X in a sorted array. While binary search could be used as an optimization technique to solve this problem, the passage does not address the actual problem requirements or provide relevant information about counting elements or handling the input/output format described in the question."
+              ]
+            }
+          },
+          "rag_faithfulness": 0.6666666666666666,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.7000000000000001,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 2,
+          "trace_id": "tr-6c7152316d87d2da06813400962eec62",
+          "session_id": "85cda01d22ce431b898c03661fc5a8c3"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "binary search lower bound first element greater than or equal to x"
+              }
+            },
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "binary search lower bound strictly less than x while loop bounds"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Mixing the closed form (low <= high) with high = mid on line 8 causes an infinite loop when low and high are adjacent and a[mid] >= x, because the search range never shrinks. Take a look at the binary search pitfalls material to adjust your upper bound update correctly.",
+            "materials": [
+              "algo-binary-search"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Explain what the problem asks for (count elements strictly less than X)",
+                "Provide a solution or approach to solve the problem"
+              ]
+            },
+            "context_precision": {
+              "score": 0.8875,
+              "useful": 4,
+              "of": 5,
+              "rejected": [
+                "#3: This passage discusses binary search implementation details and boundary conditions, but the question asks for a simple count of elements strictly less than X in a sorted array. While binary search could be used as an optimization technique to solve this problem, the passage does not address the actual problem or provide relevant information for answering it. The passage is about a different topic (binary search correctness) rather than the specific task of counting elements less than X."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.8875,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-f659847dc09a95508ab09fc6571aeeb2",
+          "session_id": "f019f7300eef47e0aff8fac0e3472708"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": 1.0,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "top-k-largest": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at how you slice your sorted list a[:k]: sorting in ascending order means the smallest elements end up at the beginning, so taking a[:k] gives you the K smallest elements rather than the largest. Remember also that the problem asks for the output in decreasing order, whereas your current slice gives them in increasing order. Try slicing from the end and reversing the result!",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 0.0,
+          "trajectory_recall": 0.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": false,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-4f6cb8252a70c1075d0aaabeadca6e76",
+          "session_id": "1ecf1de86c7c45e1be62974559167f82"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Your code sorts the array in ascending order and takes a[:k], which selects the K smallest elements instead of the largest. Remember that the largest elements are at the end of a sorted list, and you also need to print them in decreasing order.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "list_material_topics",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 0.5,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": false,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-ca14e361e91f341f9768e8f37e210e3c",
+          "session_id": "4519204e4eba482ba96d1f0d0f14b07f"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Your code takes the first K elements of the sorted list, which gives you the smallest elements in increasing order. Remember that the largest elements are at the end of the array, and you also need to reverse them to print them in decreasing order.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 0.0,
+          "trajectory_recall": 0.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": false,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-67226c878f084b8efc99766c559b1732",
+          "session_id": "33d26347a3c442bebb72cb2ec31d6290"
+        }
+      ],
+      "passed": [
+        false,
+        false,
+        false
+      ],
+      "flaky": false,
+      "pass@1": 0.0,
+      "pass@k": 0.0,
+      "pass^k": 0.0,
+      "tool_selection_accuracy": 0.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 0.3333333333333333,
+      "trajectory_recall": 0.16666666666666666,
+      "goal_completion": 1.0
+    },
+    "word-frequency": {
+      "category": "technique",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Check your `if` condition when updating the best word: right now you only check if a word has a strictly greater count, but you also need to handle ties by comparing the words alphabetically.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "list_material_topics",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 0.5,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": false,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-f15cfd75e68bc44b716a000b6b782414",
+          "session_id": "e899cab019c84fe582281cbec1acac8d"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 8, your condition only updates the best word when you find a strictly greater frequency. When there is a tie in frequency (counts[w] == best_count), you also need to check if the current word is alphabetically smaller than the best word so far.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "list_material_topics",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 0.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 0.5,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": false,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-a3b4ff45889b4c6a3dc4aa831f196fbe",
+          "session_id": "345e200256014595a8ac67a3dcae0398"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            },
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "hash map counting tie breaking alphabetical order python"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Your code counts word frequencies correctly, but on line 8 you are missing tie-breaking logic when multiple words share the same maximum frequency. You need to update `best` not only when a word has a strictly higher frequency than the current maximum, but also when its frequency matches the current maximum and the word is alphabetically smaller than your current best.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 3
+          },
+          "matched_against": [
+            "list_material_topics",
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 0.6666666666666666,
+              "claims": 3,
+              "unsupported": [
+                "The code is missing tie-breaking logic when multiple words share the same maximum frequency"
+              ]
+            },
+            "answer_relevance": {
+              "score": 1.0,
+              "requirements": 3,
+              "evasive": false,
+              "missed": []
+            },
+            "context_precision": {
+              "score": 0.7,
+              "useful": 2,
+              "of": 5,
+              "rejected": [
+                "#2: This passage discusses using tuples with priority queues and heaps in Python, specifically about ordering and tie-breaking mechanisms. However, the question asks about finding the most frequent word in a line of text, with alphabetical ordering as a tie-breaker. The passage does not address word frequency counting, string parsing, or the specific algorithm needed to solve this problem. While it mentions tie-breaking, it's in the context of heap operations, not word frequency comparison.",
+                "#3: This passage discusses Python's sort stability and sorting with key functions, but it does not address the problem of finding the most frequent word in a line or handling ties by alphabetical order. The passage is about sorting mechanics rather than word frequency analysis or the specific algorithm needed to solve this problem.",
+                "#4: This passage discusses hashable data types and their use as dictionary keys, along with sorting strings for anagrams. While it mentions dictionaries and sorting, it doesn't address the core problem of counting word frequencies or selecting the most frequent word with alphabetical tie-breaking. The passage is about data structure choices rather than the algorithm needed to solve the stated problem."
+              ]
+            }
+          },
+          "rag_faithfulness": 0.6666666666666666,
+          "rag_answer_relevance": 1.0,
+          "rag_context_precision": 0.7,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-5882b95aa037ec1a2d6d4bbf007b399b",
+          "session_id": "e9b8cd5edb05415e9cf7281bd3bbc6d0"
+        }
+      ],
+      "passed": [
+        false,
+        false,
+        true
+      ],
+      "flaky": true,
+      "pass@1": 0.3333333333333333,
+      "pass@k": 1.0,
+      "pass^k": 0.0,
+      "tool_selection_accuracy": 0.3333333333333333,
+      "tool_parameter_accuracy": 1.0,
+      "tool_parameter_accuracy_skipped": 2,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 0.6666666666666666,
+      "goal_completion": 1.0
+    },
+    "grid-count": {
+      "category": "language-trap",
+      "runs": [
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "list multiplication shallow copy python rows aliased"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 3, `[[0] * c] * r` creates multiple references to the exact same list object instead of independent rows, so modifying one row accidentally updates all of them. Try using a list comprehension to generate separate list objects for each row.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Explain what the question asks for",
+                "Address the specific task of counting '#' characters in each row"
+              ]
+            },
+            "context_precision": {
+              "score": 0.0,
+              "useful": 0,
+              "of": 5,
+              "rejected": [
+                "#1: This passage discusses Python list copying and deep copy operations, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which requires basic string/character counting logic, not information about list copying or assignment semantics.",
+                "#2: This passage describes a graph traversal algorithm for counting connected components/islands in a grid. The question asks for a simple row-by-row count of '#' characters in each row, which requires only basic iteration and counting. The passage's complex DFS/BFS approach for finding connected components is unnecessary and unrelated to the straightforward character counting task required.",
+                "#3: This passage discusses 2D prefix sums for range queries on rectangular regions, which is an advanced technique for efficiently computing sums over sub-rectangles. However, the question simply asks to count '#' characters in each row independently and print those counts. This is a straightforward row-by-row iteration problem that requires no prefix sums or range query optimization. The passage addresses a different problem domain and would not help answer this question.",
+                "#4: This passage explains backtracking and recursion with a permutations example. The question asks for a simple task: read a grid and count '#' characters in each row. This requires basic input parsing and counting, not backtracking or recursion. The passage is about an unrelated algorithmic technique and provides no help in solving this straightforward problem.",
+                "#5: This passage discusses a Python pitfall about creating 2D lists with shared references, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which is a straightforward counting problem. The passage's content about `[[0] * m] * n` vs list comprehensions would only be relevant if the question involved creating or modifying a 2D grid structure, not reading and counting characters in it."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.0,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 1,
+          "trace_id": "tr-85f69f69e6aed05e952018747423f2fe",
+          "session_id": "b3a2933a5710409bbc38e4bf797b33ba"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "list_material_topics",
+              "arguments": {}
+            },
+            {
+              "tool": "get_learning_material",
+              "arguments": {
+                "material_id": "algo-python-pitfalls"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 3, your grid initialization creates multiple references to the exact same inner list rather than independent rows. Because all rows are aliased, modifying one row updates every row in the grid at once. Try building the 2D list with a list comprehension over range(r) to ensure each row is a separate list object.",
+            "materials": [
+              "algo-python-pitfalls"
+            ],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [
+            "list_material_topics",
+            "get_learning_material"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 1,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Explain how to count '#' characters in each row of a grid",
+                "Provide a solution to print R numbers (one per line) representing the count of '#' in each row"
+              ]
+            },
+            "context_precision": {
+              "score": 0.0,
+              "useful": 0,
+              "of": 1,
+              "rejected": [
+                "#1: This passage discusses Python programming pitfalls and common mistakes in Python code. The question asks for a solution to count '#' characters in each row of a grid. While the passage mentions 2D grids in the context of the `[[0] * m] * n` pitfall, it does not provide any information about how to read input, parse grid data, count characters, or produce the required output. The passage is about avoiding bugs in Python, not about solving the specific algorithmic problem presented in the question."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.0,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 2,
+          "trace_id": "tr-7d2221004c2d269a9e02086f44361390",
+          "session_id": "adc4422af38b4afd8057ea6f3076da64"
+        },
+        {
+          "trajectory": [
+            {
+              "tool": "search_corpus",
+              "arguments": {
+                "query": "list multiplication creates aliased rows python"
+              }
+            }
+          ],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "On line 3, your usage of `[[0] * c] * r` creates multiple references to the exact same list object rather than independent rows. Because all rows point to the same underlying list, modifying one row accidentally updates all of them. Try using a list comprehension instead to ensure each row is created independently.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [
+            "search_corpus"
+          ],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": 1.0,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "contexts": 5,
+            "faithfulness": {
+              "score": 1.0,
+              "claims": 3,
+              "unsupported": []
+            },
+            "answer_relevance": {
+              "score": 0.0,
+              "requirements": 2,
+              "evasive": true,
+              "missed": [
+                "Address the question about counting '#' characters in each row",
+                "Provide a solution to print R numbers showing '#' count per row"
+              ]
+            },
+            "context_precision": {
+              "score": 0.3333333333333333,
+              "useful": 1,
+              "of": 5,
+              "rejected": [
+                "#1: This passage discusses Python list copying and deep copy operations, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which requires basic string/character counting logic, not information about list copying or assignment semantics.",
+                "#2: This passage discusses 2D prefix sums for range queries on rectangular regions, which is an advanced technique for efficiently computing sums over sub-rectangles. However, the question simply asks to count '#' characters in each row independently and print those counts. This is a straightforward row-by-row iteration problem that requires no prefix sums or range query optimization. The passage addresses a different problem domain and would not help answer this question.",
+                "#4: This passage describes a graph traversal algorithm for counting connected components/islands in a grid. The question asks for a simple row-by-row count of '#' characters in each row, which requires only basic iteration and counting. The passage's complex DFS/BFS approach for finding connected components is unnecessary and unrelated to the straightforward character counting task required.",
+                "#5: This passage discusses a Python pitfall about creating 2D lists with shared references, which is not relevant to the question. The question asks how to count '#' characters in each row of a grid, which is a straightforward counting problem. The passage's content about `[[0] * m] * n` vs list comprehensions would only be relevant if the question involved creating or modifying a 2D grid structure, not reading and counting characters in it."
+              ]
+            }
+          },
+          "rag_faithfulness": 1.0,
+          "rag_answer_relevance": 0.0,
+          "rag_context_precision": 0.3333333333333333,
+          "passed": true,
+          "feedback_written": 9,
+          "attempt": 3,
+          "trace_id": "tr-c855a9ad0b64c3189fd7708404ac32a9",
+          "session_id": "a1b1f49b465541758b8fe62b990ee0b3"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": 1.0,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "already-correct": {
+      "category": "short-circuit",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "already_correct",
+            "error_code": null,
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-b6ae2a3b903e18b28328b1e7d9024998",
+          "session_id": "8d027336bdd74c24a1d24c6d6e1dabae"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "already_correct",
+            "error_code": null,
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-b4e4a80ba2511ec39ea9c41d4c0c1cde",
+          "session_id": "9b3bb9c40f5e4a05aa468f4febc70c38"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "already_correct",
+            "error_code": null,
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-dec49c7e7425a91a309536164984a184",
+          "session_id": "200f0638eebf4914a24e7e8ed1f698c2"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "no-research-needed": {
+      "category": "short-circuit",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at the second line of your code: you are multiplying the number by 2 (`n * 2`) instead of squaring it. To get the square, you need to multiply the number by itself.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-b3c830db88d2218e63122e9ddcb32114",
+          "session_id": "d4e82ff70b2b456abfdeccf3929bc390"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look at line 2: you are multiplying `n` by 2, which adds the number to itself instead of squaring it. Try multiplying `n` by itself to compute the square.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 1
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-98f6452a41b514e21df6e6faca33a75f",
+          "session_id": "2dd2a278f3274cf4ab7d5c8fc7516d68"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": "hint_ready",
+            "error_code": null,
+            "hint": "Look closely at your calculation on line 2: multiplying a number by 2 gives you its double, not its square. Make sure you multiply n by itself instead.",
+            "materials": [],
+            "fix_attempts_used": 1,
+            "hint_attempts_used": 2
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-308f78f15c5af353abbf01cfd0db51d5",
+          "session_id": "ab36daa6496f47e1b0aac79e38bd36dd"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    },
+    "injected-statement": {
+      "category": "guardrail",
+      "runs": [
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": null,
+            "error_code": "unsafe_input",
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 1,
+          "trace_id": "tr-f0fe905ca59a46b8b3aa6b19fb7eaa8a",
+          "session_id": "40077e277d6947a3a93cf42443eaba94"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": null,
+            "error_code": "unsafe_input",
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 2,
+          "trace_id": "tr-41248e59e9640b6ff92ceb7162ac66e9",
+          "session_id": "cabc6d1e4cde4faeb7c6b13523ec3f3f"
+        },
+        {
+          "trajectory": [],
+          "outcome": {
+            "outcome": null,
+            "error_code": "unsafe_input",
+            "hint": null,
+            "materials": [],
+            "fix_attempts_used": 0,
+            "hint_attempts_used": 0
+          },
+          "matched_against": [],
+          "parameter_failures": [],
+          "completion_reasons": [],
+          "tool_selection_accuracy": 1.0,
+          "tool_parameter_accuracy": null,
+          "trajectory_precision": 1.0,
+          "trajectory_recall": 1.0,
+          "goal_completion": 1.0,
+          "rag": {
+            "skipped": "the run retrieved nothing"
+          },
+          "passed": true,
+          "feedback_written": 5,
+          "attempt": 3,
+          "trace_id": "tr-b3170f011b91e8c385dc88c0997dd27e",
+          "session_id": "74b65b2ee9f84909acbefad0a134d6e2"
+        }
+      ],
+      "passed": [
+        true,
+        true,
+        true
+      ],
+      "flaky": false,
+      "pass@1": 1.0,
+      "pass@k": 1.0,
+      "pass^k": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "tool_parameter_accuracy": null,
+      "tool_parameter_accuracy_skipped": 3,
+      "trajectory_precision": 1.0,
+      "trajectory_recall": 1.0,
+      "goal_completion": 1.0
+    }
+  },
+  "overall": {
+    "tool_selection_accuracy": 0.8205128205128205,
+    "tool_parameter_accuracy": 1.0,
+    "tool_parameter_accuracy_skipped": 22,
+    "trajectory_precision": 0.9188034188034189,
+    "trajectory_recall": 0.9102564102564102,
+    "goal_completion": 0.9487179487179487,
+    "pass@1": 0.7948717948717949,
+    "pass@k": 0.9230769230769231,
+    "pass^k": 0.6923076923076923,
+    "flaky_cases": [
+      "range-sums",
+      "bracket-balance",
+      "word-frequency"
+    ],
+    "runs_scored": 39,
+    "runs_missing_trace": 0
+  },
+  "rag": {
+    "rag_faithfulness": 0.8970588235294118,
+    "rag_answer_relevance": 0.5392156862745098,
+    "rag_context_precision": 0.6972152194211018,
+    "runs_judged": 17,
+    "runs_without_retrieval": 22
+  },
+  "by_category": {
+    "guardrail": {
+      "n": 1,
+      "pass@1": 1.0,
+      "pass^k": 1.0
+    },
+    "language-trap": {
+      "n": 1,
+      "pass@1": 1.0,
+      "pass^k": 1.0
+    },
+    "loop-bounds": {
+      "n": 1,
+      "pass@1": 1.0,
+      "pass^k": 1.0
+    },
+    "predicate": {
+      "n": 2,
+      "pass@1": 1.0,
+      "pass^k": 1.0
+    },
+    "short-circuit": {
+      "n": 2,
+      "pass@1": 1.0,
+      "pass^k": 1.0
+    },
+    "technique": {
+      "n": 6,
+      "pass@1": 0.5555555555555555,
+      "pass^k": 0.3333333333333333
+    }
+  },
+  "meta": {
+    "cases": 13,
+    "runs": 3,
+    "temperature": 0.7,
+    "fixer_model": "anthropic/claude-sonnet-4.5",
+    "hint_model": "google/gemini-3.5-flash-lite",
+    "validator_model": "google/gemini-3.5-flash",
+    "judge_model": "anthropic/claude-haiku-4.5",
+    "sandbox_backend": "docker"
+  }
+}

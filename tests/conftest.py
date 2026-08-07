@@ -4,10 +4,16 @@ import pytest
 from langchain_core.messages import AIMessage, AnyMessage
 from pydantic import BaseModel
 
-from problem_helper import materials, retrieval
+from problem_helper import materials, retrieval, tracing
 from problem_helper.retrieval import Chunk, Hit
 from problem_helper.sandbox import TestOutcome, TestReport
 from problem_helper.schemas import TestCase
+
+# The `@mlflow.trace` decorators are applied at import time, so switching tracing off has
+# to happen before any of them runs. `configure` is idempotent, so the app's own call
+# during `create_app`'s lifespan is a no-op afterwards — which is what keeps the suite from
+# writing an `mlruns/` tree into the repository.
+tracing.configure(enabled=False, tracking_uri="", experiment="")
 
 
 @dataclass
