@@ -10,3 +10,4 @@ docs/
 *.db
 *.db-wal
 *.db-shm
+.rag_cache/
